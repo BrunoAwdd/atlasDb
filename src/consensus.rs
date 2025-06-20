@@ -9,10 +9,11 @@
 //! serving as a conceptual foundation rather than a production-grade implementation.
 
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 use crate::utils::NodeId;
 
 /// Represents a binary vote from a node regarding a proposal.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Vote {
     Yes,
     No,
@@ -21,7 +22,7 @@ pub enum Vote {
 /// A proposal to mutate or modify shared graph state.
 ///
 /// Each proposal is authored by a node and uniquely identified.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposal {
     /// Unique identifier for the proposal.
     pub id: String,
@@ -34,13 +35,16 @@ pub struct Proposal {
 }
 
 /// The result of consensus evaluation for a single proposal.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusResult {
     /// Whether the proposal reached quorum and was approved.
     pub approved: bool,
 
     /// The number of affirmative (Yes) votes received.
     pub votes_received: usize,
+
+    /// The proposal ID this result corresponds to.
+    pub proposal_id: String,
 }
 
 /// The core asynchronous consensus engine.
@@ -107,6 +111,7 @@ impl ConsensusEngine {
             results.push(ConsensusResult {
                 approved,
                 votes_received: yes_votes,
+                proposal_id: id.clone(),
             });
 
             println!(
@@ -215,7 +220,19 @@ mod tests {
         let results = engine.evaluate_proposals();
 
         assert_eq!(results.len(), 2);
-        assert!(results[0].approved);
-        assert!(!results[1].approved);
+
+        let mut approved_ids = vec![];
+        let mut rejected_ids = vec![];
+
+        for result in results {
+            if result.approved {
+                approved_ids.push(result.proposal_id.clone());
+            } else {
+                rejected_ids.push(result.proposal_id.clone());
+            }
+        }
+
+        assert!(approved_ids.contains(&p1.id));
+        assert!(rejected_ids.contains(&p2.id));
     }
 }
