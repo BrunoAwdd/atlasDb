@@ -80,7 +80,9 @@ impl AtlasEnv {
 
     pub fn export_audit(&self, path: &str) {
         let audit = self.storage.to_audit();
-        save_audit(path, &audit).unwrap();
+        if let Err(err) = save_audit(path, &audit) {
+            eprintln!("Warning: failed to export audit data to {}: {}", path, err);
+        }
     }
 
     pub fn print(&self) {
