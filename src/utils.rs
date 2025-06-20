@@ -5,13 +5,15 @@
 //! This module provides basic utilities such as unique node identifiers,
 //! trait integrations, and conversion helpers.
 
+use serde::{Serialize, Deserialize};
+
 /// Unique identifier for a node in the distributed cluster.
 ///
 /// `NodeId` is a lightweight wrapper around `String`, designed to:
 /// - Ensure type safety across APIs
 /// - Enable strong `HashMap`/`HashSet` keys
 /// - Provide readable formatting and conversions
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub String);
 
 impl std::fmt::Display for NodeId {
@@ -26,6 +28,7 @@ impl From<&str> for NodeId {
     ///
     /// Example:
     /// ```rust
+    /// use atlas_db::utils::NodeId;
     /// let id: NodeId = "node-A".into();
     /// ```
     fn from(s: &str) -> Self {
