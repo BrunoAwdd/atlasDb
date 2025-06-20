@@ -7,6 +7,7 @@
 //! integration with real persistence mechanisms (e.g., database, disk, etc.).
 
 use std::collections::HashMap;
+use crate::audit::AuditData;
 use crate::consensus::{Proposal, Vote, ConsensusResult};
 use crate::utils::NodeId;
 
@@ -82,6 +83,20 @@ impl Storage {
             );
         }
     }
+
+    pub fn to_audit(&self) -> AuditData {
+        AuditData {
+            proposals: self.proposals.clone(),
+            votes: self.votes.clone(),
+            results: self.results.clone(),
+        }
+    }
+
+    pub fn apply_audit(&mut self, data: AuditData) {
+        self.proposals = data.proposals;
+        self.votes = data.votes;
+        self.results = data.results;
+    }
 }
 
 #[cfg(test)]
@@ -101,10 +116,11 @@ mod tests {
         }
     }
 
-    fn sample_result(approved: bool, votes: usize) -> ConsensusResult {
+    fn sample_result(approved: bool, votes: usize, proposal_id: &str) -> ConsensusResult {
         ConsensusResult {
             approved,
             votes_received: votes,
+            proposal_id: proposal_id.to_string(),
         }
     }
 
@@ -136,7 +152,7 @@ mod tests {
     #[test]
     fn test_log_result_registers_outcome() {
         let mut store = Storage::new();
-        let result = sample_result(true, 3);
+        let result = sample_result(true, 3, "p42");
 
         store.log_result("p42", result.clone());
 
@@ -168,8 +184,8 @@ mod tests {
         store.log_proposal(p2.clone());
         store.log_proposal(p3.clone());
 
-        store.log_result("p1", sample_result(true, 3));
-        store.log_result("p2", sample_result(false, 1));
+        store.log_result("p1", sample_result(true, 3, "p1"));
+        store.log_result("p2", sample_result(false, 1, "p2"));
         // p3 sem resultado
 
         // Isso imprime no stdout, mas não afeta assertivas aqui.
