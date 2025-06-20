@@ -4,8 +4,6 @@
 //!
 //! This module provides logical constructs to mimic inter-node messaging, heartbeat cycles,
 //! and rudimentary graph updates — all without actual networking.
-//!
-//! ⚠️ Note: This is a simulation layer, not a real distributed system.
 
 use std::collections::HashMap;
 use std::thread;
