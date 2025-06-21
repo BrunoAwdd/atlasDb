@@ -6,6 +6,7 @@ pub mod consensus;
 pub mod storage;
 pub mod utils;
 pub mod audit;
+pub mod ffi;
 
 // Reexporta os tipos principais para quem usar a lib
 pub use node::{Graph, Vertex, Edge};
