@@ -1,12 +1,14 @@
 // lib.rs
 
-pub mod node;
-pub mod cluster;
+pub mod audit;
 pub mod consensus;
+pub mod cluster;
+pub mod ffi;
+pub mod network;
+pub mod node;
 pub mod storage;
 pub mod utils;
-pub mod audit;
-pub mod ffi;
+
 
 // Reexporta os tipos principais para quem usar a lib
 pub use node::{Graph, Vertex, Edge};
