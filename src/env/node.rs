@@ -8,10 +8,12 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 /// A graph vertex, uniquely identified and semantically labeled.
 ///
 /// Each vertex may contain arbitrary key-value metadata (`properties`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vertex {
     /// Unique identifier of the vertex.
     pub id: String,
@@ -43,7 +45,7 @@ impl Vertex {
 /// Represents a directed edge between two vertices.
 ///
 /// Edges are labeled and directionally link two vertex IDs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     /// Source vertex ID.
     pub from: String,
@@ -69,7 +71,7 @@ impl Edge {
 /// Represents the local graph state of a node.
 ///
 /// Tracks all known vertices and edges in a directed graph model.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Graph {
     /// Map of vertex ID → vertex data.
     pub vertices: HashMap<String, Vertex>,

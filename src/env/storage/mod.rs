@@ -5,16 +5,20 @@
 //!
 //! This module is designed for testing, logging, and potential future
 //! integration with real persistence mechanisms (e.g., database, disk, etc.).
+//! 
+
+pub mod audit;
 
 use std::collections::HashMap;
-use crate::audit::AuditData;
-use crate::consensus::{Proposal, Vote, ConsensusResult};
+use audit::AuditData;
+use serde::{Deserialize, Serialize};
+use super::consensus::{Proposal, Vote, ConsensusResult};
 use crate::utils::NodeId;
 
 /// In-memory simulation of a distributed storage ledger.
 ///
 /// Used to persist proposals, vote traces, and final consensus outcomes.
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Storage {
     /// All proposals submitted to the system.
     pub proposals: Vec<Proposal>,
@@ -113,6 +117,7 @@ mod tests {
             id: id.to_string(),
             proposer: node(proposer),
             content: content.to_string(),
+            parent: None,
         }
     }
 

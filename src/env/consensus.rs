@@ -8,9 +8,9 @@
 //! The engine is deliberately asynchronous, failure-tolerant, and latency-aware,
 //! serving as a conceptual foundation rather than a production-grade implementation.
 
-use std::collections::HashMap;
+use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
 use serde::{Serialize, Deserialize};
-use crate::utils::NodeId;
+use crate::{peer_manager::PeerManager, utils::NodeId};
 
 /// Represents a binary vote from a node regarding a proposal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,6 +32,8 @@ pub struct Proposal {
 
     /// The proposed content or payload (e.g., graph update).
     pub content: String,
+
+    pub parent: Option<String>, // Optional parent proposal ID for versioning
 }
 
 /// The result of consensus evaluation for a single proposal.
@@ -51,33 +53,37 @@ pub struct ConsensusResult {
 ///
 /// Manages the lifecycle of proposals, tracks votes,
 /// and determines approval based on a quorum threshold.
+#[derive(Debug, Clone)]
 pub struct ConsensusEngine {
-    quorum: usize,
-    proposals: Vec<Proposal>,
-    votes: HashMap<String, HashMap<NodeId, Vote>>, // proposal_id → (voter → vote)
+    pub peer_manager: Arc<RwLock<PeerManager>>,
+    pub proposals: Vec<Proposal>,
+    pub votes: HashMap<String, HashMap<NodeId, Vote>>,
+    pub quorum_ratio: f64,
 }
 
 impl ConsensusEngine {
     /// Initializes a new consensus engine with a given cluster size.
     ///
     /// Quorum is calculated as majority: (n / 2) + 1
-    pub fn new(cluster_size: usize) -> Self {
-        ConsensusEngine {
-            quorum: (cluster_size / 2) + 1,
+    pub fn new(peer_manager: Arc<RwLock<PeerManager>>, quorum_ratio: f64) -> Self {
+        Self {
             proposals: Vec::new(),
             votes: HashMap::new(),
+            quorum_ratio,
+            peer_manager,
         }
     }
 
     /// Submits a new proposal to the consensus engine.
     ///
     /// The proposal is tracked and awaits votes from peer nodes.
-    pub fn submit_proposal(&mut self, proposer: NodeId, content: String) -> Proposal {
+    pub fn submit_proposal(&mut self, proposer: NodeId, content: String, parent: Option<String>) -> Proposal {
         let id = format!("prop-{}", self.proposals.len() + 1);
         let proposal = Proposal {
             id: id.clone(),
             proposer,
             content,
+            parent
         };
         self.proposals.push(proposal.clone());
         self.votes.insert(id, HashMap::new());
@@ -88,6 +94,11 @@ impl ConsensusEngine {
     ///
     /// This method simulates asynchronous, out-of-order voting from the network.
     pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote) {
+        if !self.get_active_nodes().contains(&from_node) {
+            println!("⚠️ Ignored vote from unknown or inactive node: [{}]", from_node);
+            return;
+        }
+
         if let Some(voters) = self.votes.get_mut(proposal_id) {
             voters.insert(from_node.clone(), vote.clone());
 
@@ -102,11 +113,12 @@ impl ConsensusEngine {
     ///
     /// Proposals are considered approved if they receive quorum (≥ majority) of `Yes` votes.
     pub fn evaluate_proposals(&self) -> Vec<ConsensusResult> {
+        let quorum_count = (self.get_active_nodes().len() as f64 * self.quorum_ratio).ceil() as usize;
         let mut results = Vec::new();
 
         for (id, voters) in &self.votes {
             let yes_votes = voters.values().filter(|v| matches!(v, Vote::Yes)).count();
-            let approved = yes_votes >= self.quorum;
+            let approved = yes_votes >= quorum_count;
 
             results.push(ConsensusResult {
                 approved,
@@ -118,12 +130,20 @@ impl ConsensusEngine {
                 "🗳️ Proposal [{}] received {}/{} YES votes — {}",
                 id,
                 yes_votes,
-                self.quorum,
+                quorum_count,
                 if approved { "APPROVED ✅" } else { "REJECTED ❌" }
             );
         }
 
         results
+    }
+
+    pub fn update_active_nodes(&mut self) {
+       println!("Not implemented");
+    }
+
+    fn get_active_nodes(&self) -> HashSet<NodeId> {
+        self.peer_manager.read().expect("Failed to acquire read lock").get_active_peers()
     }
 }
 #[cfg(test)]
@@ -131,20 +151,22 @@ mod tests {
     use super::*;
     use crate::utils::NodeId;
 
-    fn node(id: &str) -> NodeId {
-        NodeId(id.to_string())
-    }
-
     fn create_engine_with_nodes(n: usize) -> (ConsensusEngine, Vec<NodeId>) {
-        let engine = ConsensusEngine::new(n);
-        let nodes = (0..n).map(|i| node(&format!("node-{}", i))).collect();
+        let nodes: Vec<NodeId> = (0..n)
+            .map(|i| NodeId(format!("node-{}", i)))
+            .collect();
+
+        let peer_manager = Arc::new(RwLock::new(PeerManager::new(nodes.len(), 5)));
+        let quorum_ratio = 0.66;
+
+        let engine = ConsensusEngine::new(peer_manager, quorum_ratio);
         (engine, nodes)
     }
 
     #[test]
     fn test_submit_proposal_creates_entry() {
         let (mut engine, nodes) = create_engine_with_nodes(3);
-        let proposal = engine.submit_proposal(nodes[0].clone(), "add_edge A-B".into());
+        let proposal = engine.submit_proposal(nodes[0].clone(), "add_edge A-B".into(), None);
 
         assert_eq!(proposal.id, "prop-1");
         assert_eq!(proposal.content, "add_edge A-B");
@@ -155,7 +177,7 @@ mod tests {
     #[test]
     fn test_receive_vote_registers_vote_correctly() {
         let (mut engine, nodes) = create_engine_with_nodes(3);
-        let proposal = engine.submit_proposal(nodes[0].clone(), "connect X-Y".into());
+        let proposal = engine.submit_proposal(nodes[0].clone(), "connect X-Y".into(), None);
 
         engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
 
@@ -166,7 +188,7 @@ mod tests {
     #[test]
     fn test_quorum_approval_success() {
         let (mut engine, nodes) = create_engine_with_nodes(5); // quorum = 3
-        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into());
+        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
 
         engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
         engine.receive_vote(&proposal.id, nodes[2].clone(), Vote::Yes);
@@ -181,7 +203,7 @@ mod tests {
     #[test]
     fn test_quorum_rejection_due_to_insufficient_votes() {
         let (mut engine, nodes) = create_engine_with_nodes(5); // quorum = 3
-        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into());
+        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
 
         engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
         engine.receive_vote(&proposal.id, nodes[2].clone(), Vote::No);
@@ -194,7 +216,7 @@ mod tests {
     #[test]
     fn test_out_of_order_votes_do_not_affect_result() {
         let (mut engine, nodes) = create_engine_with_nodes(3); // quorum = 2
-        let proposal = engine.submit_proposal(nodes[2].clone(), "modify X".into());
+        let proposal = engine.submit_proposal(nodes[2].clone(), "modify X".into(), None);
 
         // Votes arrive in "wrong" order — this should not matter
         engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
@@ -208,8 +230,8 @@ mod tests {
     fn test_multiple_proposals_independent_results() {
         let (mut engine, nodes) = create_engine_with_nodes(3); // quorum = 2
 
-        let p1 = engine.submit_proposal(nodes[0].clone(), "edge A-B".into());
-        let p2 = engine.submit_proposal(nodes[1].clone(), "edge C-D".into());
+        let p1 = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
+        let p2 = engine.submit_proposal(nodes[1].clone(), "edge C-D".into(), None);
 
         engine.receive_vote(&p1.id, nodes[1].clone(), Vote::Yes);
         engine.receive_vote(&p1.id, nodes[2].clone(), Vote::Yes);
