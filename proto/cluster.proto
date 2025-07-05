@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package cluster;
+
+service ClusterNetwork {
+  // 1. Enviar proposta para os outros validadores
+  rpc SubmitProposal(ProposalMessage) returns (Ack);
+
+  // 2. Enviar voto sobre uma proposta
+  rpc SubmitVote(VoteMessage) returns (Ack);
+
+  // 3. Enviar heartbeat entre nós
+  rpc Heartbeat(HeartbeatMessage) returns (Ack);
+}
+
+// Confirmação genérica
+message Ack {
+  bool received = 1;
+  string message = 2;
+}
+
+// Proposta para consenso
+message ProposalMessage {
+  string id = 1;
+  string proposer_id = 2;
+  string content = 3;  // pode ser JSON, base64 ou string serializada
+  string parent_id = 4;
+  bytes signature = 5;
+  bytes public_key = 6;
+}
+
+// Voto sobre uma proposta
+message VoteMessage {
+  string proposal_id = 1;
+  string voter_id = 2;
+  VoteOption vote = 3;
+  bytes signature = 4;
+  bytes public_key = 5;
+}
+
+// Tipos de voto
+enum VoteOption {
+  YES = 0;
+  NO = 1;
+  ABSTAIN = 2;
+}
+
+// Heartbeat básico
+message HeartbeatMessage {
+  string from = 1;
+  int64 timestamp = 2;
+}
