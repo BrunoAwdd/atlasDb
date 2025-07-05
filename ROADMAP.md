@@ -12,7 +12,7 @@ Create a generic `Network` interface to support multiple implementations (in-mem
 
 ### 📋 Tasks
 
-- [x] Define `ConsensusMessage` enum with:
+- [x] Define `ClusterMessage` enum with:
   - Signed proposal
   - Signed vote
 - [x] Define `NetworkError` enum
@@ -34,9 +34,9 @@ Provide an in-memory network for simulation and local testing.
 ### 📋 Tasks
 
 - [ ] Create `InMemoryNetwork` struct
-- [ ] Manage `peers: HashMap<NodeId, Sender<ConsensusMessage>>`
+- [ ] Manage `peers: HashMap<NodeId, Sender<ClusterMessage>>`
 - [ ] Implement `send_to` and `broadcast` using `tokio::sync::mpsc` channels
-- [ ] Implement `set_message_handler` with `Fn(ConsensusMessage)` callback
+- [ ] Implement `set_message_handler` with `Fn(ClusterMessage)` callback
 
 ---
 
