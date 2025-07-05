@@ -1,8 +1,9 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 use std::ptr;
+use std::sync::Arc;
 
-use crate::{AtlasEnv, Proposal, ConsensusResult};
+use crate::{env::AtlasEnv, Proposal, ConsensusResult};
 
 #[repr(C)]
 pub struct AtlasEnvHandle {
@@ -12,7 +13,7 @@ pub struct AtlasEnvHandle {
 /// Cria um novo ambiente Atlas com IDs fixos temporariamente
 #[no_mangle]
 pub extern "C" fn atlas_env_new() -> *mut AtlasEnvHandle {
-    let env = AtlasEnv::new(&["A", "B", "C"]);
+    let env = AtlasEnv::new(&["A", "B", "C"], Arc::new(|_| {}));
     Box::into_raw(Box::new(AtlasEnvHandle { env }))
 }
 
