@@ -2,19 +2,24 @@ pub mod consensus;
 pub mod config;
 pub mod node;
 pub mod storage;
+pub mod proposal;
 
-use std::collections::HashSet;
-use std::sync::{Arc, RwLock};
-use std::fmt::Debug;
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock}
+};
 
 use serde_json::Value;
 
-use crate::env::config::EnvConfig;
-use crate::network::adapter::NetworkAdapter;
-use crate::peer_manager::{PeerManager};
-use crate::utils::NodeId;
+use crate::{
+    env::config::EnvConfig,
+    network::adapter::NetworkAdapter,
+    peer_manager::{PeerManager},
+    utils::NodeId
+};
 
-use consensus::{ConsensusEngine, Proposal, ConsensusResult};
+use consensus::{ConsensusEngine, ConsensusResult};
+use proposal::Proposal;
 use node::{Graph, Edge};
 use storage::{Storage, audit::save_audit};
 
