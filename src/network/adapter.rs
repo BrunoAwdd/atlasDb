@@ -4,7 +4,11 @@ use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 
 use crate::{
-    env::consensus::{Proposal, Vote}, utils::NodeId, Node
+    env::{
+        consensus::Vote,
+        proposal::Proposal
+    }, 
+    utils::NodeId, Node
 };
 use super::error::NetworkError;
 
