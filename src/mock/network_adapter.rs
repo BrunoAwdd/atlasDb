@@ -27,8 +27,8 @@ impl MockNetworkAdapter {
 impl fmt::Debug for MockNetworkAdapter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MyAdapter")
-         .field("handler", &"Fn handler (not Debug)")
-         .finish()
+            .field("handler", &"Fn handler (not Debug)")
+            .finish()
     }
 }
 
@@ -56,7 +56,7 @@ impl NetworkAdapter for MockNetworkAdapter {
         self.bus.register_node(self.node_id.clone(), handler);
     }
 
-    async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msg: String) -> Result<(ClusterMessage), NetworkError> {
+    async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msg: String) -> Result<ClusterMessage, NetworkError> {
         self.heartbeats_sent.lock().unwrap().push((sender.clone(), receiver.id.clone(), msg.clone()));
         let message = ClusterMessage::Vote {
             proposal_id: "heartbeat".to_string(),
@@ -75,8 +75,8 @@ impl NetworkAdapter for MockNetworkAdapter {
 impl fmt::Debug for MockNetworkBus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MyAdapter")
-         .field("handler", &"Fn handler (not Debug)")
-         .finish()
+            .field("handler", &"Fn handler (not Debug)")
+            .finish()
     }
 }
 
