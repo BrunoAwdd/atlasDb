@@ -1,8 +1,13 @@
 use std::fs;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use crate::env::consensus::{Proposal, Vote, ConsensusResult};
-use crate::utils::NodeId;
+use crate::{
+    env::{
+        consensus::{Vote, ConsensusResult},
+        proposal::Proposal
+    },
+    utils::NodeId,
+};
 
 /// Structure that represents the full audit data of a consensus session.
 ///
@@ -53,7 +58,10 @@ pub fn load_audit(path: &str) -> std::io::Result<AuditData> {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
-    use crate::env::consensus::{Proposal, Vote, ConsensusResult};
+    use crate::env::{
+        proposal::Proposal, 
+        consensus::{Vote, ConsensusResult}
+    };
 
     #[test]
     fn test_save_and_load_audit_data() {
