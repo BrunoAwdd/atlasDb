@@ -36,9 +36,9 @@ impl ClusterNetwork for ClusterService {
         &self,
         request: Request<ProposalMessage>,
     ) -> Result<Response<Ack>, Status> {
-        //let ack = self.cluster.read().await.handle_proposal(request.into_inner()).await;
-        //Ok(Response::new(ack))
-        Ok( Response::new(Ack { received: true, message: "Not implmented".to_string() })) // Placeholder response
+        println!("Received proposal from: {}", request.get_ref().proposer_id);
+        let ack = self.cluster.read().await.handle_proposal(request.into_inner()).await;
+        Ok(Response::new(ack))
     }
 
     async fn submit_vote(
