@@ -6,14 +6,19 @@
 //! This module is designed for testing, logging, and potential future
 //! integration with real persistence mechanisms (e.g., database, disk, etc.).
 //! 
-
 pub mod audit;
 
 use std::collections::HashMap;
-use audit::AuditData;
+
 use serde::{Deserialize, Serialize};
-use super::consensus::{Proposal, Vote, ConsensusResult};
-use crate::utils::NodeId;
+
+use audit::AuditData;
+
+use super::{
+    consensus::{ConsensusResult, Vote},
+    proposal::Proposal,
+    NodeId,
+};
 
 /// In-memory simulation of a distributed storage ledger.
 ///
