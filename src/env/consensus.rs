@@ -10,7 +10,10 @@
 
 use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
 use serde::{Serialize, Deserialize};
-use crate::{peer_manager::PeerManager, utils::NodeId};
+use super::{
+    super::{peer_manager::PeerManager, utils::NodeId},
+    proposal::Proposal
+};
 
 /// Represents a binary vote from a node regarding a proposal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,24 +21,6 @@ pub enum Vote {
     Yes,
     No,
 }
-
-/// A proposal to mutate or modify shared graph state.
-///
-/// Each proposal is authored by a node and uniquely identified.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Proposal {
-    /// Unique identifier for the proposal.
-    pub id: String,
-
-    /// The node that submitted the proposal.
-    pub proposer: NodeId,
-
-    /// The proposed content or payload (e.g., graph update).
-    pub content: String,
-
-    pub parent: Option<String>, // Optional parent proposal ID for versioning
-}
-
 /// The result of consensus evaluation for a single proposal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusResult {
@@ -78,6 +63,7 @@ impl ConsensusEngine {
     ///
     /// The proposal is tracked and awaits votes from peer nodes.
     pub fn submit_proposal(&mut self, proposer: NodeId, content: String, parent: Option<String>) -> Proposal {
+        println!("📝 [{}] submitted proposal: {}", proposer, content);
         let id = format!("prop-{}", self.proposals.len() + 1);
         let proposal = Proposal {
             id: id.clone(),
