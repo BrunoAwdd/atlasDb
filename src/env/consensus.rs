@@ -125,7 +125,7 @@ impl ConsensusEngine {
     }
 
     pub fn update_active_nodes(&mut self) {
-       println!("Not implemented");
+        println!("Not implemented");
     }
 
     fn get_active_nodes(&self) -> HashSet<NodeId> {
