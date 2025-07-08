@@ -6,9 +6,9 @@ use crate::utils::NodeId;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub id: NodeId,
-    pub address: String, // pode ser um endpoint, ou ID de rede
-    pub latency: Option<u64>, // em ms, para priorização
-    pub reliability_score: f32, // para o PeerManager
+    pub address: String,
+    pub latency: Option<u64>,
+    pub reliability_score: f32,
     pub last_seen: u64,
 }
 
@@ -24,7 +24,14 @@ impl Node {
     }
 
     pub fn is_trusted(&self) -> bool {
-        self.reliability_score > 0.8 && self.latency.unwrap_or(999) < 500
+        const MIN_RELIABILITY_SCORE: f32 = 0.8;
+        const MAX_LATENCY: u64 = 500;
+        self.reliability_score > MIN_RELIABILITY_SCORE && 
+            self.latency.unwrap_or(999) < MAX_LATENCY
+    }
+
+    pub fn update_last_seen(&mut self, timestamp: u64) {
+        self.last_seen = timestamp;
     }
 
 }
