@@ -1,26 +1,27 @@
-
-use std::{
-    net::{self, SocketAddr}, path, sync::{Arc, RwLock}
-};
-use env_logger::Env;
-use tokio::sync::oneshot;
-use tonic::transport::Server;
-
+use std::sync::{Arc, RwLock};
 use crate::{
-    cluster::{cluster::Cluster, builder::ClusterBuilder, node::Node, service::ClusterService}, env::{config::EnvConfig, consensus::ConsensusEngine, node::Graph, storage::Storage, AtlasEnv}, network::{
-        adapter::NetworkAdapter,
-        grcp_adapter::GRPCNetworkAdapter, 
-    }, peer_manager::{self, PeerManager}, utils::NodeId
+    cluster::{
+        builder::ClusterBuilder, 
+        cluster::Cluster
+    }, 
+    env::{
+        config::EnvConfig, 
+        AtlasEnv
+    }, 
+    network::adapter::NetworkAdapter,
+    peer_manager::PeerManager, utils::NodeId
 };
-
-
 
 pub fn init(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) {
     let peer_manager = Arc::new(RwLock::new(PeerManager::new(10, 5)));
     create_env(network, peer_manager, path);
 }
 
-pub async fn start(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>, id: String) -> Result<Cluster, Box<dyn std::error::Error>> {
+pub async fn start(
+    network: Arc<RwLock<dyn NetworkAdapter>>, 
+    path: Option<&str>, 
+    id: String
+) -> Result<Arc<tokio::sync::RwLock<Cluster>>, Box<dyn std::error::Error>> {
     let env = build_env(Arc::clone(&network), path);
     let node_id = NodeId(id);
     let cluster = ClusterBuilder::new()
@@ -44,12 +45,12 @@ fn create_env(
     path: Option<&str>
 ) -> AtlasEnv {
     AtlasEnv::new(
-         network,
-         Arc::new(|_| {}),
-         peer_manager,
-         path,
-     )
- }
+        network,
+        Arc::new(|_| {}),
+        peer_manager,
+        path,
+    )
+}
 
 fn load_env(path: &str, network: Arc<RwLock<dyn NetworkAdapter>>) -> AtlasEnv {
     EnvConfig::load_from_file(path)
