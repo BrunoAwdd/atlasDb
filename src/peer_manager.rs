@@ -59,10 +59,10 @@ impl PeerManager {
 
     fn update_stats(&mut self, node_id: &NodeId, new_stats: Node) -> PeerEvent {
         if let Some(current) = self.known_peers.get_mut(node_id) {
-            if new_stats.last_seen > current.last_seen {
+            if new_stats.get_last_seen() > current.get_last_seen() {
                 current.latency = new_stats.latency;
                 current.reliability_score = new_stats.reliability_score;
-                current.last_seen = new_stats.last_seen;
+                current.update_last_seen(new_stats.get_last_seen());
                 PeerEvent::Updated(node_id.clone())
             } else {
                 PeerEvent::NoChange
