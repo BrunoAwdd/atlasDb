@@ -2,21 +2,24 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum NetworkError {
-    #[error("Erro ao enviar a mensagem: {0}")]
+    #[error("Failed to send message: {0}")]
     Send(String),
 
-    #[error("Erro ao receber a mensagem: {0}")]
+    #[error("Failed to receive message: {0}")]
     Receive(String),
 
-    #[error("Handler de mensagem não configurado")]
+    #[error("Message handler not configured")]
     HandlerNotSet,
 
-    #[error("Erro de serialização: {0}")]
+    #[error("Serialization error: {0}")]
     Serialization(String),
 
-    #[error("Erro de conexão: {0}")]
+    #[error("Connection error: {0}")]
     ConnectionError(String),
 
-    #[error("Erro desconhecido")]
+    #[error("Invalid message error")]
+    InvalidMessage,
+
+    #[error("Unknown error")]
     Unknown,
 }
