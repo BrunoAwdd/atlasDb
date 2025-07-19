@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 
 use crate::{
+    cluster_proto::{VoteBatch, VoteMessage}, 
     env::{
         consensus::Vote,
         proposal::Proposal
@@ -12,6 +13,39 @@ use crate::{
 };
 use super::error::NetworkError;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoteData {
+    pub proposal_id: String,
+    pub vote: Vote,
+    pub voter: NodeId,
+    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+impl VoteData {
+    pub fn into_proto(self) -> VoteMessage {
+        VoteMessage {
+            proposal_id: self.proposal_id,
+            voter_id: self.voter.0,
+            vote: self.vote as i32,
+            signature: self.signature,
+            public_key: self.public_key,
+        }
+    }
+
+    pub fn from_proto(msg: VoteMessage) -> Self {
+        let vote = Vote::try_from(msg.vote).unwrap_or(Vote::Abstain);
+
+        VoteData {
+            proposal_id: msg.proposal_id,
+            voter: NodeId(msg.voter_id),
+            vote,
+            signature: msg.signature,
+            public_key: msg.public_key,
+        }
+    }
+
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClusterMessage {
@@ -27,6 +61,9 @@ pub enum ClusterMessage {
         public_key: Vec<u8>,
         signature: Vec<u8>,
     },
+    VoteBatch {
+        votes: Vec<VoteData>,
+    },
     Heartbeat {
         sender: NodeId,
         receiver: NodeId,
@@ -38,7 +75,8 @@ pub enum ClusterMessage {
 pub trait NetworkAdapter: Send + Sync + Debug {
     fn get_address(&self) -> String;
     async fn broadcast(&self, msg: ClusterMessage) -> Result<(), NetworkError>;
-    async fn send_to(&self, target: NodeId, msg: ClusterMessage) -> Result<(), NetworkError>;
+    async fn send_to(&self, target: Node, msg: ClusterMessage) -> Result<ClusterMessage, NetworkError>;
+    async fn send_votes_batch(&self, target: Node, votes_batch: VoteBatch) -> Result<(), NetworkError>;
     fn set_message_handler(&mut self, handler: Arc<dyn Fn(ClusterMessage) + Send + Sync>);
-    async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msg: String) -> Result<(ClusterMessage), NetworkError>;
+    async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msg: String) -> Result<ClusterMessage, NetworkError>;
 }
