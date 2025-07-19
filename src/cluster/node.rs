@@ -9,9 +9,11 @@ pub struct Node {
     pub address: String,
     pub latency: Option<u64>,
     pub reliability_score: f32,
-    pub last_seen: u64,
+    last_seen: u64,
 }
 
+
+// TODO need a better implementation
 impl Node {
     pub fn new(id: NodeId, address: String, latency: Option<u64>, reliability_score: f32) -> Self {
         Node {
@@ -33,5 +35,11 @@ impl Node {
     pub fn update_last_seen(&mut self, timestamp: u64) {
         self.last_seen = timestamp;
     }
+
+    pub fn get_last_seen(&self) -> u64 {
+        self.last_seen
+    }
+
+    
 
 }
