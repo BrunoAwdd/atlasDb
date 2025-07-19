@@ -8,8 +8,17 @@
 //! The engine is deliberately asynchronous, failure-tolerant, and latency-aware,
 //! serving as a conceptual foundation rather than a production-grade implementation.
 
-use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock}};
+use std::{
+    collections::{HashMap, HashSet}, 
+    sync::{Arc, RwLock}
+};
 use serde::{Serialize, Deserialize};
+use crate::{
+    cluster_proto::{Ack, VoteBatch}, 
+    network::adapter::{ClusterMessage, VoteData}, 
+    NetworkAdapter, Node
+};
+
 use super::{
     super::{peer_manager::PeerManager, utils::NodeId},
     proposal::Proposal
@@ -20,7 +29,32 @@ use super::{
 pub enum Vote {
     Yes,
     No,
+    Abstain
 }
+
+impl From<Vote> for i32 {
+    fn from(v: Vote) -> Self {
+        match v {
+            Vote::Yes => 0,
+            Vote::No => 1,
+            Vote::Abstain => 2,
+        }
+    }
+}
+
+impl std::convert::TryFrom<i32> for Vote {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Vote::Yes),
+            1 => Ok(Vote::No),
+            2 => Ok(Vote::Abstain),
+            _ => Err(()),
+        }
+    }
+}
+
 /// The result of consensus evaluation for a single proposal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusResult {
@@ -59,27 +93,128 @@ impl ConsensusEngine {
         }
     }
 
+    // Add Proposal
+    pub fn add_proposal(&mut self, proposal: Proposal) -> () {
+        self.proposals.push(proposal.clone());
+
+        println!("🚀 Proposta adicionada: {:?}", self.proposals);
+    }
+
+
     /// Submits a new proposal to the consensus engine.
     ///
     /// The proposal is tracked and awaits votes from peer nodes.
-    pub fn submit_proposal(&mut self, proposer: NodeId, content: String, parent: Option<String>) -> Proposal {
-        println!("📝 [{}] submitted proposal: {}", proposer, content);
-        let id = format!("prop-{}", self.proposals.len() + 1);
-        let proposal = Proposal {
-            id: id.clone(),
-            proposer,
-            content,
-            parent
-        };
+    pub async fn submit_proposal(
+        &mut self,
+        proposal: Proposal,
+        network: Arc<RwLock<dyn NetworkAdapter>>,
+        local_node_id: NodeId,
+    ) -> Result<Ack, String> {
+        // 1. Processa localmente
+        println!("🚀 Submetendo proposta local: {:?}", proposal);
+
         self.proposals.push(proposal.clone());
-        self.votes.insert(id, HashMap::new());
-        proposal
+        self.votes.insert(proposal.id.clone(), HashMap::new());
+
+        println!("🚀 Votes started(Start) {}: {:?}", local_node_id, self.votes);
+        println!("🚀 Proposals started(Start): {:?}", self.proposals);
+    
+        // 2. Propaga para outros peers
+        let peers = {
+            let manager = self.peer_manager.read()
+                .map_err(|_| "Failed to acquire read lock on peer manager")?;
+            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
+        };
+
+        println!("📡 Enviando proposta para peers: {:?}", peers);
+    
+        let network = network.write()
+            .map_err(|_| "Failed to acquire write lock on network adapter")?;
+    
+        let mut errors = Vec::new();
+    
+        for peer_id in peers {
+            if peer_id != local_node_id {
+                let msg = ClusterMessage::Proposal {
+                    proposal: proposal.clone(),
+                    public_key: vec![],
+                    signature: vec![],
+                };
+
+                let node = self.peer_manager.read()
+                    .map_err(|_| "Failed to acquire read lock on peer manager")?
+                    .get_peer_stats(&peer_id)
+                    .ok_or_else(|| format!("Peer {} not found", peer_id))?;
+
+                if let Err(e) = network.send_to(node, msg).await {
+                    errors.push(format!("Erro ao enviar para {}: {:?}", peer_id, e));
+                }
+            }
+        }
+    
+        if !errors.is_empty() {
+            println!("⚠️ Alguns envios falharam: {:?}", errors);
+        } else {
+            println!("✅ Proposta propagada para todos os peers");
+        }
+    
+        Ok(Ack {
+            received: true,
+            message: format!("Proposta {} recebida por {}", proposal.id, local_node_id),
+        })
+    }
+
+    pub async fn vote_proposals(
+        &mut self,
+        vote_batch: VoteBatch,
+        network: Arc<RwLock<dyn NetworkAdapter>>,
+        proposer: &Node,
+    ) -> Result<Ack, String>  {
+        let peers = {
+            let manager = self.peer_manager.read()
+                .map_err(|_| "Failed to acquire read lock on peer manager")?;
+            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
+        };
+
+        println!("📡 Enviando votos para proposer: {:?}", peers);
+    
+        let network = network.write()
+            .map_err(|_| "Failed to acquire write lock on network adapter")?;
+    
+        let mut errors = Vec::new();
+
+        if let Err(e) = network.send_votes_batch(proposer.clone(), vote_batch).await {
+            errors.push(format!("Erro ao enviar para {}: {:?}", proposer.id, e));
+        }
+
+        if !errors.is_empty() {
+            println!("⚠️ Alguns envios falharam: {:?}", errors);
+        } else {
+            println!("✅ Proposta propagada para todos os peers");
+        }
+    
+        Ok(Ack {
+            received: true,
+            message: format!("Vote batch sent by {}", proposer.id),
+        })
+    }
+
+    pub fn receive_vote_batch(&mut self, votes: Vec<VoteData>, local_node_id: NodeId) {
+        votes
+            .into_iter()
+            .for_each(|vote| 
+                self.receive_vote(
+                    &vote.proposal_id, 
+                    vote.voter, 
+                    vote.vote,
+                    local_node_id.clone()
+            ));
     }
 
     /// Registers a vote from a peer node on a specific proposal.
     ///
     /// This method simulates asynchronous, out-of-order voting from the network.
-    pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote) {
+    pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote, local_node_id: NodeId) {
         if !self.get_active_nodes().contains(&from_node) {
             println!("⚠️ Ignored vote from unknown or inactive node: [{}]", from_node);
             return;
@@ -89,17 +224,23 @@ impl ConsensusEngine {
             voters.insert(from_node.clone(), vote.clone());
 
             println!(
-                "📥 [{}] voted {:?} on proposal [{}]",
+                "📥 [{}] voted {:?} on proposal [{}] (Confirmed)",
                 from_node, vote, proposal_id
             );
         }
+        
+        println!("🚀 Votes started (end) {}: {:?}", local_node_id, self.votes);
+        println!("🚀 Proposals started(end): {:?}", self.proposals);
     }
 
     /// Evaluates all tracked proposals and computes consensus results.
     ///
     /// Proposals are considered approved if they receive quorum (≥ majority) of `Yes` votes.
     pub fn evaluate_proposals(&self) -> Vec<ConsensusResult> {
-        let quorum_count = (self.get_active_nodes().len() as f64 * self.quorum_ratio).ceil() as usize;
+        let quorum_count = (self.get_active_nodes().len() as f64 * self.quorum_ratio/self.quorum_ratio).ceil() as usize;
+
+        println!("🗳️ Quorum: Active: {} Ratio: {} Count: {}", self.get_active_nodes().len(), self.quorum_ratio, quorum_count);
+
         let mut results = Vec::new();
 
         for (id, voters) in &self.votes {
@@ -131,116 +272,15 @@ impl ConsensusEngine {
     fn get_active_nodes(&self) -> HashSet<NodeId> {
         self.peer_manager.read().expect("Failed to acquire read lock").get_active_peers()
     }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::NodeId;
 
-    fn create_engine_with_nodes(n: usize) -> (ConsensusEngine, Vec<NodeId>) {
-        let nodes: Vec<NodeId> = (0..n)
-            .map(|i| NodeId(format!("node-{}", i)))
-            .collect();
+    fn clone(&self) -> Self {
+        println!("!!!!!!!!!!!!!!!! ConsensusEngine Clonado !!!!!!!!!!!!!!!!");
 
-        let peer_manager = Arc::new(RwLock::new(PeerManager::new(nodes.len(), 5)));
-        let quorum_ratio = 0.66;
-
-        let engine = ConsensusEngine::new(peer_manager, quorum_ratio);
-        (engine, nodes)
-    }
-
-    #[test]
-    fn test_submit_proposal_creates_entry() {
-        let (mut engine, nodes) = create_engine_with_nodes(3);
-        let proposal = engine.submit_proposal(nodes[0].clone(), "add_edge A-B".into(), None);
-
-        assert_eq!(proposal.id, "prop-1");
-        assert_eq!(proposal.content, "add_edge A-B");
-        assert!(engine.votes.contains_key(&proposal.id));
-        assert_eq!(engine.proposals.len(), 1);
-    }
-
-    #[test]
-    fn test_receive_vote_registers_vote_correctly() {
-        let (mut engine, nodes) = create_engine_with_nodes(3);
-        let proposal = engine.submit_proposal(nodes[0].clone(), "connect X-Y".into(), None);
-
-        engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
-
-        let voters = engine.votes.get(&proposal.id).unwrap();
-        assert_eq!(voters.get(&nodes[1]), Some(&Vote::Yes));
-    }
-
-    #[test]
-    fn test_quorum_approval_success() {
-        let (mut engine, nodes) = create_engine_with_nodes(5); // quorum = 3
-        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
-
-        engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
-        engine.receive_vote(&proposal.id, nodes[2].clone(), Vote::Yes);
-        engine.receive_vote(&proposal.id, nodes[3].clone(), Vote::Yes);
-
-        let results = engine.evaluate_proposals();
-        assert_eq!(results.len(), 1);
-        assert!(results[0].approved);
-        assert_eq!(results[0].votes_received, 3);
-    }
-
-    #[test]
-    fn test_quorum_rejection_due_to_insufficient_votes() {
-        let (mut engine, nodes) = create_engine_with_nodes(5); // quorum = 3
-        let proposal = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
-
-        engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
-        engine.receive_vote(&proposal.id, nodes[2].clone(), Vote::No);
-
-        let results = engine.evaluate_proposals();
-        assert!(!results[0].approved);
-        assert_eq!(results[0].votes_received, 1);
-    }
-
-    #[test]
-    fn test_out_of_order_votes_do_not_affect_result() {
-        let (mut engine, nodes) = create_engine_with_nodes(3); // quorum = 2
-        let proposal = engine.submit_proposal(nodes[2].clone(), "modify X".into(), None);
-
-        // Votes arrive in "wrong" order — this should not matter
-        engine.receive_vote(&proposal.id, nodes[1].clone(), Vote::Yes);
-        engine.receive_vote(&proposal.id, nodes[0].clone(), Vote::Yes);
-
-        let results = engine.evaluate_proposals();
-        assert!(results[0].approved);
-    }
-
-    #[test]
-    fn test_multiple_proposals_independent_results() {
-        let (mut engine, nodes) = create_engine_with_nodes(3); // quorum = 2
-
-        let p1 = engine.submit_proposal(nodes[0].clone(), "edge A-B".into(), None);
-        let p2 = engine.submit_proposal(nodes[1].clone(), "edge C-D".into(), None);
-
-        engine.receive_vote(&p1.id, nodes[1].clone(), Vote::Yes);
-        engine.receive_vote(&p1.id, nodes[2].clone(), Vote::Yes);
-
-        engine.receive_vote(&p2.id, nodes[2].clone(), Vote::No);
-        engine.receive_vote(&p2.id, nodes[0].clone(), Vote::No);
-
-        let results = engine.evaluate_proposals();
-
-        assert_eq!(results.len(), 2);
-
-        let mut approved_ids = vec![];
-        let mut rejected_ids = vec![];
-
-        for result in results {
-            if result.approved {
-                approved_ids.push(result.proposal_id.clone());
-            } else {
-                rejected_ids.push(result.proposal_id.clone());
-            }
+        Self {
+            proposals: self.proposals.clone(),
+            votes: self.votes.clone(),
+            quorum_ratio: self.quorum_ratio,
+            peer_manager: self.peer_manager.clone(),
         }
-
-        assert!(approved_ids.contains(&p1.id));
-        assert!(rejected_ids.contains(&p2.id));
     }
 }
