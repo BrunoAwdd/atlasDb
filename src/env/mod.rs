@@ -181,87 +181,11 @@ impl AtlasEnv {
         config.save_to_file(path)
     }
 
+    pub fn get_proposals(&self) -> Vec<Proposal> {
+        let proposals = self.engine.proposals.clone();
 
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::Rng;
-    use crate::{
-        cluster::node::Node,
-        env::consensus::Vote
-    };
-
-    /* 
-
-    /// Simulation of a voting process in the Atlas environment.
-    fn simulate_voting(env: &mut AtlasEnv, proposal: &Proposal) {
-        for node in env.cluster.nodes.values() {
-            let vote = node_decide_vote(&node, proposal);
-            env.storage
-                .log_vote(&proposal.id, node.id.clone(), vote.clone());
-            env.engine
-                .receive_vote(&proposal.id, node.id.clone(), vote);
-        }
+        proposals
     }
-
-    /// Simulated decision logic for a node's vote on a proposal.
-    ///
-    /// 90% chance to vote YES, 10% NO — mimicking stochastic consensus dynamics.
-    fn node_decide_vote(_node: &Node, _proposal: &Proposal) -> Vote {
-        if rand::thread_rng().gen_bool(0.9) {
-            Vote::Yes
-        } else {
-            Vote::No
-        }
-    }
-
-
-    
-    #[test]
-    fn test_simple_proposal_flow() {
-        // 🧪 Cria um ambiente com 5 nós
-        let mut env = AtlasEnv::new(&["nó-A", "nó-B", "nó-C", "nó-D", "nó-E"]);
-
-        // ➕ Adiciona vértices básicos
-        env.graph.add_vertex(Vertex::new("A", "Person"));
-        env.graph.add_vertex(Vertex::new("B", "Place"));
-
-        // 📤 Submete proposta
-        let json = json!({
-            "action": "add_edge",
-            "from": "A",
-            "to": "B",
-            "label": "visits"
-        });
-
-        let proposal = env.submit_json_proposal("nó-A", json);
-
-        // 🗳️ Votação simulada
-        simulate_voting(&mut env, &proposal);
-
-        // 📊 Avaliação
-        let results = env.evaluate_all();
-        assert_eq!(results.len(), 1);
-
-        let (_, result) = &results[0];
-        assert_eq!(result.proposal_id, proposal.id);
-
-        // ✅ Aplicação se aprovada
-        env.apply_if_approved(&proposal, result);
-
-        // 📌 Verificação de resultado
-        let edge_found = env
-            .graph
-            .edges
-            .iter()
-            .any(|e| e.from == "A" && e.to == "B" && e.label == "visits");
-
-        if result.approved {
-            assert!(edge_found, "Edge should be added if approved.");
-        } else {
-            assert!(!edge_found, "Edge should not be added if rejected.");
         }
     }*/
 }
