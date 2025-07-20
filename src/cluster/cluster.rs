@@ -1,5 +1,4 @@
 use std::{
-    net::{SocketAddr, UdpSocket}, 
     sync::{Arc, RwLock}, 
     time::{SystemTime, UNIX_EPOCH}
 };
@@ -8,21 +7,35 @@ use tokio::sync::oneshot;
 
 use crate::{
     cluster_proto::{
-        cluster_network_server::ClusterNetworkServer, HeartbeatMessage, ProposalMessage
+        HeartbeatMessage, 
+        ProposalBatch, 
+        ProposalMessage, 
+        VoteBatch, 
+        VoteMessage
     }, 
-    env::{proposal::Proposal, AtlasEnv}, 
-    network::adapter::{ClusterMessage, NetworkAdapter}, 
-    peer_manager::{PeerCommand, PeerManager}, 
-    utils::NodeId,
+    env::{
+        proposal::Proposal, 
+        AtlasEnv
+    }, 
+    network::adapter::{
+        ClusterMessage, 
+        NetworkAdapter, 
+        VoteData
+    }, 
+    peer_manager::{
+        PeerCommand, 
+        PeerManager
+    }, 
+    utils::NodeId
 };
-use super::{node::Node, service::ClusterService};
+use super::node::Node;
 
 use crate::cluster_proto::Ack;
 
 // TODO: Implement timeouts for heartbeats
 // TODO: Implement retry logic for fail
 // TODO: Implement periodic health checks
-// TODO make new tests
+// TODO: make new tests
 // TODO: Implemente new metrics
 
 /// Simulates a distributed cluster composed of multiple nodes.
@@ -31,53 +44,71 @@ use crate::cluster_proto::Ack;
 /// simulating inter-node communication, and running cyclical simulations.
 pub struct Cluster {
     /// The full set of nodes currently part of the cluster.
-    pub local_env: AtlasEnv,
+    pub local_env: Arc<RwLock<AtlasEnv>>,
     pub network: Arc<RwLock<dyn NetworkAdapter>>,
     pub local_node: Node,
     pub peer_manager: Arc<RwLock<PeerManager>>,
-    shutdown_sender: Option<oneshot::Sender<()>>,
+    pub shutdown_sender: Option<oneshot::Sender<()>>,
 }
 
 impl Cluster {
     /// Initializes a new, empty cluster.
     pub fn new(
-        env: AtlasEnv, 
+        env: Arc<RwLock<AtlasEnv>>, 
         network: Arc<RwLock<dyn NetworkAdapter>>,
         node_id: NodeId,
     ) -> Self {
         let addr = network.read()
             .expect("Failed to acquire read lock")
             .get_address();
+
+        let peer_manager = Arc::clone(&env.read().expect("Failed to acquire read lock").peer_manager);
         
         Cluster {
-            local_env: env.clone(),
+            local_env: env,
             network,
             local_node: Self::set_local_node(node_id, &addr),
-            peer_manager: Arc::clone(&env.peer_manager),
+            peer_manager,
             shutdown_sender: None,
         }
     }
 
-    /// Starts a gRPC server for this cluster node
-    pub async fn serve_grpc(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let service = ClusterService::new(Arc::new(tokio::sync::RwLock::new(self.clone())));
-        let addr = self.local_node.address.parse()?;
+    pub async fn vote_proposals(&mut self, votes: ClusterMessage, proposer_id: NodeId) -> Result<ClusterMessage, String> {
+        let votes_batch: VoteBatch = match votes.clone() {
+            ClusterMessage::VoteBatch { votes } => {
+                let proto_votes: Vec<VoteMessage> = votes
+                    .into_iter()
+                    .map(|v| v.into_proto())
+                    .collect();
+        
+                Ok::<VoteBatch, String>(VoteBatch { votes: proto_votes }) // <- aqui está o erro
+            }
+            _ => Err("ClusterMessage não é um VoteBatch.".into()),
+        }?; // <- operador ? depende da tipagem
 
-        let (tx, rx) = oneshot::channel();
-        self.shutdown_sender = Some(tx); // salva o controle
+        let proposer = self.peer_manager
+            .read()
+            .map_err(|_| "Failed to lock peer manager")?
+            .get_peer_stats(&proposer_id)
+            .ok_or_else(|| format!("Proposer node {} not found", proposer_id))?;
 
-        println!("🚀 Iniciando servidor gRPC em: {}", addr);
+        println!("🚀 Votes sent (BG): {:?}", self.local_node.id);
+    
+        self.local_env
+            .write()
+            .map_err(|_| "Failed to acquire write lock on local env")?
+            .engine
+            .vote_proposals(
+                votes_batch, 
+            Arc::clone(&self.network), 
+                &proposer
+            ) 
+            .await
+            .map_err(|e| format!("Erro ao votar propostas: {}", e))?;
 
-        // spawn o servidor em background
-        tonic::transport::Server::builder()
-            .add_service(ClusterNetworkServer::new(service))
-            .serve_with_shutdown(addr, async {
-                rx.await.ok();
-            })
-            .await?;
-
-
-        Ok(())
+        println!("🚀 Votes sent (ED): {:?}", self.local_node.id);
+    
+        Ok(votes)
     }
 
     pub fn shutdown_grpc(&mut self) {
@@ -126,84 +157,34 @@ impl Cluster {
         Ok(())
     }
 
-    /// Sends a heartbeat message to a specific peer
-    pub async fn send_heartbeat(&self, to: NodeId, msg: String) -> Result<(), String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "Failed to get system time")?
-            .as_secs();
-            
-        println!("⏱️ Enviando heartbeat para [{}] em [{}] (cluster)", to, timestamp);
+    pub async fn send_heartbeat(&self, to: NodeId, msg: String) -> Result< Ack, String> {
+        let ack = self
+            .local_env
+            .write()
+            .map_err(|_| "Failed to acquire write lock on local env")?
+            .send_heartbeat(self.local_node.clone(), &to)
+            .await
+            .map_err(|e| format!("Failed to send heartbeat: {}", e))?;
 
-        // Get peer information with proper error handling
-        let peer = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
-            manager.get_peer_stats(&to)
-                .ok_or_else(|| format!("Peer {} not found", to.0))?
-        };
-
-        let heartbeat_msg = format!("{}: heartbeat from {}", peer.address, self.local_node.id);
-
-        // Send heartbeat with error handling
-        let network = self.network.write()
-            .map_err(|_| "Failed to acquire write lock on network adapter")?;
-            
-        network.send_heartbeat(
-            self.local_node.id.clone(), 
-            peer.clone(), 
-            heartbeat_msg.clone()
-        ).await
-        .map_err(|e| format!("Network error: {:?}", e))?;
-
-        println!("✅ Heartbeat enviado com sucesso para {}", to);
-        Ok(())
+        Ok(ack)
     }
 
     /// Sends a heartbeat message to a specific peer
     pub async fn submit_proposal(&self, proposal: Proposal) -> Result<Ack, String> {
-        println!("🚀 Submetendo proposta local: {:?}", proposal);
-
-        // 1. Processa localmente (pode ser handle_proposal ou lógica própria)
-        let ack_local = self.handle_proposal(proposal.clone().into_proto()).await;
-
-        // 2. Propaga para outros peers
-        let peers = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
-            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
-        };
-
-        let network = self.network.write()
-            .map_err(|_| "Failed to acquire write lock on network adapter")?;
-
-        let mut errors = Vec::new();
-
-        for peer_id in peers {
-            if peer_id != self.local_node.id {
-                // Aqui você pode usar send_to ou broadcast, dependendo da sua arquitetura
-                let msg = ClusterMessage::Proposal {
-                    proposal: proposal.clone(),
-                    public_key: vec![],
-                    signature: vec![],
-                };
-                if let Err(e) = network.send_to(peer_id.clone(), msg).await {
-                    errors.push(format!("Erro ao enviar para {}: {:?}", peer_id, e));
-                }
-            }
-        }
-
-        if !errors.is_empty() {
-            println!("⚠️ Alguns envios falharam: {:?}", errors);
-        } else {
-            println!("✅ Proposta propagada para todos os peers");
-        }
-
-        Ok(ack_local)
+        println!("🚀 Submetendo proposta: {:?}", proposal);
+        let ack = self
+            .local_env
+            .write()
+            .map_err(|_| "Failed to acquire write lock on local env")?
+            .submit_proposal(&proposal, self.local_node.id.clone())
+            .await
+            .map_err(|e| format!("Failed to submit proposal: {}", e))?;
+    
+        Ok(ack)
     }
-
+    
     /// Handles incoming heartbeat messages
-    pub async fn handle_heartbeat(&self, msg: HeartbeatMessage) -> Ack {
+    pub fn handle_heartbeat(&self, msg: HeartbeatMessage) -> Ack {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -223,16 +204,46 @@ impl Cluster {
         }
     }
 
-    pub async fn handle_proposal(&self, msg: ProposalMessage) -> Ack {
+    pub fn handle_vote_batch(&mut self, msg: VoteBatch) -> Result<Ack, String> {
+        let votes = msg.votes
+            .into_iter()
+            .map(|v| VoteData::from_proto(v))
+            .collect();
+
+        println!("?🚀? I am: {:?}", self.local_node);
+
+        self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.receive_vote_batch(votes, self.local_node.id.clone());
+
+        Ok(Ack {
+            received: true,
+            message: format!("Vote batch received by {}", self.local_node.id),
+        })
+    }
+
+    pub fn handle_proposal_batch(&mut self, msg: ProposalBatch) -> Result<Ack, String>  {
+        let proposals: Vec<Proposal> = msg.proposals.into_iter().map(|p| Proposal::from_proto(p)).collect();
+
+        for proposal in proposals {
+            self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.add_proposal(proposal);
+        }
+
+        Ok(Ack {
+            received: true,
+            message: format!("Proposal batch received by {}", self.local_node.id),
+        })
+    }
+
+    pub fn handle_proposal(&mut self, msg: ProposalMessage) -> Result<Ack, String>  {
         let proposal = Proposal::from_proto(msg);
 
-        // Aqui você pode adicionar lógica de validação, armazenamento, broadcast, etc.
-        println!("📨 Proposta recebida: {:?}", proposal);
+        println!("🚀 Proposta recebida: {:?}, node_id: {}", proposal, self.local_node.id);
 
-        Ack {
+        self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.add_proposal(proposal.clone());
+
+        Ok(Ack {
             received: true,
             message: format!("Proposta {} recebida por {}", proposal.id, self.local_node.id),
-        }
+        })
     }
 
     /// Gets the number of active peers in the cluster
@@ -250,173 +261,13 @@ impl Cluster {
     }
 
     pub fn clone(&self) -> Self {
+        println!("!!!!!!!!!!!!!!!! Cluster Clonado !!!!!!!!!!!!!!!!");
         Cluster {
             local_env: self.local_env.clone(),
             network: Arc::clone(&self.network),
             local_node: self.local_node.clone(),
             peer_manager: Arc::clone(&self.peer_manager),
-            shutdown_sender: None, // não clonamos o sender!
+            shutdown_sender: None,
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex, RwLock};
-    use crate::{
-        cluster::node::Node, env::AtlasEnv, network::{
-            adapter::{ClusterMessage, NetworkAdapter},
-            error::NetworkError
-        }, peer_manager::{PeerCommand, PeerManager}, utils::NodeId
-    };
-    use super::Cluster;
-    
-    use async_trait::async_trait;
-    /*
-    #[derive(Default, Clone)]
-    pub struct MockNetworkAdapter {
-        pub messages_sent: Arc<Mutex<Vec<(Option<NodeId>, ClusterMessage)>>>,
-        pub heartbeats_sent: Arc<Mutex<Vec<(NodeId, NodeId, String)>>>,
-        pub handler: Arc<Mutex<Option<Arc<dyn Fn(ClusterMessage) + Send + Sync>>>>,
-    }
-
-    impl MockNetworkAdapter {
-        fn new() -> Self {
-            MockNetworkAdapter::default()
-        }
-    }
-
-    #[async_trait]
-    impl NetworkAdapter for MockNetworkAdapter {
-        async fn broadcast(&self, msg: ClusterMessage) -> Result<(), NetworkError> {
-            self.messages_sent.lock().unwrap().push((None, msg.clone()));
-            if let Some(h) = self.handler.lock().unwrap().clone() {
-                h(msg);
-            }
-            Ok(())
-        }
-    
-        async fn send_to(&self, target: NodeId, msg: ClusterMessage) -> Result<(), NetworkError> {
-            self.messages_sent.lock().unwrap().push((Some(target.clone()), msg.clone()));
-            if let Some(h) = self.handler.lock().unwrap().clone() {
-                h(msg);
-            }
-            Ok(())
-        }
-    
-        fn set_message_handler(&mut self, handler: Arc<dyn Fn(ClusterMessage) + Send + Sync>) {
-            *self.handler.lock().unwrap() = Some(handler);
-        }
-    
-        fn send_heartbeat(&self, sender: NodeId, receiver: NodeId, msg: String) -> ClusterMessage {
-            self.heartbeats_sent.lock().unwrap().push((sender.clone(), receiver.clone(), msg.clone()));
-            ClusterMessage::Vote {
-                proposal_id: "heartbeat".to_string(),
-                vote: crate::env::consensus::Vote::Yes, // placeholder
-                voter: sender,
-                public_key: vec![],
-                signature: vec![],
-            }
-        }
-    }
-    
-    #[test]
-    fn test_cluster_initialization_with_nodes() {
-        let mock = Arc::new(RwLock::new(MockNetworkAdapter::new()));
-        let network = mock as Arc<RwLock<dyn NetworkAdapter>>;
-        let peer_manager = Arc::new(RwLock::new(PeerManager::new(2, 2)));
-
-        let env = AtlasEnv::new(
-            Arc::clone(&network),
-            Arc::new(|_| {}),
-            Arc::clone(&peer_manager)
-        );
-    
-        let mut cluster = Cluster::new(env, network, peer_manager, NodeId("node-X".into()));
-        cluster.add_node(NodeId("node-A".into()), Node {
-            reliability_score: 1.0,
-            latency: Some(10),
-            last_seen: 0,
-            address: "127.0.0.1".to_string(),
-            id: NodeId("node-A".into()),
-        });
-        cluster.add_node(NodeId("node-B".into()), Node {
-            reliability_score: 0.9,
-            latency: Some(20),
-            last_seen: 0,
-            address: "127.0.0.1".to_string(),
-            id: NodeId("node-B".into()),
-        });
-
-        let nodes: Vec<NodeId> = cluster.local_env.peer_manager.read().unwrap().get_active_peers().iter().cloned().collect();
-    
-        assert_eq!(nodes.len(), 2);
-        assert!(nodes.contains(&NodeId("node-A".into())));
-    }
-    
-    #[test]
-    fn test_heartbeat_broadcast_sends_messages() {
-        let mock = Arc::new(RwLock::new(MockNetworkAdapter::new()));
-        let network = mock.clone() as Arc<RwLock<dyn NetworkAdapter>>;
-        let peer_manager = Arc::new(RwLock::new(PeerManager::new(2, 2)));
-        let env = AtlasEnv::new(
-            Arc::clone(&network),
-            Arc::new(|_| {}),
-            Arc::clone(&peer_manager)
-        );
-    
-        let mut cluster = Cluster::new(env, network.clone(), peer_manager, NodeId("node-X".into()));
-        cluster.add_node(NodeId("peer-1".into()), Node {
-            reliability_score: 1.0,
-            latency: Some(10),
-            last_seen: 0,
-            address: "127.0.0.1".to_string(),
-            id: NodeId("peer-1".into()),
-        });
-        cluster.add_node(NodeId("peer-2".into()), Node {
-            reliability_score: 0.9,
-            latency: Some(20),
-            last_seen: 0,
-            address: "127.0.0.1".to_string(),
-            id: NodeId("peer-2".into()),
-        });
-    
-        cluster.broadcast_heartbeats();
-
-        let guard = mock.read().expect("Failed to acquire read lock");
-        let sent = guard.heartbeats_sent.lock().unwrap();
-
-        assert!(!sent.is_empty());
-        assert!(sent.iter().any(|(_, to, msg)| to.0 == "peer-1" && msg.contains("heartbeat")));
-    }
-    
-    #[test]
-    fn test_peer_manager_tracks_peers() {
-        let mock = Arc::new(RwLock::new(MockNetworkAdapter::new()));
-        let network = mock as Arc<RwLock<dyn NetworkAdapter>>;
-        let peer_manager = Arc::new(RwLock::new(PeerManager::new(2, 2)));
-        let env = AtlasEnv::new(
-            Arc::clone(&network),
-            Arc::new(|_| {}),
-            Arc::clone(&peer_manager)
-        );
-
-        let cluster = Cluster::new(env, network.clone(), peer_manager, NodeId("node-X".into()));
-
-        for i in 0..5 {
-            let id = NodeId(format!("peer-{}", i));
-            let stats = Node {
-                reliability_score: 1.0,
-                latency: Some(10),
-                last_seen: 0,
-                address: "127.0.0.1".to_string(),
-                id: id.clone(),
-            };
-            cluster.peer_manager.write().expect("Failed to acquire write lock").handle_command(PeerCommand::Register(id.clone(), stats));
-        }
-
-        assert_eq!(cluster.peer_manager.read().expect("Failed to acquire read lock").get_active_peers().len(), 5);
-    }
-
-    */
 }
