@@ -66,13 +66,6 @@ impl AtlasEnv {
         env
     }
 
-    pub fn submit_json_proposal(&mut self, proposer: NodeId, json: Value) -> Proposal {
-        let content = json.to_string();
-        let proposal = self.engine.submit_proposal(proposer, content, None);
-        self.storage.log_proposal(proposal.clone());
-        proposal
-    }
-
     pub fn evaluate_all(&mut self) -> Vec<(String, ConsensusResult)> {
         self.engine
             .evaluate_proposals()
@@ -186,6 +179,4 @@ impl AtlasEnv {
 
         proposals
     }
-        }
-    }*/
 }
