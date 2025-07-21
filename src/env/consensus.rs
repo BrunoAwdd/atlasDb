@@ -272,15 +272,4 @@ impl ConsensusEngine {
     fn get_active_nodes(&self) -> HashSet<NodeId> {
         self.peer_manager.read().expect("Failed to acquire read lock").get_active_peers()
     }
-
-    fn clone(&self) -> Self {
-        println!("!!!!!!!!!!!!!!!! ConsensusEngine Clonado !!!!!!!!!!!!!!!!");
-
-        Self {
-            proposals: self.proposals.clone(),
-            votes: self.votes.clone(),
-            quorum_ratio: self.quorum_ratio,
-            peer_manager: self.peer_manager.clone(),
-        }
-    }
 }
