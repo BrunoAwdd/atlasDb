@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use crate::{
     cluster::{
         builder::ClusterBuilder, 
-        cluster::Cluster
+        core::Cluster
     }, 
     env::{
         config::EnvConfig, 

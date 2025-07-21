@@ -13,12 +13,12 @@ use crate::cluster_proto::{
 };
 
 pub struct ClusterService {
-    cluster: Arc<tokio::sync::RwLock<crate::cluster::cluster::Cluster>>,
+    cluster: Arc<tokio::sync::RwLock<crate::cluster::core::Cluster>>,
 }
 
 impl ClusterService {
     pub fn new(
-        cluster: Arc<tokio::sync::RwLock<crate::cluster::cluster::Cluster>>
+        cluster: Arc<tokio::sync::RwLock<crate::cluster::core::Cluster>>
     ) -> Self {
         ClusterService { cluster }
     }

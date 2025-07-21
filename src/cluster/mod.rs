@@ -1,4 +1,9 @@
 pub mod builder;
-pub mod cluster;
+pub mod core;
+pub mod heartbeat;
 pub mod node;
+pub mod peers;
+pub mod proposals;
 pub mod service;
+pub mod shutdown;
+pub mod voting;

@@ -1,4 +1,5 @@
 // lib.rs
+pub mod auth;
 pub mod builder;
 pub mod cluster;
 pub mod cluster_proto {
@@ -11,7 +12,7 @@ pub mod peer_manager;
 pub mod utils;
 
 pub use cluster::{
-    cluster::Cluster, 
+    core::Cluster, 
     node::Node
 };
 pub use env::{
