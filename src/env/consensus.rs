@@ -185,6 +185,69 @@ impl ConsensusEngine {
         })
     }
 
+    pub async fn submit_proposal_batch(
+        &mut self,
+        proposal_batch: ProposalBatch,
+        network: Arc<RwLock<dyn NetworkAdapter>>,
+        proposer: &Node,
+    ) -> Result<Ack, String> {
+        let peers = {
+            let manager = self.peer_manager.read()
+                .map_err(|_| "Failed to acquire read lock on peer manager")?;
+            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
+        };
+
+        proposal_batch.proposals.iter().for_each(|p| {
+            self.proposals.push(Proposal::from_proto(p.clone()));
+            self.votes.insert(p.id.clone(), HashMap::new());
+        });
+
+    
+        let mut errors = Vec::new();
+    
+        let mut network = network.write()
+            .map_err(|_| "Failed to acquire write lock on network adapter")?;
+    
+        // Envia para o próprio nó primeiro
+        //if let Err(e) = network.send_proposal_batch(proposer.clone(), proposal_batch.clone()).await {
+        //    errors.push(format!("Erro ao enviar para {}: {:?}", proposer.id, e));
+        //}
+    
+        // Envia para os peers
+        for peer_id in peers {
+            if peer_id == proposer.id {
+                continue; // ⚠️ não envie para si mesmo
+            }
+    
+            let peer = match self.peer_manager.read()
+                .map_err(|_| "Failed to acquire read lock on peer manager")?
+                .get_peer_stats(&peer_id)
+            {
+                Some(p) => p.clone(),
+                None => {
+                    errors.push(format!("Peer {} não encontrado", peer_id));
+                    continue;
+                }
+            };
+    
+            if let Err(e) = network.send_proposal_batch( peer, proposal_batch.clone()).await {
+                errors.push(format!("Erro ao enviar para {}: {:?}", peer_id, e));
+            }
+        }
+    
+        if !errors.is_empty() {
+            println!("⚠️ Alguns envios falharam: {:?}", errors);
+        } else {
+            println!("✅ Proposta propagada para todos os peers");
+        }
+    
+        Ok(Ack {
+            received: true,
+            message: format!("Proposal batch sent by {}", proposer.id),
+        })
+    }
+    
+
     pub async fn vote_proposals(
         &mut self,
         vote_batch: VoteBatch,
