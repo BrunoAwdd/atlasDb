@@ -9,13 +9,24 @@
 //! serving as a conceptual foundation rather than a production-grade implementation.
 
 use std::{
-    collections::{HashMap, HashSet}, 
+    collections::{
+        HashMap, 
+        HashSet
+    }, 
+    fmt, 
     sync::{Arc, RwLock}
 };
 use serde::{Serialize, Deserialize};
 use crate::{
-    cluster_proto::{Ack, VoteBatch}, 
-    network::adapter::{ClusterMessage, VoteData}, 
+    cluster_proto::{
+        Ack, 
+        ProposalBatch, 
+        VoteBatch}
+        , 
+    network::adapter::{
+        ClusterMessage, 
+        VoteData
+    }, 
     NetworkAdapter, Node
 };
 
