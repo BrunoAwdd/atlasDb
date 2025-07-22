@@ -6,12 +6,14 @@ use std::{
 use crate::{
     cluster_proto::{
         cluster_network_client::ClusterNetworkClient, 
-        HeartbeatMessage, VoteBatch
+        HeartbeatMessage, 
+        ProposalBatch, 
+        VoteBatch
     }, 
     network::{adapter::ClusterMessage, error::NetworkError}, 
-    Node
+    Node,
+    utils::NodeId
 };
-use crate::utils::NodeId;
 
 use super::adapter::NetworkAdapter;
 
