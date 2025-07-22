@@ -123,6 +123,8 @@ mod tests {
             proposer: node(proposer),
             content: content.to_string(),
             parent: None,
+            signature: vec![],
+            public_key: vec![],
         }
     }
 
