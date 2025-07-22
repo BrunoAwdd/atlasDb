@@ -65,6 +65,16 @@ impl std::convert::TryFrom<i32> for Vote {
         }
     }
 }
+impl fmt::Display for Vote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Vote::Yes => "Yes",
+            Vote::No => "No",
+            Vote::Abstain => "Abstain",
+        };
+        write!(f, "{}", s)
+    }
+}
 
 /// The result of consensus evaluation for a single proposal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
