@@ -26,7 +26,7 @@ impl Cluster {
             .map_err(|_| "Failed to lock peer manager")?
             .get_peer_stats(&proposer_id)
             .ok_or_else(|| format!("Proposer node {} not found", proposer_id))?;
-    
+        
         self.local_env
             .write()
             .map_err(|_| "Failed to acquire write lock on local env")?
