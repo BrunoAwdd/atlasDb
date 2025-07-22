@@ -52,9 +52,12 @@ impl Cluster {
             .map(|v| VoteData::from_proto(v))
             .collect();
 
-        println!("?🚀? I am: {:?}", self.local_node);
-
-        self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.receive_vote_batch(votes, self.local_node.id.clone());
+        self
+            .local_env
+            .write()
+            .map_err(|_| "Failed to acquire write lock on local env")?
+            .engine
+            .receive_vote_batch(votes, self.local_node.id.clone());
 
         Ok(Ack {
             received: true,
