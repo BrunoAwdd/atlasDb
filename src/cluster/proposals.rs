@@ -48,7 +48,12 @@ impl Cluster {
         let proposals: Vec<Proposal> = msg.proposals.into_iter().map(|p| Proposal::from_proto(p)).collect();
 
         for proposal in proposals {
-            self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.add_proposal(proposal);
+            self
+                .local_env
+                .write()
+                .map_err(|_| "Failed to acquire write lock on local env")?
+                .engine
+                .add_proposal(proposal);
         }
 
         Ok(Ack {
