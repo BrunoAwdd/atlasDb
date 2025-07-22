@@ -4,7 +4,11 @@ use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 
 use crate::{
-    cluster_proto::{VoteBatch, VoteMessage}, 
+    cluster_proto::{
+        ProposalBatch, 
+        VoteBatch, 
+        VoteMessage
+    }, 
     env::{
         consensus::Vote,
         proposal::Proposal
