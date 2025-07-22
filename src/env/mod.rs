@@ -87,38 +87,6 @@ impl AtlasEnv {
             .await
     }
 
-    pub async fn send_heartbeat(&self, node: crate::cluster::node::Node, to: &NodeId) -> Result<Ack, String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "Failed to get system time")?
-            .as_secs();
-
-        let peer = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
-            manager.get_peer_stats(&to)
-                .ok_or_else(|| format!("Peer {} not found", to.0))?
-        };
-
-        let heartbeat_msg = format!("{}: heartbeat from {}", peer.address, node.id);
-
-        // Send heartbeat with error handling
-        let network = self.network.write()
-            .map_err(|_| "Failed to acquire write lock on network adapter")?;
-            
-        network.send_heartbeat(
-            node.id.clone(), 
-            peer.clone(), 
-            heartbeat_msg.clone()
-        ).await
-        .map_err(|e| format!("Network error: {:?}", e))?;
-
-        Ok(Ack {
-            received: true,
-            message: format!("✅ Heartbeat enviado com sucesso para {}", to),
-        })
-    }
-
     pub fn apply_if_approved(&mut self, proposal: &Proposal, result: &ConsensusResult) {
         if result.approved {
             if let Ok(data) = serde_json::from_str::<Value>(&proposal.content) {
