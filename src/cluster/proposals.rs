@@ -24,6 +24,25 @@ impl Cluster {
     
         Ok(ack)
     }
+
+    pub async fn submit_proposal_batch(&self, proposals: Vec<Proposal>) -> Result<Ack, String> {
+        let proposal_batch = ProposalBatch { proposals: proposals.into_iter().map(|p| p.into_proto()).collect() };
+
+        let ack = self
+            .local_env
+            .write()
+            .map_err(|_| "Failed to acquire write lock on local env")?
+            .engine
+            .submit_proposal_batch(
+                proposal_batch, 
+                Arc::clone(&self.network),
+                &self.local_node
+            )
+            .await
+            .map_err(|e| format!("Failed to submit proposal batch: {}", e))?;
+    
+        Ok(ack)
+    }
     
     pub fn handle_proposal_batch(&mut self, msg: ProposalBatch) -> Result<Ack, String>  {
         let proposals: Vec<Proposal> = msg.proposals.into_iter().map(|p| Proposal::from_proto(p)).collect();
