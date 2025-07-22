@@ -81,6 +81,7 @@ pub trait NetworkAdapter: Send + Sync + Debug {
     async fn broadcast(&self, msg: ClusterMessage) -> Result<(), NetworkError>;
     async fn send_to(&self, target: Node, msg: ClusterMessage) -> Result<ClusterMessage, NetworkError>;
     async fn send_votes_batch(&self, target: Node, votes_batch: VoteBatch) -> Result<(), NetworkError>;
+    async fn send_proposal_batch(&self, target: Node, proposals: ProposalBatch) -> Result<(), NetworkError>;
     fn set_message_handler(&mut self, handler: Arc<dyn Fn(ClusterMessage) + Send + Sync>);
     async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msg: String) -> Result<ClusterMessage, NetworkError>;
 }
