@@ -26,8 +26,6 @@ impl Cluster {
             .map_err(|_| "Failed to lock peer manager")?
             .get_peer_stats(&proposer_id)
             .ok_or_else(|| format!("Proposer node {} not found", proposer_id))?;
-
-        println!("🚀 Votes sent (BG): {:?}", self.local_node.id);
     
         self.local_env
             .write()
@@ -40,8 +38,6 @@ impl Cluster {
             ) 
             .await
             .map_err(|e| format!("Erro ao votar propostas: {}", e))?;
-
-        println!("🚀 Votes sent (ED): {:?}", self.local_node.id);
     
         Ok(votes)
     }
