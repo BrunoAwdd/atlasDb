@@ -117,8 +117,6 @@ impl ConsensusEngine {
     // Add Proposal
     pub fn add_proposal(&mut self, proposal: Proposal) -> () {
         self.proposals.push(proposal.clone());
-
-        println!("🚀 Proposta adicionada: {:?}", self.proposals);
     }
 
 
@@ -259,8 +257,6 @@ impl ConsensusEngine {
                 .map_err(|_| "Failed to acquire read lock on peer manager")?;
             manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
         };
-
-        println!("📡 Enviando votos para proposer: {:?}", peers);
     
         let network = network.write()
             .map_err(|_| "Failed to acquire write lock on network adapter")?;
@@ -313,8 +309,6 @@ impl ConsensusEngine {
             );
         }
         
-        println!("🚀 Votes started (end) {}: {:?}", local_node_id, self.votes);
-        println!("🚀 Proposals started(end): {:?}", self.proposals);
     }
 
     /// Evaluates all tracked proposals and computes consensus results.
