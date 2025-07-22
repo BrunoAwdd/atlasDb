@@ -17,7 +17,12 @@ pub struct Proposal {
     pub content: String,
 
     pub parent: Option<String>, // Optional parent proposal ID for versioning
+
+    pub signature: Vec<u8>,
+    pub public_key: Vec<u8>,
 }
+    
+
 
 impl Proposal {
     pub fn from_proto(msg: ProposalMessage) -> Self {
@@ -26,6 +31,8 @@ impl Proposal {
             proposer: NodeId(msg.proposer_id),
             content: msg.content,
             parent: if msg.parent_id.is_empty() { None } else { Some(msg.parent_id) },
+            signature: msg.signature.to_vec(),
+            public_key: msg.public_key.to_vec(),
         }
     }
 
@@ -35,8 +42,8 @@ impl Proposal {
             proposer_id: self.proposer.0.clone(),
             content: self.content.clone(),
             parent_id: self.parent.clone().unwrap_or_default(),
-            signature: vec![],
-            public_key: vec![],
+            signature: self.signature.clone().into(),
+            public_key: self.public_key.clone().into(),
         }
     }
 
