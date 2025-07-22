@@ -97,7 +97,7 @@ impl Cluster {
         Ok(())
     }
 
-       /// Handles incoming heartbeat messages
+    /// Handles incoming heartbeat messages
     pub fn handle_heartbeat(&self, msg: HeartbeatMessage) -> Ack {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -105,11 +105,15 @@ impl Cluster {
             .as_secs();
             
         println!("⏱️ Heartbeat recebido de [{}] em [{}]", msg.from, msg.timestamp);
+
+        let from = NodeId(msg.from);
         
         // Update peer's last seen timestamp
-        if let Ok(mut manager) = self.peer_manager.write() {
-            // Note: This would need a method to update last_seen in PeerManager
-            // manager.update_peer_last_seen(&msg.from, timestamp);
+        if let Ok(manager) = self.peer_manager.write() {
+            let peer = manager.get_peer_stats(&from);
+            if let Some(mut node) = peer {
+                node.update_last_seen(timestamp);
+            }
         }
         
         Ack {
