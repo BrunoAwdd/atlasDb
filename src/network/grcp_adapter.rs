@@ -57,6 +57,23 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         Ok(())
     }
 
+    async fn send_proposal_batch(&self, target: Node, proposals_batch: ProposalBatch) -> Result<(), NetworkError> {
+        println!("📡 Enviando propostas para [{}] via gRPC", target.id);
+        
+        let addr = format!("http://{}", target.address);
+        
+        let mut client = ClusterNetworkClient::connect(addr)
+            .await
+            .map_err(|e| NetworkError::ConnectionError(e.to_string()))?;
+        
+        client
+            .submit_proposal_batch(tonic::Request::new(proposals_batch))
+            .await
+            .map_err(|e| NetworkError::Send(e.to_string()))?;
+        
+        Ok(())
+    }
+
     async fn send_to(&self, target: Node, msg: ClusterMessage) -> Result<ClusterMessage, NetworkError> {
         println!("📡 Enviando mensagem para [{}] via gRPC", target.id);
     
