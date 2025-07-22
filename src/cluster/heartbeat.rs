@@ -84,7 +84,7 @@ impl Cluster {
 
         for peer_id in peers {
             if peer_id != sender_id {
-                if let Err(e) = self.send_heartbeat(peer_id.clone(), "broadcast".to_string()).await {
+                if let Err(e) = self.send_heartbeat(&peer_id.clone()).await {
                     errors.push(format!("Failed to send heartbeat to {}: {}", peer_id, e));
                 }
             }
