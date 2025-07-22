@@ -75,6 +75,8 @@ mod tests {
             proposer: NodeId("node-A".into()),
             content: "Connect A to B".to_string(),
             parent: None,
+            signature: vec![],
+            public_key: vec![],
         };
         proposals.push(proposal.clone());
 
