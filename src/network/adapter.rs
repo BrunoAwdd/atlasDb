@@ -67,6 +67,9 @@ pub enum ClusterMessage {
     },
     VoteBatch {
         votes: Vec<VoteData>,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
+
     },
     Heartbeat {
         sender: NodeId,
