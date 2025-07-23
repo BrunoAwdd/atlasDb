@@ -43,10 +43,14 @@ message VoteMessage {
 
 message VoteBatch {
   repeated VoteMessage votes = 1;
+  bytes signature = 2;
+  bytes public_key = 3;
 }
 
 message ProposalBatch {
   repeated ProposalMessage proposals = 1;
+  bytes signature = 2;
+  bytes public_key = 3;
 }
 
 // Tipos de voto
