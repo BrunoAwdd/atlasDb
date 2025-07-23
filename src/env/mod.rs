@@ -6,8 +6,7 @@ pub mod proposal;
 
 use std::{
     collections::HashSet,
-    sync::{Arc, RwLock}, 
-    time::{SystemTime, UNIX_EPOCH}
+    sync::{Arc, RwLock}
 };
 
 use serde_json::Value;
