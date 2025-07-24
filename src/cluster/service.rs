@@ -114,6 +114,8 @@ impl ClusterNetwork for ClusterService {
         // TODO: Implement this
         //let ack = self.cluster.read().await.handle_vote(request.into_inner()).await;
         //Ok(Response::new(ack))
+        let _req = request.into_inner();
+
         Ok( Response::new(Ack { received: true, message: "Not implemented".to_string() }))
     }
 }
