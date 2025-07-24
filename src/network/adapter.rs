@@ -22,8 +22,6 @@ pub struct VoteData {
     pub proposal_id: String,
     pub vote: Vote,
     pub voter: NodeId,
-    pub public_key: Vec<u8>,
-    pub signature: Vec<u8>,
 }
 
 impl VoteData {
@@ -32,8 +30,6 @@ impl VoteData {
             proposal_id: self.proposal_id,
             voter_id: self.voter.0,
             vote: self.vote as i32,
-            signature: self.signature,
-            public_key: self.public_key,
         }
     }
 
@@ -43,9 +39,7 @@ impl VoteData {
         VoteData {
             proposal_id: msg.proposal_id,
             voter: NodeId(msg.voter_id),
-            vote,
-            signature: msg.signature,
-            public_key: msg.public_key,
+            vote
         }
     }
 
@@ -62,8 +56,6 @@ pub enum ClusterMessage {
         proposal_id: String,
         vote: Vote,
         voter: NodeId,
-        public_key: Vec<u8>,
-        signature: Vec<u8>,
     },
     VoteBatch {
         votes: Vec<VoteData>,
