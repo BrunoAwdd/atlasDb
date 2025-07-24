@@ -21,7 +21,8 @@ pub fn init(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) {
 pub async fn start(
     network: Arc<RwLock<dyn NetworkAdapter>>, 
     path: Option<&str>, 
-    id: String
+    id: String,
+    auth: Arc<RwLock<dyn Authenticator>>
 ) -> Result<Arc<tokio::sync::RwLock<Cluster>>, Box<dyn std::error::Error>> {
     let env = build_env(Arc::clone(&network), path);
     let node_id = NodeId(id);
@@ -29,6 +30,7 @@ pub async fn start(
         .with_env(env)
         .with_network(Arc::clone(&network))
         .with_node_id(node_id)
+        .with_auth(auth)
         .start_with_grpc()
         .await
         .map_err(|e| e.to_string())?; 
