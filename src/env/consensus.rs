@@ -252,12 +252,6 @@ impl ConsensusEngine {
         network: Arc<RwLock<dyn NetworkAdapter>>,
         proposer: &Node,
     ) -> Result<Ack, String>  {
-        let peers = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
-            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
-        };
-    
         let network = network.write()
             .map_err(|_| "Failed to acquire write lock on network adapter")?;
     
