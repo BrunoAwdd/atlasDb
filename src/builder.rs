@@ -1,5 +1,6 @@
 use std::sync::{Arc, RwLock};
 use crate::{
+    auth::Authenticator, 
     cluster::{
         builder::ClusterBuilder, 
         core::Cluster
