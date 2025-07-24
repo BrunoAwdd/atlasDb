@@ -44,15 +44,22 @@ impl ClusterBuilder {
         self
     }
 
+    pub fn with_auth(mut self, auth: Arc<RwLock<dyn Authenticator>>) -> Self {
+        self.auth = Some(auth);
+        self
+    }
+
     pub fn build(self) -> Result<Cluster, String> {
         let env = self.env.ok_or("Missing env")?;
         let network = self.network.ok_or("Missing network")?;
         let node_id = self.node_id.ok_or("Missing node_id")?;
+        let auth = self.auth.ok_or("Missing auth")?;
 
         let cluster = Cluster::new(
             Arc::new(RwLock::new(env)), 
             Arc::clone(&network), 
-            node_id
+            node_id,
+            auth
         );
 
         Ok(cluster)
