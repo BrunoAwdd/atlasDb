@@ -10,13 +10,13 @@ use crate::{
 impl Cluster {
     pub async fn vote_proposals(&mut self, votes: ClusterMessage, proposer_id: NodeId) -> Result<ClusterMessage, String> {
         let votes_batch: VoteBatch = match votes.clone() {
-            ClusterMessage::VoteBatch { votes } => {
+            ClusterMessage::VoteBatch { votes, public_key, signature } => {
                 let proto_votes: Vec<VoteMessage> = votes
                     .into_iter()
                     .map(|v| v.into_proto())
                     .collect();
         
-                Ok::<VoteBatch, String>(VoteBatch { votes: proto_votes }) // <- aqui está o erro
+                Ok::<VoteBatch, String>(VoteBatch { votes: proto_votes, public_key, signature })
             }
             _ => Err("ClusterMessage não é um VoteBatch.".into()),
         }?; // <- operador ? depende da tipagem
