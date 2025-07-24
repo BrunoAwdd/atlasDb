@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::oneshot;
 
 use crate::{
+    auth::Authenticator, 
     cluster::service::ClusterService, 
     cluster_proto::cluster_network_server::ClusterNetworkServer, 
     env::AtlasEnv, 
@@ -14,6 +15,7 @@ use crate::{
 pub struct ClusterBuilder {
     env: Option<AtlasEnv>,
     network: Option<Arc<RwLock<dyn NetworkAdapter>>>,
+    auth: Option<Arc<RwLock<dyn Authenticator>>>,
     node_id: Option<NodeId>,
 }
 
@@ -23,6 +25,7 @@ impl ClusterBuilder {
             env: None,
             network: None,
             node_id: None,
+            auth: None,
         }
     }
 
