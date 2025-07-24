@@ -53,6 +53,14 @@ impl Cluster {
     pub fn handle_proposal_batch(&mut self, msg: ProposalBatch) -> Result<Ack, String>  {
         let proposals: Vec<Proposal> = msg.proposals.into_iter().map(|p| Proposal::from_proto(p)).collect();
 
+        let message: Vec<u8> = bincode::serialize(&proposals).map_err(|e| format!("Failed to serialize proposals: {}", e))?;
+
+        match self.auth.read().map_err(|_| "Failed to acquire read lock on auth")?.verify(message, msg.signature.clone()) {
+            Ok(true) => {}
+            Ok(false) => return Err("Proposals not authorized".into()),
+            Err(e) => return Err(format!("Failed to verify proposals: {}", e)),
+        }
+
         for proposal in proposals {
             self
                 .local_env
