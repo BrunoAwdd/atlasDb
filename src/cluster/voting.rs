@@ -53,7 +53,7 @@ impl Cluster {
             .write()
             .map_err(|_| "Failed to acquire write lock on local env")?
             .engine
-            .receive_vote_batch(votes, self.local_node.id.clone());
+            .receive_vote_batch(votes);
 
         Ok(Ack {
             received: true,
