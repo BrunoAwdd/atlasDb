@@ -203,7 +203,7 @@ impl ConsensusEngine {
     
         let mut errors = Vec::new();
     
-        let mut network = network.write()
+        let network = network.write()
             .map_err(|_| "Failed to acquire write lock on network adapter")?;
     
         // Envia para o próprio nó primeiro
