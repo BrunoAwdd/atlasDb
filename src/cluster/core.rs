@@ -5,9 +5,10 @@ use std::{
 use tokio::sync::oneshot;
 
 use crate::{
+    auth::Authenticator, 
     env::AtlasEnv, 
     network::adapter::NetworkAdapter, 
-    peer_manager::PeerManager, 
+    peer_manager::PeerManager,
     utils::NodeId
 };
 use super::node::Node;
@@ -29,6 +30,7 @@ pub struct Cluster {
     pub local_node: Node,
     pub peer_manager: Arc<RwLock<PeerManager>>,
     pub shutdown_sender: Option<oneshot::Sender<()>>,
+    pub auth: Arc<RwLock<dyn Authenticator>>,
 }
 
 impl Cluster {
@@ -37,6 +39,7 @@ impl Cluster {
         env: Arc<RwLock<AtlasEnv>>, 
         network: Arc<RwLock<dyn NetworkAdapter>>,
         node_id: NodeId,
+        auth: Arc<RwLock<dyn Authenticator>>,
     ) -> Self {
         let addr = network.read()
             .expect("Failed to acquire read lock")
@@ -50,6 +53,7 @@ impl Cluster {
             local_node: Self::set_local_node(node_id, &addr),
             peer_manager,
             shutdown_sender: None,
+            auth
         }
     }
 
