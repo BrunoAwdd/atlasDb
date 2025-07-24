@@ -37,8 +37,6 @@ message VoteMessage {
   string proposal_id = 1;
   string voter_id = 2;
   VoteOption vote = 3;
-  bytes signature = 4;
-  bytes public_key = 5;
 }
 
 message VoteBatch {
