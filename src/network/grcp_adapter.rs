@@ -37,6 +37,7 @@ impl NetworkAdapter for GRPCNetworkAdapter {
 
     async fn broadcast(&self, msg: ClusterMessage) -> Result<(), NetworkError> {
         // Implement the broadcast logic using gRPC
+        let _message = format!("Broadcast message: {:?}", msg);
         Ok(())
     }
 
@@ -102,7 +103,8 @@ impl NetworkAdapter for GRPCNetworkAdapter {
     }
 
     fn set_message_handler(&mut self, handler: Arc<dyn Fn(ClusterMessage) + Send + Sync>) {
-        // Set the message handler for incoming messages
+        let _handler = handler;
+        // TODO: Implement this
     }
 
     async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msag: String) -> Result<(ClusterMessage), NetworkError> {
