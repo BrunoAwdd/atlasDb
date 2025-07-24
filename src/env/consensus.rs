@@ -273,22 +273,21 @@ impl ConsensusEngine {
         })
     }
 
-    pub fn receive_vote_batch(&mut self, votes: Vec<VoteData>, local_node_id: NodeId) {
+    pub fn receive_vote_batch(&mut self, votes: Vec<VoteData>) {
         votes
             .into_iter()
             .for_each(|vote| 
                 self.receive_vote(
                     &vote.proposal_id, 
                     vote.voter, 
-                    vote.vote,
-                    local_node_id.clone()
+                    vote.vote
             ));
     }
 
     /// Registers a vote from a peer node on a specific proposal.
     ///
     /// This method simulates asynchronous, out-of-order voting from the network.
-    pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote, local_node_id: NodeId) {
+    pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote) {
         if !self.get_active_nodes().contains(&from_node) {
             println!("⚠️ Ignored vote from unknown or inactive node: [{}]", from_node);
             return;
