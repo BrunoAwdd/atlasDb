@@ -25,7 +25,14 @@ impl Cluster {
         Ok(ack)
     }
 
+    pub async fn submit_proposal_batch(&self, proposals: Vec<Proposal>, public_key: Vec<u8>, signature: Vec<u8>) -> Result<Ack, String> {
+        let proposal_batch = ProposalBatch { 
+            proposals: proposals
+                .into_iter()
                 .map(|p| p.into_proto()).collect(),
+            public_key,
+            signature: signature.clone(),
+            };
 
         let ack = self
             .local_env
