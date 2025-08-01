@@ -1,18 +1,21 @@
 use std::{
-    sync::Arc, 
-    time::{SystemTime, UNIX_EPOCH}
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     cluster_proto::{
-        cluster_network_client::ClusterNetworkClient, 
-        HeartbeatMessage, 
-        ProposalBatch, 
-        VoteBatch
-    }, 
-    network::{adapter::ClusterMessage, error::NetworkError}, 
+        cluster_network_client::ClusterNetworkClient,
+        HeartbeatMessage,
+        VoteMessage,
+    },
+    network::{
+        adapter::ClusterMessage,
+        error::NetworkError,
+    },
+    utils::NodeId,
     Node,
-    utils::NodeId
+    Proposal,
 };
 
 use super::adapter::NetworkAdapter;
