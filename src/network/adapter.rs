@@ -21,24 +21,34 @@ pub struct VoteData {
 }
 
 impl VoteData {
-    pub fn into_proto(self) -> VoteMessage {
+    pub fn into_proto(self, public_key: Vec<u8>, signature: Vec<u8>) -> VoteMessage {
         VoteMessage {
             proposal_id: self.proposal_id,
             voter_id: self.voter.0,
             vote: self.vote as i32,
+            signature,
+            public_key,
         }
     }
 
     pub fn from_proto(msg: VoteMessage) -> Self {
         let vote = Vote::try_from(msg.vote).unwrap_or(Vote::Abstain);
-
-        VoteData {
+        Self {
             proposal_id: msg.proposal_id,
+            vote: vote,
             voter: NodeId(msg.voter_id),
-            vote
         }
     }
 
+    pub fn into_cluster_message(self, public_key: Vec<u8>, signature: Vec<u8>) -> ClusterMessage {
+        ClusterMessage::Vote {
+            proposal_id: self.proposal_id,
+            vote: self.vote,
+            voter: self.voter,
+            public_key: public_key,
+            signature: signature,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
