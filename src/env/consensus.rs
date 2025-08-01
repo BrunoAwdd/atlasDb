@@ -206,18 +206,27 @@ impl ConsensusEngine {
     /// Registers a vote from a peer node on a specific proposal.
     ///
     /// This method simulates asynchronous, out-of-order voting from the network.
-    pub fn receive_vote(&mut self, proposal_id: &str, from_node: NodeId, vote: Vote) {
-        if !self.get_active_nodes().contains(&from_node) {
-            println!("⚠️ Ignored vote from unknown or inactive node: [{}]", from_node);
+    pub fn receive_vote(&mut self, vote_message: VoteMessage) {
+        let voter_id = NodeId(vote_message.voter_id.clone());
+        let vote = match Vote::try_from(vote_message.vote) {
+            Ok(v) => v,
+            Err(_) => {
+                println!("⚠️ Ignored invalid vote: {}", vote_message.vote);
+                return;
+            }
+        };
+
+        if !self.get_active_nodes().contains(&voter_id) {
+            println!("⚠️ Ignored vote from unknown or inactive node: [{}]", vote_message.voter_id);
             return;
         }
 
-        if let Some(voters) = self.votes.get_mut(proposal_id) {
-            voters.insert(from_node.clone(), vote.clone());
+        if let Some(voters) = self.votes.get_mut(&vote_message.proposal_id) {
+            voters.insert(voter_id.clone(), vote.clone());
 
             println!(
                 "📥 [{}] voted {:?} on proposal [{}] (Confirmed)",
-                from_node, vote, proposal_id
+                voter_id, vote, vote_message.proposal_id
             );
         }
         
