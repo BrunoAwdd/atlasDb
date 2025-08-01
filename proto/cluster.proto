@@ -11,9 +11,6 @@ service ClusterNetwork {
 
   // 3. Enviar heartbeat entre nós
   rpc Heartbeat(HeartbeatMessage) returns (Ack);
-
-  rpc SubmitVoteBatch(VoteBatch) returns (Ack);               
-  rpc SubmitProposalBatch(ProposalBatch) returns (Ack);
 }
 
 // Confirmação genérica
@@ -37,18 +34,8 @@ message VoteMessage {
   string proposal_id = 1;
   string voter_id = 2;
   VoteOption vote = 3;
-}
-
-message VoteBatch {
-  repeated VoteMessage votes = 1;
-  bytes signature = 2;
-  bytes public_key = 3;
-}
-
-message ProposalBatch {
-  repeated ProposalMessage proposals = 1;
-  bytes signature = 2;
-  bytes public_key = 3;
+  bytes signature = 4;
+  bytes public_key = 5;
 }
 
 // Tipos de voto
