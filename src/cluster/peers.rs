@@ -3,6 +3,9 @@ use crate::{peer_manager::PeerCommand, Cluster, Node, NodeId};
 impl Cluster {
     /// Adds a new node to the cluster by its unique identifier.
     pub fn add_node(&mut self, id: NodeId, stats: Node) -> Result<(), String> {
+        if id == self.local_node.id {
+            return Ok(());
+        }
         let cmd = PeerCommand::Register(id, stats);
         let mut manager = self.peer_manager.write()
             .map_err(|_| "Failed to acquire write lock on peer manager")?;
