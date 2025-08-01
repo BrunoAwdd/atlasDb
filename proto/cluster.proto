@@ -48,5 +48,5 @@ enum VoteOption {
 // Heartbeat básico
 message HeartbeatMessage {
   string from = 1;
-  int64 timestamp = 2;
+  uint64 timestamp = 2;
 }
