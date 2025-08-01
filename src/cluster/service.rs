@@ -3,17 +3,16 @@ use std::{
     time::Duration
 };
 
+use serde_json::Value;
 use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
 use crate::cluster_proto::{
     cluster_network_server::ClusterNetwork, 
     Ack, 
-    HeartbeatMessage, 
+    HeartbeatMessage,
     ProposalMessage, 
     VoteMessage,
-    VoteBatch,
-    ProposalBatch
 };
 
 pub struct ClusterService {
