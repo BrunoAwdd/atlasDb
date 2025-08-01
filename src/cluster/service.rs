@@ -44,16 +44,16 @@ impl ClusterNetwork for ClusterService {
         Ok(Response::new(ack))
     }
 
-    async fn submit_vote_batch(
+    async fn submit_vote(
         &self,
-        request: Request<VoteBatch>,
+        request: Request<VoteMessage>,
     ) -> Result<Response<Ack>, Status> {
-        println!("Received vote batch from: {}", request.get_ref().votes[0].voter_id);
+        println!("Received vote batch from: {}", request.get_ref().voter_id);
 
         let mut cluster = self.cluster.write().await;
 
         let ack = cluster
-            .handle_vote_batch(request.into_inner())
+            .handle_vote(request.into_inner())
             .map_err(|e| Status::internal(format!("handle_vote_batch error: {}", e)))?;
 
         Ok(Response::new(ack))
