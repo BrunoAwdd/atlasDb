@@ -45,8 +45,7 @@ impl Cluster {
     
             timeout(Duration::from_secs(3), network.send_heartbeat(
                 node.id.clone(), 
-                peer.clone(), 
-                heartbeat_msg.clone()
+                peer.clone()
             )).await
         };
 
