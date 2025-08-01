@@ -125,123 +125,56 @@ impl ConsensusEngine {
         proposal: Proposal,
         network: Arc<RwLock<dyn NetworkAdapter>>,
         local_node_id: NodeId,
-    ) -> Result<Ack, String> {
-        // 1. Processa localmente
-        println!("🚀 Submetendo proposta local: {:?}", proposal);
+    ) -> Result<Vec<Result<Ack, String>>, String> {
 
-        self.proposals.push(proposal.clone());
-        self.votes.insert(proposal.id.clone(), HashMap::new());
-
-        println!("🚀 Votes started(Start) {}: {:?}", local_node_id, self.votes);
-        println!("🚀 Proposals started(Start): {:?}", self.proposals);
-    
-        // 2. Propaga para outros peers
         let peers = {
             let manager = self.peer_manager.read()
                 .map_err(|_| "Failed to acquire read lock on peer manager")?;
             manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
         };
 
+        self.proposals.push(proposal.clone());
+        self.votes.insert(proposal.id.clone(), HashMap::new());
+       
         println!("📡 Enviando proposta para peers: {:?}", peers);
     
         let network = network.write()
             .map_err(|_| "Failed to acquire write lock on network adapter")?;
     
-        let mut errors = Vec::new();
-    
+   
+        let mut peer_results = Vec::new();
+
         for peer_id in peers {
-            if peer_id != local_node_id {
-                let msg = ClusterMessage::Proposal {
-                    proposal: proposal.clone(),
-                    public_key: vec![],
-                    signature: vec![],
-                };
-
-                let node = self.peer_manager.read()
-                    .map_err(|_| "Failed to acquire read lock on peer manager")?
-                    .get_peer_stats(&peer_id)
-                    .ok_or_else(|| format!("Peer {} not found", peer_id))?;
-
-                if let Err(e) = network.send_to(node, msg).await {
-                    errors.push(format!("Erro ao enviar para {}: {:?}", peer_id, e));
-                }
+            if peer_id == proposal.proposer {
+                continue;
             }
-        }
-    
-        if !errors.is_empty() {
-            println!("⚠️ Alguns envios falharam: {:?}", errors);
-        } else {
-            println!("✅ Proposta propagada para todos os peers");
-        }
-    
-        Ok(Ack {
-            received: true,
-            message: format!("Proposta {} recebida por {}", proposal.id, local_node_id),
-        })
-    }
-
-    pub async fn submit_proposal_batch(
-        &mut self,
-        proposal_batch: ProposalBatch,
-        network: Arc<RwLock<dyn NetworkAdapter>>,
-        proposer: &Node,
-    ) -> Result<Ack, String> {
-        let peers = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
-            manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
-        };
-
-        proposal_batch.proposals.iter().for_each(|p| {
-            self.proposals.push(Proposal::from_proto(p.clone()));
-            self.votes.insert(p.id.clone(), HashMap::new());
-        });
-
-    
-        let mut errors = Vec::new();
-    
-        let network = network.write()
-            .map_err(|_| "Failed to acquire write lock on network adapter")?;
-    
-        // Envia para o próprio nó primeiro
-        //if let Err(e) = network.send_proposal_batch(proposer.clone(), proposal_batch.clone()).await {
-        //    errors.push(format!("Erro ao enviar para {}: {:?}", proposer.id, e));
-        //}
-    
-        // Envia para os peers
-        for peer_id in peers {
-            if peer_id == proposer.id {
-                continue; // ⚠️ não envie para si mesmo
-            }
-    
+        
             let peer = match self.peer_manager.read()
                 .map_err(|_| "Failed to acquire read lock on peer manager")?
                 .get_peer_stats(&peer_id)
             {
                 Some(p) => p.clone(),
                 None => {
-                    errors.push(format!("Peer {} não encontrado", peer_id));
+                    peer_results.push(Ok(Ack {
+                        received: false,
+                        message: format!("Peer {} not found", peer_id),
+                    }));
                     continue;
                 }
             };
-    
-            if let Err(e) = network.send_proposal_batch( peer, proposal_batch.clone()).await {
-                errors.push(format!("Erro ao enviar para {}: {:?}", peer_id, e));
-            }
+        
+            let result = network.send_proposal(peer, proposal.clone()).await
+                .map(|_| Ack {
+                    received: true,
+                    message: format!("Proposta {} recebida por {}", proposal.id, peer_id),
+                })
+                .map_err(|e| format!("Erro ao enviar para {}: {:?}", peer_id, e));
+        
+            peer_results.push(result);
         }
-    
-        if !errors.is_empty() {
-            println!("⚠️ Alguns envios falharam: {:?}", errors);
-        } else {
-            println!("✅ Proposta propagada para todos os peers");
-        }
-    
-        Ok(Ack {
-            received: true,
-            message: format!("Proposal batch sent by {}", proposer.id),
-        })
+       
+        Ok(peer_results)
     }
-    
 
     pub async fn vote_proposals(
         &mut self,
