@@ -29,67 +29,64 @@ impl Cluster {
         Ok(ack)
     }
 
-    pub async fn submit_proposal_batch(&self, proposals: Vec<Proposal>, public_key: Vec<u8>, signature: Vec<u8>) -> Result<Ack, String> {
-        let proposal_batch = ProposalBatch { 
-            proposals: proposals
-                .into_iter()
-                .map(|p| p.into_proto()).collect(),
-            public_key,
-            signature: signature.clone(),
-            };
-
-        let ack = self
-            .local_env
-            .write()
-            .map_err(|_| "Failed to acquire write lock on local env")?
-            .engine
-            .submit_proposal_batch(
-                proposal_batch, 
-                Arc::clone(&self.network),
-                &self.local_node
-            )
-            .await
-            .map_err(|e| format!("Failed to submit proposal batch: {}", e))?;
+    pub fn handle_proposal(&mut self, msg: ProposalMessage) -> Result<Ack, String> {
+        let proposal = Proposal::from_proto(msg).map_err(|e| format!("Failed to parse proposal: {}", e))?;
     
-        Ok(ack)
+        let bytes = match bincode::serialize(&proposal.content) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("⚠️ Failed to serialize proposal: {}", e);
+                return Ok(Ack {
+                    received: false,
+                    message: format!("Falha ao serializar proposta: {}", e),
+                });
+            }
+        };
+    
+        let auth = match self.auth.read() {
+            Ok(a) => a,
+            Err(_) => {
+                println!("⚠️ Failed to acquire read lock on auth");
+                return Ok(Ack {
+                    received: false,
+                    message: "Falha ao adquirir lock de leitura em auth".into(),
+                });
+            }
+        };
+    
+        let is_valid = match auth.verify(bytes, &proposal.signature) {
+            Ok(valid) => valid,
+            Err(e) => {
+                println!("⚠️ Failed to verify signature: {}", e);
+                return Ok(Ack {
+                    received: false,
+                    message: format!("Assinatura inválida: {}", e),
+                });
+            }
+        };
+    
+        if is_valid {
+            if let Ok(mut env) = self.local_env.write() {
+                env.engine.add_proposal(proposal.clone());
+            } else {
+                println!("⚠️ Failed to acquire write lock on local_env");
+                return Ok(Ack {
+                    received: false,
+                    message: "Falha ao adquirir lock de escrita em local_env".into(),
+                });
+            }
+    
+            Ok(Ack {
+                received: true,
+                message: format!("Proposta {} recebida por {}", proposal.id, self.local_node.id),
+            })
+        } else {
+            println!("⚠️ Failed to verify signature");
+            Ok(Ack {
+                received: false,
+                message: format!("Assinatura da proposta {} inválida", proposal.id),
+            })
+        }
     }
     
-    pub fn handle_proposal_batch(&mut self, msg: ProposalBatch) -> Result<Ack, String>  {
-        let proposals: Vec<Proposal> = msg.proposals.into_iter().map(|p| Proposal::from_proto(p)).collect();
-
-        let message: Vec<u8> = bincode::serialize(&proposals).map_err(|e| format!("Failed to serialize proposals: {}", e))?;
-
-        match self.auth.read().map_err(|_| "Failed to acquire read lock on auth")?.verify(message, msg.signature.clone()) {
-            Ok(true) => {}
-            Ok(false) => return Err("Proposals not authorized".into()),
-            Err(e) => return Err(format!("Failed to verify proposals: {}", e)),
-        }
-
-        for proposal in proposals {
-            self
-                .local_env
-                .write()
-                .map_err(|_| "Failed to acquire write lock on local env")?
-                .engine
-                .add_proposal(proposal);
-        }
-
-        Ok(Ack {
-            received: true,
-            message: format!("Proposal batch received by {}", self.local_node.id),
-        })
-    }
-
-    pub fn handle_proposal(&mut self, msg: ProposalMessage) -> Result<Ack, String>  {
-        let proposal = Proposal::from_proto(msg);
-
-        println!("🚀 Proposta recebida: {:?}, node_id: {}", proposal, self.local_node.id);
-
-        self.local_env.write().map_err(|_| "Failed to acquire write lock on local env")?.engine.add_proposal(proposal.clone());
-
-        Ok(Ack {
-            received: true,
-            message: format!("Proposta {} recebida por {}", proposal.id, self.local_node.id),
-        })
-    }
 }
