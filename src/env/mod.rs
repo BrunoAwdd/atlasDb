@@ -12,7 +12,6 @@ use std::{
 use serde_json::Value;
 
 use crate::{
-    cluster_proto::Ack, 
     env::config::EnvConfig, 
     network::adapter::NetworkAdapter, 
     peer_manager::PeerManager, 
@@ -75,15 +74,6 @@ impl AtlasEnv {
                 (res.proposal_id.clone(), res)
             })
             .collect()
-    }
-    pub async fn submit_proposal(&mut self, proposal: &Proposal, node_id: NodeId) -> Result<Ack, String> {
-        self.engine
-            .submit_proposal(
-                proposal.clone(), 
-                Arc::clone(&self.network), 
-                node_id
-            )
-            .await
     }
 
     pub fn apply_if_approved(&mut self, proposal: &Proposal, result: &ConsensusResult) {
