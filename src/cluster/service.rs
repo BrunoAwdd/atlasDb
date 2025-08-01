@@ -59,19 +59,34 @@ impl ClusterNetwork for ClusterService {
         Ok(Response::new(ack))
     }
 
-    async fn submit_proposal_batch(
+    async fn submit_proposal(
         &self,
-        request: Request<ProposalBatch>,
+        request: Request<ProposalMessage>,
     ) -> Result<Response<Ack>, Status> {
-        let proposals = &request.get_ref().proposals;
+        println!("Received proposal batch from: {}", request.get_ref().proposer_id);
+
+        let raw = &request.get_ref().content;
+
+        let parsed: Value = serde_json::from_str(raw).map_err(|e| {
+            Status::invalid_argument(format!("Invalid JSON in proposal content: {}", e))
+        })?;
     
-        if let Some(first) = proposals.get(0) {
-            println!("Received proposal batch from (service): {}", first.proposer_id);
+        if let Some(array) = parsed.as_array() {
+            if let Some(first) = array.get(0) {
+                println!(
+                    "Received proposal batch from (service): {}",
+                    request.get_ref().proposer_id
+                );
+            } else {
+                println!("Received empty proposal batch.");
+                return Err(Status::invalid_argument("Empty proposal batch"));
+            }
         } else {
-            println!("Received empty proposal batch.");
-            return Err(Status::invalid_argument("Empty proposal batch"));
+            println!("Proposal content is not an array.");
+            return Err(Status::invalid_argument("Expected array of proposals"));
         }
-    
+
+
         let prop = request.into_inner();
     
         println!("🟢 Tentando adquirir lock de escrita no cluster...");
@@ -82,7 +97,7 @@ impl ClusterNetwork for ClusterService {
             Ok(mut cluster) => {
                 println!("🟡 Lock adquirido com sucesso!");
                 let ack = cluster
-                    .handle_proposal_batch(prop)
+                    .handle_proposal(prop)
                     .map_err(|e| {
                         eprintln!("❌ handle_proposal_batch error: {}", e);
                         Status::internal(format!("handle_proposal_batch error: {}", e))
@@ -95,26 +110,5 @@ impl ClusterNetwork for ClusterService {
                 Err(Status::internal("Timeout ao tentar acessar cluster — possível deadlock"))
             }
         }
-    }
-
-    async fn submit_proposal(
-        &self,
-        request: Request<ProposalMessage>,
-    ) -> Result<Response<Ack>, Status> {
-        println!("Received proposal from: {}", request.get_ref().proposer_id);
-        let ack = self.cluster.write().await.handle_proposal(request.into_inner()).map_err(|e| Status::internal(format!("handle_proposal error: {}", e)))?;
-        Ok(Response::new(ack))
-    }
-
-    async fn submit_vote(
-        &self,
-        request: Request<VoteMessage>,
-    ) -> Result<Response<Ack>, Status> {
-        // TODO: Implement this
-        //let ack = self.cluster.read().await.handle_vote(request.into_inner()).await;
-        //Ok(Response::new(ack))
-        let _req = request.into_inner();
-
-        Ok( Response::new(Ack { received: true, message: "Not implemented".to_string() }))
     }
 }
