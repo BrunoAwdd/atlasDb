@@ -44,7 +44,7 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         Ok(())
     }
 
-    async fn send_votes_batch(&self, target: Node, votes_batch: VoteBatch) -> Result<(), NetworkError> {
+    async fn send_votes(&self, target: Node, msg: ClusterMessage) -> Result<(), NetworkError> {
         println!("📡 Enviando votos para [{}] via gRPC", target.id);
         
         let addr = format!("http://{}", target.address);
@@ -52,11 +52,30 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         let mut client = ClusterNetworkClient::connect(addr)
             .await
             .map_err(|e| NetworkError::ConnectionError(e.to_string()))?;
-        
-        client
-            .submit_vote_batch(tonic::Request::new(votes_batch))
-            .await
-            .map_err(|e| NetworkError::Send(e.to_string()))?;
+
+        match &msg {
+            ClusterMessage::Vote { proposal_id, vote, voter, public_key, signature } => {
+                let vote_message = VoteMessage {
+                    proposal_id: proposal_id.clone(),
+                    voter_id: (*voter).to_string(),
+                    vote: vote.clone().into(),
+                    signature: signature.clone(),
+                    public_key: public_key.clone(),
+                };
+
+
+                client
+                    .submit_vote(tonic::Request::new(vote_message))
+                    .await
+                    .map(|r| {
+                        println!("✅ ACK de {}: {:?}", target.id, r.into_inner());
+                    })
+                    .map_err(|e| NetworkError::Send(e.to_string()))?;
+            }
+            _ => {
+                return Err(NetworkError::InvalidMessage);
+            }
+        }
         
         Ok(())
     }
