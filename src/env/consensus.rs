@@ -20,14 +20,11 @@ use serde::{Serialize, Deserialize};
 use crate::{
     cluster_proto::{
         Ack, 
-        ProposalBatch, 
-        VoteBatch}
-        , 
-    network::adapter::{
-        ClusterMessage, 
-        VoteData
+        VoteMessage
     }, 
-    NetworkAdapter, Node
+    network::adapter::ClusterMessage, 
+    NetworkAdapter, 
+    Node
 };
 
 use super::{
