@@ -80,8 +80,8 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         Ok(())
     }
 
-    async fn send_proposal_batch(&self, target: Node, proposals_batch: ProposalBatch) -> Result<(), NetworkError> {
-        println!("📡 Enviando propostas para [{}] via gRPC", target.id);
+    async fn send_proposal(&self, target: Node, proposal: Proposal) -> Result<(), NetworkError> {
+        println!("📡 Enviando propostas para [{}] via gRPC [{}]", target.id, target.address);
         
         let addr = format!("http://{}", target.address);
         
@@ -90,7 +90,7 @@ impl NetworkAdapter for GRPCNetworkAdapter {
             .map_err(|e| NetworkError::ConnectionError(e.to_string()))?;
         
         client
-            .submit_proposal_batch(tonic::Request::new(proposals_batch))
+            .submit_proposal(tonic::Request::new(proposal.into_proto()))
             .await
             .map_err(|e| NetworkError::Send(e.to_string()))?;
         
