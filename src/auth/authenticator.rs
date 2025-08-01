@@ -20,12 +20,12 @@ impl Authenticator for SimpleAuthenticator {
         Ok(fake_signature)
     }
 
-    fn verify(&self, message: Vec<u8>, received_signature: Vec<u8>) -> Result<bool, String> {
+    fn verify(&self, message: Vec<u8>, received_signature: &[u8; 64]) -> Result<bool, String> {
         // Mock: gera a mesma "assinatura" e compara com a recebida
         let mut expected_signature = Vec::new();
         expected_signature.extend_from_slice(&message);
         expected_signature.extend_from_slice(&self.key);
 
-        Ok(expected_signature == received_signature)
+        Ok(&expected_signature == received_signature)
     }
 }

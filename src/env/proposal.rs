@@ -18,22 +18,24 @@ pub struct Proposal {
 
     pub parent: Option<String>, // Optional parent proposal ID for versioning
 
-    pub signature: Vec<u8>,
+    #[serde(with = "hex::serde")]
+    pub signature: [u8; 64],
     pub public_key: Vec<u8>,
 }
     
-
-
 impl Proposal {
-    pub fn from_proto(msg: ProposalMessage) -> Self {
-        Proposal {
+    pub fn from_proto(msg: ProposalMessage) -> Result<Self, String> {
+        let signature: [u8; 64] = msg.signature.try_into()
+            .map_err(|_| "Assinatura inválida: deve ter 64 bytes".to_string())?;
+
+        Ok(Proposal {
             id: msg.id,
             proposer: NodeId(msg.proposer_id),
             content: msg.content,
             parent: if msg.parent_id.is_empty() { None } else { Some(msg.parent_id) },
-            signature: msg.signature.to_vec(),
+            signature,
             public_key: msg.public_key.to_vec(),
-        }
+        })
     }
 
     pub fn into_proto(&self) -> ProposalMessage {
