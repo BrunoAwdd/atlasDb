@@ -178,7 +178,7 @@ impl ConsensusEngine {
 
     pub async fn vote_proposals(
         &mut self,
-        vote_batch: VoteBatch,
+        vote_batch: ClusterMessage,
         network: Arc<RwLock<dyn NetworkAdapter>>,
         proposer: &Node,
     ) -> Result<Ack, String>  {
@@ -187,7 +187,7 @@ impl ConsensusEngine {
     
         let mut errors = Vec::new();
 
-        if let Err(e) = network.send_votes_batch(proposer.clone(), vote_batch).await {
+        if let Err(e) = network.send_votes(proposer.clone(), vote_batch).await {
             errors.push(format!("Erro ao enviar para {}: {:?}", proposer.id, e));
         }
 
@@ -201,17 +201,6 @@ impl ConsensusEngine {
             received: true,
             message: format!("Vote batch sent by {}", proposer.id),
         })
-    }
-
-    pub fn receive_vote_batch(&mut self, votes: Vec<VoteData>) {
-        votes
-            .into_iter()
-            .for_each(|vote| 
-                self.receive_vote(
-                    &vote.proposal_id, 
-                    vote.voter, 
-                    vote.vote
-            ));
     }
 
     /// Registers a vote from a peer node on a specific proposal.
