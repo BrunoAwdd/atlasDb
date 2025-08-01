@@ -45,13 +45,13 @@ impl VoteData {
 pub enum ClusterMessage {
     Proposal {
         proposal: Proposal,
-        public_key: Vec<u8>,
-        signature: Vec<u8>,
     },
     Vote {
         proposal_id: String,
         vote: Vote,
         voter: NodeId,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
     },
     VoteBatch {
         votes: Vec<VoteData>,
@@ -62,7 +62,8 @@ pub enum ClusterMessage {
     Heartbeat {
         sender: NodeId,
         receiver: NodeId,
-        msg: String,
+        from: NodeId,
+        timestamp: u64,
     },
 }
 
