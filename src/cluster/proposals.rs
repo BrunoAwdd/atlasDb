@@ -12,13 +12,17 @@ use crate::{
 
 impl Cluster {
     /// Sends a proposal to a specific peer
-    pub async fn submit_proposal(&self, proposal: Proposal) -> Result<Ack, String> {
-        println!("🚀 Submetendo proposta: {:?}", proposal);
+    pub async fn submit_proposal(&self, proposal: Proposal) -> Result<Vec<Result<Ack, String>>, String> {
         let ack = self
             .local_env
             .write()
             .map_err(|_| "Failed to acquire write lock on local env")?
-            .submit_proposal(&proposal, self.local_node.id.clone())
+            .engine
+            .submit_proposal(
+                proposal, 
+                Arc::clone(&self.network), 
+                self.local_node.id.clone()
+            )
             .await
             .map_err(|e| format!("Failed to submit proposal: {}", e))?;
     
