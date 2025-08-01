@@ -110,7 +110,7 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         // TODO: Implement this
     }
 
-    async fn send_heartbeat(&self, sender: NodeId, receiver: Node, msag: String) -> Result<(ClusterMessage), NetworkError> {
+    async fn send_heartbeat(&self, sender: NodeId, receiver: Node) -> Result<ClusterMessage, NetworkError> {
         let addr = format!("http://{}", receiver.address);
 
         println!("⏱️ Enviando heartbeat para [{}], ip[{}] em [{}] (GRCP)", receiver.id, addr, SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_e| NetworkError::Unknown)?.as_secs());
@@ -118,9 +118,11 @@ impl NetworkAdapter for GRPCNetworkAdapter {
 
         let mut client =  ClusterNetworkClient::connect(addr).await.map_err(|e| NetworkError::ConnectionError(e.to_string()))?;
     
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_e| NetworkError::Unknown)?.as_secs() as u64;
+
         let msg = HeartbeatMessage {
             from: sender.0.clone(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_e| NetworkError::Unknown)?.as_secs() as u64,
+            timestamp
         };
     
         client.heartbeat(tonic::Request::new(msg))
@@ -133,7 +135,8 @@ impl NetworkAdapter for GRPCNetworkAdapter {
         let cluster_msg = ClusterMessage::Heartbeat {
             sender: sender.clone(),
             receiver: receiver.id.clone(),
-            msg: msag, // TODO: Fix
+            from: sender.clone(),
+            timestamp,
         };
 
         Ok(cluster_msg)
