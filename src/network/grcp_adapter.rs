@@ -120,7 +120,7 @@ impl NetworkAdapter for GRPCNetworkAdapter {
     
         let msg = HeartbeatMessage {
             from: sender.0.clone(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_e| NetworkError::Unknown)?.as_secs() as i64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_e| NetworkError::Unknown)?.as_secs() as u64,
         };
     
         client.heartbeat(tonic::Request::new(msg))
