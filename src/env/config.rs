@@ -18,8 +18,6 @@ use crate::{
     Storage 
 };
 
-
-
 #[derive(Serialize, Deserialize)]
 pub struct EnvConfig {
     pub graph: Graph,
