@@ -27,7 +27,6 @@ pub trait Callback: Fn(ConsensusResult) + Send + Sync {}
 impl<T> Callback for T where T: Fn(ConsensusResult) + Send + Sync {}
 
 
-#[derive( Clone)]
 pub struct AtlasEnv {
     pub graph: Graph,
     pub storage: Storage,
