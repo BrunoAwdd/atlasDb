@@ -20,7 +20,6 @@ impl Cluster {
             .submit_proposal(
                 proposal, 
                 Arc::clone(&self.network), 
-                self.local_node.id.clone()
             )
             .await
             .map_err(|e| format!("Failed to submit proposal: {}", e))?;
