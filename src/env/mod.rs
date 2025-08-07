@@ -124,15 +124,15 @@ impl AtlasEnv {
             self.graph.clone(),
             self.storage.clone(),
             self.peer_manager.read().unwrap().clone(),
-            self.engine.quorum_ratio,
-            self.engine.proposals.clone(),
-            self.engine.votes.clone(),
+            self.engine.evaluator.quorum_ratio,
+            self.engine.pool.clone_all(),
+            self.engine.registry.all().clone(),
         );
         config.save_to_file(path)
     }
 
     pub fn get_proposals(&self) -> Vec<Proposal> {
-        let proposals = self.engine.proposals.clone();
+        let proposals = self.engine.pool.clone_all();
 
         proposals
     }
