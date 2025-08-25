@@ -11,6 +11,8 @@ use std::{
 
 use serde_json::Value;
 
+use tokio::sync::{Mutex, RwLock};
+
 use crate::{
     env::config::EnvConfig, 
     network::adapter::NetworkAdapter, 
@@ -30,7 +32,7 @@ impl<T> Callback for T where T: Fn(ConsensusResult) + Send + Sync {}
 pub struct AtlasEnv {
     pub graph: Graph,
     pub storage: Storage,
-    pub engine: ConsensusEngine,
+    pub engine: Arc<Mutex<ConsensusEngine>>,
 
     pub network: Arc<dyn NetworkAdapter>,
 
@@ -49,7 +51,7 @@ impl AtlasEnv {
         let env = AtlasEnv {
             graph: Graph::new(),
             storage: Storage::new(),
-            engine: ConsensusEngine::new(Arc::clone(&peer_manager), 70.0),
+            engine: Arc::new(Mutex::new(engine)),
             network,
             callback,
             peer_manager,
@@ -100,9 +102,9 @@ impl AtlasEnv {
         }
     }
 
-    pub fn get_nodes(&self) -> HashSet<NodeId> {
+    pub async fn get_nodes(&self) -> HashSet<NodeId> {
         self.peer_manager.read()
-            .expect("Failed to acquire read lock")
+            .await
             .get_active_peers()
     }
 
@@ -116,21 +118,10 @@ impl AtlasEnv {
         config.build_env(network)
     }
 
-    pub fn save_config(&self, path: &str) -> std::io::Result<()> {
-        let config = EnvConfig::new(
-            self.graph.clone(),
-            self.storage.clone(),
-            self.peer_manager.read().unwrap().clone(),
-            self.engine.evaluator.quorum_ratio,
-            self.engine.pool.clone_all(),
-            self.engine.registry.all().clone(),
-        );
-        config.save_to_file(path)
-    }
 
-    pub fn get_proposals(&self) -> Vec<Proposal> {
-        let proposals = self.engine.pool.clone_all();
+    pub async fn get_proposals(&self) -> Result<HashMap<String, Proposal>, String> {
+        let proposals = self.engine.lock().await.pool.all().clone();
 
-        proposals
+        Ok(proposals)
     }
 }
