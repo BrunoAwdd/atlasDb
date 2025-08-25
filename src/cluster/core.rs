@@ -4,10 +4,13 @@ use tokio::sync::{oneshot, Mutex, RwLock};
 
 use crate::{
     auth::Authenticator, 
+    config::Config, 
     env::AtlasEnv, 
-    network::adapter::NetworkAdapter, 
-    peer_manager::PeerManager,
-    utils::NodeId
+    network::adapter::NetworkAdapter,
+    peer_manager::PeerManager, 
+    utils::NodeId, 
+    Graph, 
+    Storage
 };
 use super::node::Node;
 
@@ -57,4 +60,22 @@ impl Cluster {
         Node::new(id.into(), addr.to_string(), None, 0.0)
     }
 
+    // @TODO: Is here the best place to save the state?
+    pub async fn save_state(&self, path: &str) -> Result<(), String> {
+        let socket: SocketAddr = self.local_node.address.clone().parse().expect("Endereço inválido");
+        
+        let config = Config {
+            node_id: self.local_node.id.clone(),
+            address:  socket.ip().to_string(),
+            port: socket.port(),
+            quorum_ratio: self.local_env.engine.lock().await.evaluator.quorum_ratio,
+            graph: Graph::new(),
+            storage: Storage::new(),
+            peer_manager: self.peer_manager.read().await.clone(),
+        };
+
+        config.save_to_file(path).expect("Failed to save initial configuration");
+
+        Ok(())
+    }
 }
