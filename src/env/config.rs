@@ -3,8 +3,10 @@ use std::{
     fs,
     io,
     path::Path, 
-    sync::{Arc, RwLock}
+    sync::Arc
 };
+
+use tokio::sync::{Mutex, RwLock};
 
 use serde::{Serialize, Deserialize};
 
