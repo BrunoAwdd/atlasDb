@@ -13,9 +13,21 @@ use crate::{
     peer_manager::PeerManager, utils::NodeId
 };
 
-pub fn init(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) {
-    let peer_manager = Arc::new(RwLock::new(PeerManager::new(10, 5)));
-    create_env(network, peer_manager, path);
+pub fn init(path: Option<&str>, node_id: Option<String>, config: Option<Config>) {
+    let peer_manager = PeerManager::new(10, 5);
+    let ip = get_local_ip().to_string();
+
+    let config = config.unwrap_or(Config {
+        node_id: NodeId(node_id.unwrap_or("".to_string())),
+        address: ip,
+        port: 50052,
+        quorum_ratio: 0.5,
+        graph: Graph::new(),
+        storage: Storage::new(),
+        peer_manager,
+    });
+
+    config.save_to_file(path.unwrap_or("config.json")).expect("Failed to save initial configuration");
 }
 
 pub async fn start(
