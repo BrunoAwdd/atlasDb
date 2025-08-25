@@ -5,10 +5,14 @@ pub mod cluster;
 pub mod cluster_proto {
     tonic::include_proto!("cluster");
 }
+pub mod config;
 pub mod env;
+pub mod error;
 //pub mod ffi;
+pub mod jobs;
 pub mod network;
 pub mod peer_manager;
+pub mod runtime;
 pub mod utils;
 
 pub use cluster::{
