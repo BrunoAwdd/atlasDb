@@ -1,7 +1,8 @@
 use std::{
     collections::HashSet,
-    sync::{Arc, RwLock},
+    sync::{Arc},
 };
+use tokio::sync::{RwLock};
 
 use crate::{
     env::proposal::Proposal,
@@ -38,27 +39,23 @@ impl ConsensusEngine {
     }
 
     /// Adiciona uma proposta ao pool e inicializa registro de votos.
-    pub fn add_proposal(&mut self, proposal: Proposal) {
+    pub(crate) fn add_proposal(&mut self, proposal: Proposal) {
         self.pool.add(proposal.clone());
         self.registry.register_proposal(&proposal.id);
     }
 
     /// Submete uma proposta e propaga aos peers pela rede.
-    pub async fn submit_proposal(
+    pub(crate) async fn submit_proposal(
         &mut self,
         proposal: Proposal,
-        network: Arc<RwLock<dyn NetworkAdapter>>,
+        network: Arc<dyn NetworkAdapter>,
     ) -> Result<Vec<Result<crate::cluster_proto::Ack, String>>, String> {
-        self.add_proposal(proposal.clone());
-
         let peers = {
-            let pm = self.peer_manager.read().map_err(|_| "PeerManager lock failed")?;
+            let pm = self.peer_manager.read().await;
             pm.get_active_peers().into_iter().collect::<Vec<_>>()
         };
 
         let mut results = Vec::new();
-        let net = network.write().map_err(|_| "NetworkAdapter lock failed")?;
-
         for peer in peers {
             if peer == proposal.proposer {
                 continue;
@@ -67,11 +64,11 @@ impl ConsensusEngine {
             let peer_data = self
                 .peer_manager
                 .read()
-                .unwrap()
+                .await
                 .get_peer_stats(&peer);
 
             if let Some(p) = peer_data {
-                let ack = net.send_proposal(p, proposal.clone()).await
+                let ack = network.send_proposal(p, proposal.clone()).await
                     .map(|_| crate::cluster_proto::Ack {
                         received: true,
                         message: format!("Proposta recebida por {}", peer),
@@ -91,9 +88,9 @@ impl ConsensusEngine {
     }
 
     /// Registra voto recebido de um peer.
-    pub fn receive_vote(&mut self, vote_msg: crate::cluster_proto::VoteMessage) {
+    pub(crate) async fn receive_vote(&mut self, vote_msg: crate::cluster_proto::VoteMessage) {
         let voter = NodeId(vote_msg.voter_id.clone());
-        if !self.get_active_nodes().contains(&voter) {
+        if !self.get_active_nodes().await.contains(&voter) {
             println!("⚠️ Ignorado voto de nó inativo: [{}]", voter);
             return;
         }
@@ -108,14 +105,13 @@ impl ConsensusEngine {
     }
 
     /// Propaga votos da proposta pela rede.
-    pub async fn vote_proposals(
+    pub(crate) async fn vote_proposals(
         &self,
         vote_batch: ClusterMessage,
-        network: Arc<RwLock<dyn NetworkAdapter>>,
+        network: Arc<dyn NetworkAdapter>,
         proposer: &Node,
     ) -> Result<crate::cluster_proto::Ack, String> {
-        let net = network.write().map_err(|_| "NetworkAdapter lock failed")?;
-        if let Err(e) = net.send_votes(proposer.clone(), vote_batch).await {
+        if let Err(e) = network.send_votes(proposer.clone(), vote_batch).await {
             return Err(format!("Erro ao enviar votos: {:?}", e));
         }
 
@@ -126,9 +122,9 @@ impl ConsensusEngine {
     }
 
     /// Avalia todas as propostas e retorna os resultados.
-    pub fn evaluate_proposals(&self) -> Vec<ConsensusResult> {
+    pub(crate) async fn evaluate_proposals(&self) -> Vec<ConsensusResult> {
         self.evaluator
-            .evaluate(&self.registry, &self.get_active_nodes())
+            .evaluate(&self.registry, &self.get_active_nodes().await)
     }
 
     /// Expõe os votos internamente (por exemplo, para salvar ou auditar).
@@ -142,10 +138,10 @@ impl ConsensusEngine {
     }
 
     /// Expõe os nós ativos (com leitura protegida).
-    fn get_active_nodes(&self) -> HashSet<NodeId> {
+    async fn get_active_nodes(&self) -> HashSet<NodeId> {
         self.peer_manager
             .read()
-            .expect("Falha ao ler PeerManager")
+            .await
             .get_active_peers()
     }
 }
