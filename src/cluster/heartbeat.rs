@@ -70,8 +70,7 @@ impl Cluster {
      /// Broadcasts heartbeat messages from all nodes to all other peers.
     pub(super) async fn broadcast_heartbeats(&self) -> Result<(), String> {
         let peers = {
-            let manager = self.peer_manager.read()
-                .map_err(|_| "Failed to acquire read lock on peer manager")?;
+            let manager = self.peer_manager.read().await;
             manager.get_active_peers().iter().cloned().collect::<Vec<NodeId>>()
         };
         
