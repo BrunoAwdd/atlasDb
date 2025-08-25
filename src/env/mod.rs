@@ -46,21 +46,16 @@ impl AtlasEnv {
         network: Arc<dyn NetworkAdapter>, 
         callback:  Arc<dyn Callback>,
         peer_manager: Arc<RwLock<PeerManager>>,
-        path: Option<&str>,
     ) -> Self {
-        let env = AtlasEnv {
+        let engine = ConsensusEngine::new(Arc::clone(&peer_manager), 70.0);
+        AtlasEnv {
             graph: Graph::new(),
             storage: Storage::new(),
             engine: Arc::new(Mutex::new(engine)),
             network,
             callback,
             peer_manager,
-        };
-
-        env.save_config(path.unwrap_or("config.json"))
-            .expect("Failed to save initial configuration");
-
-        env
+        }
     }
 
     pub fn evaluate_all(&mut self) -> Vec<(String, ConsensusResult)> {
