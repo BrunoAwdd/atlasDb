@@ -1,26 +1,30 @@
+use std::collections::HashMap;
+
 use crate::env::proposal::Proposal;
 
 /// Estrutura simples para armazenar e gerenciar propostas em memória.
 #[derive(Debug, Default, Clone)]
 pub struct ProposalPool {
-    proposals: Vec<Proposal>,
+    proposals: HashMap<String, Proposal>,
 }
 
 impl ProposalPool {
-    /// Cria um novo pool vazio.
+    /// Create a new empty proposal pool.
     pub fn new() -> Self {
         Self {
-            proposals: Vec::new(),
+            proposals: HashMap::new(),
         }
     }
 
-    /// Adiciona uma nova proposta ao pool.
+    /// Add new proposal to the pool.
     pub fn add(&mut self, proposal: Proposal) {
-        self.proposals.push(proposal);
+        if self.proposals.insert(proposal.clone().id, proposal).is_some() {
+            eprintln!("⚠️ Proposal com id já existe no pool");
+        }
     }
 
-    /// Retorna uma referência imutável para todas as propostas.
-    pub fn all(&self) -> &[Proposal] {
+    /// Get all proposals in the pool.
+    pub fn all(&self) -> &HashMap<std::string::String, Proposal> {
         &self.proposals
     }
 
@@ -30,8 +34,8 @@ impl ProposalPool {
         self.proposals.clear();
     }
 
-    /// Encontra uma proposta por ID (caso necessário).
+    /// Find propouse by id.
     pub fn find_by_id(&self, id: &str) -> Option<&Proposal> {
-        self.proposals.iter().find(|p| p.id == id)
+        self.proposals.get(id)
     }
 }
