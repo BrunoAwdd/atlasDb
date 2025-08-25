@@ -11,11 +11,16 @@ use tokio::sync::{Mutex, RwLock};
 use serde::{Serialize, Deserialize};
 
 use crate::{
-    env::{consensus::Vote, AtlasEnv, Proposal, ConsensusResult}, 
+    env::{
+        consensus::Vote, 
+        AtlasEnv, 
+        ConsensusResult, 
+        Proposal
+    }, 
     peer_manager::PeerManager, 
     ConsensusEngine, 
     Graph, 
-    NetworkAdapter, 
+    network::adapter::NetworkAdapter, 
     NodeId, 
     Storage 
 };
