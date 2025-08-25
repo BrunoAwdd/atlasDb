@@ -42,20 +42,7 @@ fn build_env(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) -> At
     load_env(path.unwrap_or("config.json"), Arc::clone(&network))
 }
 
-fn create_env(
-    network: Arc<RwLock<dyn NetworkAdapter>>, 
-    peer_manager: Arc<RwLock<PeerManager>>, 
-    path: Option<&str>
-) -> AtlasEnv {
-    AtlasEnv::new(
-        network,
-        Arc::new(|_| {}),
-        peer_manager,
-        path,
-    )
-}
-
-fn load_env(path: &str, network: Arc<RwLock<dyn NetworkAdapter>>) -> AtlasEnv {
+fn load_env(path: &str, network: Arc<dyn NetworkAdapter>) -> AtlasEnv {
     EnvConfig::load_from_file(path)
         .expect("Failed to load config file")
         .build_env(network)
