@@ -19,11 +19,11 @@ pub fn init(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) {
 }
 
 pub async fn start(
-    network: Arc<RwLock<dyn NetworkAdapter>>, 
+    network: Arc<dyn NetworkAdapter>, 
     path: Option<&str>, 
     id: String,
     auth: Arc<RwLock<dyn Authenticator>>
-) -> Result<Arc<tokio::sync::RwLock<Cluster>>, Box<dyn std::error::Error>> {
+) -> Result<Arc<Cluster>, Box<dyn std::error::Error>> {
     let env = build_env(Arc::clone(&network), path);
     let node_id = NodeId(id);
     let cluster = ClusterBuilder::new()
@@ -38,7 +38,7 @@ pub async fn start(
     Ok(cluster)
 }
 
-fn build_env(network: Arc<RwLock<dyn NetworkAdapter>>, path: Option<&str>) -> AtlasEnv {
+fn build_env(network: Arc<dyn NetworkAdapter>, path: Option<&str>) -> AtlasEnv {
     load_env(path.unwrap_or("config.json"), Arc::clone(&network))
 }
 
