@@ -1,10 +1,8 @@
 use std::{
     sync::Arc, 
-    time::Duration
 };
 
 use serde_json::Value;
-use tokio::time::timeout;
 use tonic::{Request, Response, Status};
 
 use crate::cluster_proto::{
@@ -33,15 +31,18 @@ impl ClusterNetwork for ClusterService {
         &self,
         request: Request<HeartbeatMessage>,
     ) -> Result<Response<Ack>, Status> {
-        println!("Received heartbeat from: {}", request.get_ref().from);
-        tokio::time::sleep(tokio::time::Duration::from_secs(12)).await;
+        let msg = request.into_inner();
+        let cluster = self.cluster.clone();
 
-        let ack = self
-            .cluster
-            .read()
-            .await
-            .handle_heartbeat(request.into_inner());
-        Ok(Response::new(ack))
+        //println!("Received heartbeat from: {}", msg.from.clone());
+
+        let handle = ClusterCommand::HandleHeartbeat(msg);
+        let _ = handle.execute(&cluster).await;
+        
+        Ok(Response::new(Ack {
+            received: true,
+            message: "ACK em processamento...".to_string(),
+        }))
     }
 
     async fn submit_vote(
@@ -50,10 +51,11 @@ impl ClusterNetwork for ClusterService {
     ) -> Result<Response<Ack>, Status> {
         println!("Received vote batch from: {}", request.get_ref().voter_id);
 
-        let mut cluster = self.cluster.write().await;
 
-        let ack = cluster
+        let ack = self
+            .cluster
             .handle_vote(request.into_inner())
+            .await
             .map_err(|e| Status::internal(format!("handle_vote_batch error: {}", e)))?;
 
         Ok(Response::new(ack))
@@ -70,9 +72,9 @@ impl ClusterNetwork for ClusterService {
         let parsed: Value = serde_json::from_str(raw).map_err(|e| {
             Status::invalid_argument(format!("Invalid JSON in proposal content: {}", e))
         })?;
-    
+
         if let Some(array) = parsed.as_array() {
-            if let Some(first) = array.get(0) {
+            if let Some(_) = array.get(0) {
                 println!(
                     "Received proposal batch from (service): {}",
                     request.get_ref().proposer_id
@@ -89,26 +91,17 @@ impl ClusterNetwork for ClusterService {
 
         let prop = request.into_inner();
     
-        println!("🟢 Tentando adquirir lock de escrita no cluster...");
+        println!("🟢 Tentando adquirir lock de escrita no cluster {:?}...", self.cluster.local_node.id);
     
-        let write_result = timeout(Duration::from_secs(50), self.cluster.write()).await;
-    
-        match write_result {
-            Ok(mut cluster) => {
-                println!("🟡 Lock adquirido com sucesso!");
-                let ack = cluster
-                    .handle_proposal(prop)
-                    .map_err(|e| {
-                        eprintln!("❌ handle_proposal_batch error: {}", e);
-                        Status::internal(format!("handle_proposal_batch error: {}", e))
-                    })?;
-    
-                Ok(Response::new(ack))
-            }
-            Err(_) => {
-                eprintln!("❌ Timeout ao tentar adquirir lock — possível deadlock no cluster");
-                Err(Status::internal("Timeout ao tentar acessar cluster — possível deadlock"))
-            }
-        }
+        let ack = self
+            .cluster
+            .handle_proposal(prop)
+            .await
+            .map_err(|e| {
+                eprintln!("❌ handle_proposal_batch error: {}", e);
+                Status::internal(format!("handle_proposal_batch error: {}", e))
+            })?;
+
+        Ok(Response::new(ack))
     }
 }
