@@ -5,7 +5,8 @@ use crate::{
     cluster_proto::{
         Ack, 
         HeartbeatMessage
-    }, 
+    },
+    peer_manager::{PeerCommand, PeerEvent}, 
     NodeId
 };
 
@@ -98,23 +99,23 @@ impl Cluster {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-            
+
         println!("⏱️ Heartbeat recebido de [{}] em [{}]", msg.from, msg.timestamp);
 
         let from = NodeId(msg.from);
-        
-        // Update peer's last seen timestamp
-        if let Ok(manager) = self.peer_manager.write() {
-            let peer = manager.get_peer_stats(&from);
-            if let Some(mut node) = peer {
-                node.update_last_seen(timestamp);
-            }
-        }
-        
-        Ack {
-            received: true,
-            message: format!("ACK recebido por {} em {}", self.local_node.id, timestamp),
-        }
-    }
 
+        let mut manager = self.peer_manager.write().await;
+
+        if let Some(mut node) = manager.get_peer_stats(&from) {
+            node.update_last_seen(timestamp);
+            manager.handle_command(PeerCommand::UpdateStats(from, node));
+        }
+
+        let local_node_id = self.local_node.id.clone();
+
+        Ok(Ack {
+            received: true,
+            message: format!("ACK recebido por {} em {}", local_node_id, timestamp),
+        })
+    }
 }
