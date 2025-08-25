@@ -74,13 +74,15 @@ impl EnvConfig {
         Ok(config)
     }
 
-    pub fn build_env(self, network: Arc<RwLock<dyn NetworkAdapter>>) -> AtlasEnv {
+    pub fn build_env(self, network: Arc<dyn NetworkAdapter>) -> AtlasEnv {
         let peer_manager = Arc::new(RwLock::new(self.peer_manager));
+        let engine = ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_ratio);
+
         fn noop_callback(_: ConsensusResult) {}
         AtlasEnv {
             graph: self.graph,
             storage: self.storage,
-            engine: ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_ratio),
+            engine: Arc::new(Mutex::new(engine)),
             network,
             callback: Arc::new(noop_callback),
             peer_manager,
