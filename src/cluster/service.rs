@@ -5,21 +5,24 @@ use std::{
 use serde_json::Value;
 use tonic::{Request, Response, Status};
 
-use crate::cluster_proto::{
-    cluster_network_server::ClusterNetwork, 
-    Ack, 
-    HeartbeatMessage,
-    ProposalMessage, 
-    VoteMessage,
+use crate::{
+    cluster_proto::{
+        cluster_network_server::ClusterNetwork, 
+        Ack, 
+        HeartbeatMessage,
+        ProposalMessage, 
+        VoteMessage,
+    },
+    cluster::command::ClusterCommand,
 };
 
 pub struct ClusterService {
-    cluster: Arc<tokio::sync::RwLock<crate::cluster::core::Cluster>>,
+    cluster: Arc<crate::cluster::core::Cluster>,
 }
 
 impl ClusterService {
     pub fn new(
-        cluster: Arc<tokio::sync::RwLock<crate::cluster::core::Cluster>>
+        cluster: Arc<crate::cluster::core::Cluster>
     ) -> Self {
         ClusterService { cluster }
     }
