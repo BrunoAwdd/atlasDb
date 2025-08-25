@@ -24,10 +24,6 @@ impl ProposalPool {
         &self.proposals
     }
 
-    /// Retorna uma cópia de todas as propostas.
-    pub fn clone_all(&self) -> Vec<Proposal> {
-        self.proposals.clone()
-    }
 
     /// Limpa todas as propostas do pool.
     pub fn clear(&mut self) {
