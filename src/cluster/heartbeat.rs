@@ -1,6 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use tokio::time::{timeout, Duration};
+use std::{time::{SystemTime, UNIX_EPOCH}};
 
 use super::core::Cluster;
 use crate::{
@@ -11,11 +9,10 @@ use crate::{
     NodeId
 };
 
-// TODO: Implement timeouts for heartbeats
 impl Cluster {
-    pub async fn send_heartbeat(
-        &self, 
-        to: &NodeId
+    async fn send_heartbeat(
+        &self,
+        to: &NodeId,
     ) -> Result<Ack, String> {
         let node_id = self.local_node.id.clone();
     
