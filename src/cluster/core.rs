@@ -1,6 +1,4 @@
-use std::{
-    sync::{Arc, RwLock}, 
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use tokio::sync::oneshot;
 
@@ -25,8 +23,8 @@ use super::node::Node;
 /// simulating inter-node communication, and running cyclical simulations.
 pub struct Cluster {
     /// The full set of nodes currently part of the cluster.
-    pub local_env: Arc<RwLock<AtlasEnv>>,
-    pub network: Arc<RwLock<dyn NetworkAdapter>>,
+    pub local_env: AtlasEnv,
+    pub network: Arc<dyn NetworkAdapter>,
     pub local_node: Node,
     pub peer_manager: Arc<RwLock<PeerManager>>,
     pub shutdown_sender: Option<oneshot::Sender<()>>,
@@ -36,16 +34,14 @@ pub struct Cluster {
 impl Cluster {
     /// Initializes a new, empty cluster.
     pub fn new(
-        env: Arc<RwLock<AtlasEnv>>, 
-        network: Arc<RwLock<dyn NetworkAdapter>>,
+        env: AtlasEnv, 
+        network: Arc<dyn NetworkAdapter>,
         node_id: NodeId,
         auth: Arc<RwLock<dyn Authenticator>>,
     ) -> Self {
-        let addr = network.read()
-            .expect("Failed to acquire read lock")
-            .get_address();
+        let addr = network.get_address();
 
-        let peer_manager = Arc::clone(&env.read().expect("Failed to acquire read lock").peer_manager);
+        let peer_manager = Arc::clone(&env.peer_manager);
         
         Cluster {
             local_env: env,
