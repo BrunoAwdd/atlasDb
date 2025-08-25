@@ -1,5 +1,8 @@
 /target
 /src/main.rs
+/scripts
+/demo
+/.vscode
 Cargo.lock
 *.zip
 *.json
