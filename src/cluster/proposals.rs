@@ -14,9 +14,9 @@ impl Cluster {
     pub async fn submit_proposal(&self, proposal: Proposal) -> Result<Vec<Result<Ack, String>>, String> {
         let ack = self
             .local_env
-            .write()
-            .map_err(|_| "Failed to acquire write lock on local env")?
             .engine
+            .lock()
+            .await
             .submit_proposal(
                 proposal, 
                 Arc::clone(&self.network), 
