@@ -5,8 +5,8 @@ pub mod storage;
 pub mod proposal;
 
 use std::{
-    collections::HashSet,
-    sync::{Arc, RwLock}
+    collections::{HashMap, HashSet},
+    sync::Arc
 };
 
 use serde_json::Value;
@@ -32,9 +32,7 @@ pub struct AtlasEnv {
     pub storage: Storage,
     pub engine: ConsensusEngine,
 
-    pub network: Arc<RwLock<dyn NetworkAdapter>>,
-
-    //pub auth: Arc<dyn Authenticator>,
+    pub network: Arc<dyn NetworkAdapter>,
 
     pub callback: Arc<dyn Callback>,
 
@@ -43,7 +41,7 @@ pub struct AtlasEnv {
 
 impl AtlasEnv {
     pub fn new(
-        network: Arc<RwLock<dyn NetworkAdapter>>, 
+        network: Arc<dyn NetworkAdapter>, 
         callback:  Arc<dyn Callback>,
         peer_manager: Arc<RwLock<PeerManager>>,
         path: Option<&str>,
@@ -113,7 +111,7 @@ impl AtlasEnv {
         self.storage.print_summary();
     }
 
-    pub fn from_config(network: Arc<RwLock<dyn NetworkAdapter>>) -> Self {
+    pub fn from_config(network: Arc<dyn NetworkAdapter>) -> Self {
         let config = EnvConfig::load_from_file("config.json").expect("Failed to load config file");
         config.build_env(network)
     }
