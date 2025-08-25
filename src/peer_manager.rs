@@ -57,19 +57,28 @@ impl PeerManager {
         }
     }
 
-    fn update_stats(&mut self, node_id: &NodeId, new_stats: Node) -> PeerEvent {
-        if let Some(current) = self.known_peers.get_mut(node_id) {
-            if new_stats.get_last_seen() > current.get_last_seen() {
-                current.latency = new_stats.latency;
-                current.reliability_score = new_stats.reliability_score;
-                current.update_last_seen(new_stats.get_last_seen());
-                PeerEvent::Updated(node_id.clone())
-            } else {
-                PeerEvent::NoChange
+    pub fn update_stats(&mut self, node_id: &NodeId, new_stats: &Node) -> PeerEvent
+    where
+        Node: Clone,
+    {
+        use std::collections::hash_map::Entry;
+    
+        match self.known_peers.entry(node_id.clone()) {
+            Entry::Occupied(mut e) => {
+                let current = e.get_mut();
+                if new_stats.get_last_seen() > current.get_last_seen() {
+                    current.latency = new_stats.latency;
+                    current.reliability_score = new_stats.reliability_score;
+                    current.update_last_seen(new_stats.get_last_seen());
+                    PeerEvent::Updated(node_id.clone())
+                } else {
+                    PeerEvent::NoChange
+                }
             }
-        } else {
-            self.known_peers.insert(node_id.clone(), new_stats);
-            PeerEvent::Registered(node_id.clone())
+            Entry::Vacant(v) => {
+                v.insert(new_stats.clone()); // clona só aqui
+                PeerEvent::Registered(node_id.clone())
+            }
         }
     }
 
@@ -174,7 +183,7 @@ impl PeerManager {
                 }
             },
             PeerCommand::UpdateStats(id, stats) => {
-                self.update_stats(&id, stats)
+                self.update_stats(&id, &stats)
             },
         }
     }
