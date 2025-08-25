@@ -14,7 +14,7 @@ use crate::{
 
 pub struct ClusterBuilder {
     env: Option<AtlasEnv>,
-    network: Option<Arc<RwLock<dyn NetworkAdapter>>>,
+    network: Option<Arc<dyn NetworkAdapter>>,
     auth: Option<Arc<RwLock<dyn Authenticator>>>,
     node_id: Option<NodeId>,
 }
@@ -34,7 +34,7 @@ impl ClusterBuilder {
         self
     }
 
-    pub fn with_network(mut self, network: Arc<RwLock<dyn NetworkAdapter>>) -> Self {
+    pub fn with_network(mut self, network: Arc<dyn NetworkAdapter>) -> Self {
         self.network = Some(network);
         self
     }
@@ -56,7 +56,7 @@ impl ClusterBuilder {
         let auth = self.auth.ok_or("Missing auth")?;
 
         let cluster = Cluster::new(
-            Arc::new(RwLock::new(env)), 
+            env, 
             Arc::clone(&network), 
             node_id,
             auth
@@ -66,27 +66,23 @@ impl ClusterBuilder {
     }
 
     /// Cria o cluster e já inicia o gRPC
-    pub async fn start_with_grpc(self) -> Result<Arc<tokio::sync::RwLock<Cluster>>, Box<dyn std::error::Error>> {
-        let cluster_build = self
+    pub async fn start_with_grpc(self) -> Result<Arc<Cluster>, Box<dyn std::error::Error>> {
+        let mut cluster_build = self
             .build()
             .map_err(|e| format!("Build error: {}", e))?;
 
-        let cluster = Arc::new(tokio::sync::RwLock::new(cluster_build));
+        let (tx, rx) = oneshot::channel();
+
+        cluster_build.shutdown_sender = Mutex::new(Some(tx));
+
+        let cluster = Arc::new(cluster_build);
         let grpc_cluster = cluster.clone(); // para uso no spawn
 
-        let addr = {
-            let cluster_read = grpc_cluster.read().await;
-            cluster_read.local_node.address.parse()?
-        };
+        let addr = cluster.local_node.address.parse()
+            .map_err(|e| format!("Invalid address: {}", e))?;
 
         let service = ClusterService::new(grpc_cluster.clone());
 
-        let (tx, rx) = oneshot::channel();
-
-        {
-            let mut guard = grpc_cluster.write().await;
-            guard.shutdown_sender = Some(tx);
-        }
 
         println!("🚀 Iniciando servidor gRPC em: {}", addr);
 
