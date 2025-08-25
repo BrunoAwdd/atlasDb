@@ -133,9 +133,6 @@ impl PeerManager {
     }
 
     pub fn get_peer_stats(&self, id: &NodeId) -> Option<Node> {
-        println!("Peer: {:?}", id);
-        println!("Known: {:?}", self.known_peers);
-
         self.known_peers.get(id).cloned()
     }
 
