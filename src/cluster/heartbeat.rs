@@ -68,7 +68,7 @@ impl Cluster {
     }
     
      /// Broadcasts heartbeat messages from all nodes to all other peers.
-    pub async fn broadcast_heartbeats(&self) -> Result<(), String> {
+    pub(super) async fn broadcast_heartbeats(&self) -> Result<(), String> {
         let peers = {
             let manager = self.peer_manager.read()
                 .map_err(|_| "Failed to acquire read lock on peer manager")?;
@@ -94,7 +94,7 @@ impl Cluster {
     }
 
     /// Handles incoming heartbeat messages
-    pub fn handle_heartbeat(&self, msg: HeartbeatMessage) -> Ack {
+    pub(super) async fn handle_heartbeat(&self, msg: HeartbeatMessage) -> Result<Ack, String> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
