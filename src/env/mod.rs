@@ -58,16 +58,21 @@ impl AtlasEnv {
         }
     }
 
-    pub fn evaluate_all(&mut self) -> Vec<(String, ConsensusResult)> {
-        self.engine
+    pub async fn evaluate_all(&mut self) -> Result<Vec<(String, ConsensusResult)>, String> {
+        let result = self.engine
+            .lock()
+            .await
             .evaluate_proposals()
+            .await
             .into_iter()
             .map(|res| {
                 self.storage
                     .log_result(&res.proposal_id, res.clone());
                 (res.proposal_id.clone(), res)
             })
-            .collect()
+            .collect();
+
+        Ok(result)
     }
 
     pub fn apply_if_approved(&mut self, proposal: &Proposal, result: &ConsensusResult) {
