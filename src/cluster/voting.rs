@@ -69,32 +69,18 @@ impl Cluster {
         Ok(())
     }
     
-
-    pub fn handle_vote(&mut self, msg: VoteMessage) -> Result<Ack, String> {
-
+    pub(super) async fn handle_vote(&self, msg: VoteMessage) -> Result<Ack, String> {
         let vote_data = VoteData::from_proto(msg.clone());
-        //let vote_json = serde_json::to_string(&vote_data).map_err(|e| e.to_string()).unwrap();
         let vote_serialized = bincode::serialize(&vote_data).unwrap();
 
-        let signature_array: &[u8; 64] = msg.signature
+        let signature_array: [u8; 64] = msg.signature
             .as_slice()
             .try_into()
             .map_err(|_| "Assinatura com tamanho inválido")?;
 
-        //println!("📥 Vote recebido: {}", vote_json);
+        let auth = self.auth.read().await;
 
-
-        let auth = match self.auth.read() {
-            Ok(a) => a,
-            Err(_) => {
-                return Ok(Ack {
-                    received: false,
-                    message: "Falha ao adquirir lock de leitura em auth".into(),
-                });
-            }
-        };
-
-        let is_valid = match auth.verify(vote_serialized, signature_array) {
+        let is_valid = match auth.verify(vote_serialized, &signature_array) {
             Ok(valid) => valid,
             Err(e) => {
                 return Ok(Ack {
@@ -103,16 +89,17 @@ impl Cluster {
                 });
             }
         };
+        drop(auth);
+
+        let engine = self.local_env.engine.lock().await;
+        let votes = engine.get_all_votes().clone(); // clona os dados para sair do guard
+        drop(engine); // opcional: solta o lock antes de usar votes
+
+        println!("Votes {} {:?}", self.local_node.id, &votes);
+
 
         if is_valid {
-            if let Ok(mut env) = self.local_env.write() {
-                env.engine.receive_vote(msg.clone());
-            } else {
-                return Ok(Ack {
-                    received: false,
-                    message: "Falha ao adquirir lock de escrita em local_env".into(),
-                });
-            }
+            self.local_env.engine.lock().await.receive_vote(msg.clone()).await;
     
             Ok(Ack {
                 received: true,
