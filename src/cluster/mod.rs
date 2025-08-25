@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod command;
 pub mod core;
 pub mod heartbeat;
 pub mod node;
