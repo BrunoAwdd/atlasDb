@@ -71,3 +71,51 @@ fn load_env(path: &str, network: Arc<dyn NetworkAdapter>) -> AtlasEnv {
         .build_env(network)
 }
 
+pub fn get_local_ip() -> std::net::IpAddr {
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind");
+    socket.connect("8.8.8.8:80").expect("Failed to connect");
+    socket.local_addr().expect("Failed to get local address").ip()
+}
+
+pub async fn load_config(path: &str, auth: Arc<RwLock<dyn Authenticator>>) -> Result<Arc<Cluster>, Box<dyn std::error::Error>> {
+    let config = Config::load_from_file(path).or_else(|_| Config::load_from_file("config.json"))?;
+
+    let network = Arc::new(
+        GRPCNetworkAdapter::new(config.address.clone(), config.port.clone()),
+    );
+
+    let cluster = config.build_cluster_env(network, auth);
+    
+    let arc = start_with_grpc(cluster).await?;
+
+    Ok(arc)
+}
+
+/// Cria o cluster e já inicia o gRPC
+pub async fn start_with_grpc(mut cluster: Cluster) -> Result<Arc<Cluster>, Box<dyn std::error::Error>> {
+    let addr = cluster.local_node.address.clone().parse()?; // ✅ fora do lock
+
+    let (tx, rx) = oneshot::channel();
+    cluster.shutdown_sender = Mutex::new(Some(tx));
+
+    let arc_cluster = Arc::new(cluster);
+
+    let service = ClusterService::new(arc_cluster.clone());
+
+    println!("Starting gRPC server at {}", addr);
+
+    // Aqui está a mágica: o servidor gRPC roda em segundo plano
+    tokio::spawn(async move {
+        if let Err(e) = tonic::transport::Server::builder()
+            .add_service(ClusterNetworkServer::new(service))
+            .serve_with_shutdown(addr, async {
+                rx.await.ok();
+            })
+            .await
+        {
+            eprintln!("Erro no servidor gRPC: {}", e);
+        }
+    });
+
+    Ok(arc_cluster)
+}
