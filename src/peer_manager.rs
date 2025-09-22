@@ -44,19 +44,26 @@ impl PeerManager {
 
     fn register_peer(&mut self, node_id: NodeId, stats: Node) {
         self.known_peers.insert(node_id.clone(), stats);
-
-        // Se já é ativo ou reserva, não faz nada
         if self.active_peers.contains(&node_id) || self.reserve_peers.contains(&node_id) {
             return;
         }
-
-        // Tenta adicionar como ativo se houver espaço
         if self.active_peers.len() < self.max_active {
-            self.active_peers.insert(node_id);
-        } else if self.reserve_peers.len() < self.max_reserve {
-            self.reserve_peers.insert(node_id);
+            let _ = self.active_peers.insert(node_id);
+            return;
+        }
+        if self.reserve_peers.len() < self.max_reserve {
+            let _ = self.reserve_peers.insert(node_id);
+            return;
+        }
+        // reserve cheia: troca o pior se o novo for melhor
+        if let Some(worst_r) = self.reserve_peers.iter().min_by_key(|id| self.score_tuple(id)).cloned() {
+            if self.better(&node_id, &worst_r) {
+                self.reserve_peers.remove(&worst_r);
+                let _ = self.reserve_peers.insert(node_id);
+            }
         }
     }
+
 
     pub fn update_stats(&mut self, node_id: &NodeId, new_stats: &Node) -> PeerEvent
     where
