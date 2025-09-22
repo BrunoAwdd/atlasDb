@@ -31,4 +31,25 @@ impl Proposal {
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
     }
+
+    pub fn bytes(&self) -> Vec<u8> {
+        bincode::serialize(self).expect("serialize proposal")
+    }
+}
+#[derive(Serialize)]
+struct ProposalSignView<'a> {
+    id:       &'a str,
+    proposer: &'a NodeId,
+    content:  &'a str,
+    parent:   &'a Option<String>,
+}
+
+pub fn signing_bytes(p: &Proposal) -> Vec<u8> {
+    // bincode (rápido) ou serde_json (debugável). Use sempre o mesmo!
+    bincode::serialize(&ProposalSignView {
+        id: &p.id,
+        proposer: &p.proposer,
+        content: &p.content,
+        parent: &p.parent,
+    }).expect("serialize sign view")
 }
