@@ -2,14 +2,9 @@
 pub mod auth;
 pub mod builder;
 pub mod cluster;
-pub mod cluster_proto {
-    tonic::include_proto!("cluster");
-}
 pub mod config;
 pub mod env;
 pub mod error;
-//pub mod ffi;
-pub mod jobs;
 pub mod network;
 pub mod peer_manager;
 pub mod runtime;
@@ -41,4 +36,3 @@ pub use env::{
     }
 };
 pub use utils::NodeId;
-pub use network::adapter::NetworkAdapter;
