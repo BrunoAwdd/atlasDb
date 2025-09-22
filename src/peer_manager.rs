@@ -42,6 +42,36 @@ impl PeerManager {
         }
     }
 
+    fn demote_or_reserve(&mut self, id: &NodeId) {
+        self.active_peers.remove(id);
+        if self.reserve_peers.contains(id) { return; }
+        if self.reserve_peers.len() < self.max_reserve {
+            self.reserve_peers.insert(id.clone());
+        } else if let Some(worst_r) =
+            self.reserve_peers.iter().min_by_key(|pid| self.score_tuple(pid)).cloned()
+        {
+            if self.better(id, &worst_r) {
+                self.reserve_peers.remove(&worst_r);
+                self.reserve_peers.insert(id.clone());
+            }
+        }
+    }
+
+    /// Tupla de score: confiabilidade (maior é melhor) e latência (menor é melhor).
+    /// Usamos Reverse(rel) para ordenar decrescente por confiabilidade.
+    fn score_tuple(&self, id: &NodeId) -> (std::cmp::Reverse<i64>, u64) {
+        let s = self.known_peers.get(id);
+        let rel = s.map(|n| (n.reliability_score * 1_000_000.0) as i64).unwrap_or(0);
+        let lat = s.and_then(|n| n.latency).unwrap_or(u64::MAX);
+        (std::cmp::Reverse(rel), lat)
+    }
+
+    /// true se `a` é melhor que `b`
+    fn better(&self, a: &NodeId, b: &NodeId) -> bool {
+        self.score_tuple(a) < self.score_tuple(b)
+    }
+
+    /// substituição da reserve se cheia e novo for melhor
     fn register_peer(&mut self, node_id: NodeId, stats: Node) {
         self.known_peers.insert(node_id.clone(), stats);
         if self.active_peers.contains(&node_id) || self.reserve_peers.contains(&node_id) {
