@@ -43,82 +43,22 @@ impl ConsensusEngine {
         self.pool.add(proposal.clone());
         self.registry.register_proposal(&proposal.id);
     }
-
-    /// Submete uma proposta e propaga aos peers pela rede.
-    pub(crate) async fn submit_proposal(
-        &mut self,
-        proposal: Proposal,
-        network: Arc<dyn NetworkAdapter>,
-    ) -> Result<Vec<Result<crate::cluster_proto::Ack, String>>, String> {
-        let peers = {
-            let pm = self.peer_manager.read().await;
-            pm.get_active_peers().into_iter().collect::<Vec<_>>()
-        };
-
-        let mut results = Vec::new();
-        for peer in peers {
-            if peer == proposal.proposer {
-                continue;
-            }
-
-            let peer_data = self
-                .peer_manager
-                .read()
-                .await
-                .get_peer_stats(&peer);
-
-            if let Some(p) = peer_data {
-                let ack = network.send_proposal(p, proposal.clone()).await
-                    .map(|_| crate::cluster_proto::Ack {
-                        received: true,
-                        message: format!("Proposta recebida por {}", peer),
-                    })
-                    .map_err(|e| format!("Erro ao enviar para {}: {:?}", peer, e));
-
-                results.push(ack);
-            } else {
-                results.push(Ok(crate::cluster_proto::Ack {
-                    received: false,
-                    message: format!("Peer {} não encontrado", peer),
-                }));
-            }
-        }
-
-        Ok(results)
-    }
-
+    
     /// Registra voto recebido de um peer.
-    pub(crate) async fn receive_vote(&mut self, vote_msg: crate::cluster_proto::VoteMessage) {
-        let voter = NodeId(vote_msg.voter_id.clone());
+    pub(crate) async fn receive_vote(&mut self, vote_msg: VoteData) {
+        let voter = vote_msg.voter.clone();
         if !self.get_active_nodes().await.contains(&voter) {
-            println!("⚠️ Ignorado voto de nó inativo: [{}]", voter);
+            println!("⚠️ Ignorado voto de nó inativo: [{}]", vote_msg.voter.clone());
             return;
         }
 
-        match Vote::try_from(vote_msg.vote) {
+        match Vote::try_from(vote_msg.vote.clone()) {
             Ok(vote) => {
                 self.registry.register_vote(&vote_msg.proposal_id, voter.clone(), vote.clone());
                 println!("📥 [{}] votou {:?} na proposta [{}]", voter, vote, vote_msg.proposal_id);
             }
-            Err(_) => println!("⚠️ Voto inválido ignorado: {}", vote_msg.vote),
+            Err(_) => println!("⚠️ Voto inválido ignorado: {}", vote_msg.vote.to_string()),
         }
-    }
-
-    /// Propaga votos da proposta pela rede.
-    pub(crate) async fn vote_proposals(
-        &self,
-        vote_batch: ClusterMessage,
-        network: Arc<dyn NetworkAdapter>,
-        proposer: &Node,
-    ) -> Result<crate::cluster_proto::Ack, String> {
-        if let Err(e) = network.send_votes(proposer.clone(), vote_batch).await {
-            return Err(format!("Erro ao enviar votos: {:?}", e));
-        }
-
-        Ok(crate::cluster_proto::Ack {
-            received: true,
-            message: format!("Votos enviados por {}", proposer.id),
-        })
     }
 
     /// Avalia todas as propostas e retorna os resultados.
