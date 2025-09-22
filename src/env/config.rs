@@ -20,7 +20,6 @@ use crate::{
     peer_manager::PeerManager, 
     ConsensusEngine, 
     Graph, 
-    network::adapter::NetworkAdapter, 
     NodeId, 
     Storage 
 };
@@ -74,7 +73,7 @@ impl EnvConfig {
         Ok(config)
     }
 
-    pub fn build_env(self, network: Arc<dyn NetworkAdapter>) -> AtlasEnv {
+    pub fn build_env(self) -> AtlasEnv {
         let peer_manager = Arc::new(RwLock::new(self.peer_manager));
         let engine = ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_ratio);
 
@@ -83,7 +82,6 @@ impl EnvConfig {
             graph: self.graph,
             storage: self.storage,
             engine: Arc::new(Mutex::new(engine)),
-            network,
             callback: Arc::new(noop_callback),
             peer_manager,
         }
