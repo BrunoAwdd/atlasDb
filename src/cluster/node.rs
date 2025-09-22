@@ -59,3 +59,15 @@ impl Node {
     
 
 }
+
+impl Default for Node {
+    fn default() -> Self {
+        Self {
+            id: NodeId::default(),          // requer impl Default pra NodeId
+            address: String::new(),
+            latency: None,
+            reliability_score: 0.0,
+            last_seen: SystemTime::now(),
+        }
+    }
+}
