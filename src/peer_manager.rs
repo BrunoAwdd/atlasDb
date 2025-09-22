@@ -146,6 +146,7 @@ impl PeerManager {
         match &command {
             PeerCommand::Register(id, _) => log::debug!("Registering peer: {:?}", id),
             PeerCommand::Drop(id) => log::debug!("Dropping peer: {:?}", id),
+            PeerCommand::Disconnected(id)  => log::debug!("Disconnected {id:?}"),
             PeerCommand::Rotate => log::debug!("Rotating peers"),
             PeerCommand::UpdateStats(id, _) => log::debug!("Updating stats for peer: {:?}", id),
         }
@@ -163,6 +164,10 @@ impl PeerManager {
                 self.drop_peer(&id);
                 PeerEvent::Dropped(id)
             },
+            PeerCommand::Disconnected(id) => {
+                self.demote_or_reserve(&id); // mantém em known_peers
+                PeerEvent::Demoted(id)
+            }
             PeerCommand::Rotate => {
                 let (promoted, demoted) = self.rotate_peers();
                 if let Some(p) = promoted {
