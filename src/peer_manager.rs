@@ -77,7 +77,7 @@ impl PeerManager {
                 if new_stats.get_last_seen() > current.get_last_seen() {
                     current.latency = new_stats.latency;
                     current.reliability_score = new_stats.reliability_score;
-                    current.update_last_seen(new_stats.get_last_seen());
+                    current.update_last_seen();
                     PeerEvent::Updated(node_id.clone())
                 } else {
                     PeerEvent::NoChange
