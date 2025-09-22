@@ -97,37 +97,23 @@ impl PeerManager {
         self.known_peers.remove(node_id);
     }
 
+    /// Rotação: promove o melhor da reserva se ele for melhor que o pior ativo (máx 1 troca)
     fn rotate_peers(&mut self) -> (Option<NodeId>, Option<NodeId>) {
-        let mut candidates: Vec<_> = self.reserve_peers.iter().cloned().collect();
-
-        // Ordena por confiabilidade e latência
-        candidates.sort_by_key(|id| {
-            let stats = self.known_peers.get(id);
-            (
-                stats.map(|s| std::cmp::Reverse((s.reliability_score * 100.0) as i64)).unwrap_or(std::cmp::Reverse(0)),
-                stats.map(|s| s.latency).unwrap_or(Some(u64::MAX)),
-            )
-        });
-
-        let mut promoted = None;
-        let mut demoted = None;
-
-        // Troca o menos eficiente dos ativos se reserva for melhor
-        for candidate in candidates {
-            if self.active_peers.len() >= self.max_active {
-                // Remove o pior dos ativos (com pior score)
-                if let Some(worst) = self.find_worst_active_peer() {
-                    promoted = Some(candidate.clone());
-                    demoted = Some(worst.clone());
-                    self.active_peers.remove(&worst);
-                    self.active_peers.insert(candidate.clone());
-                    self.reserve_peers.remove(&candidate);
-                    self.reserve_peers.insert(worst);
-                }
-            }
+        if self.active_peers.is_empty() || self.reserve_peers.is_empty() {
+            return (None, None);
         }
-
-        (promoted, demoted)
+        let worst_active = self.active_peers.iter().min_by_key(|id| self.score_tuple(id)).cloned();
+        let best_reserve = self.reserve_peers.iter().max_by(|a, b| self.score_tuple(*b).cmp(&self.score_tuple(*a))).cloned();
+        match (best_reserve, worst_active) {
+            (Some(best_r), Some(worst_a)) if self.better(&best_r, &worst_a) => {
+                self.reserve_peers.remove(&best_r);
+                self.active_peers.insert(best_r.clone());
+                self.active_peers.remove(&worst_a);
+                self.reserve_peers.insert(worst_a.clone());
+                (Some(best_r), Some(worst_a))
+            }
+            _ => (None, None),
+        }
     }
 
     fn find_worst_active_peer(&self) -> Option<NodeId> {
