@@ -12,8 +12,6 @@ use crate::{
     },
     auth::Authenticator,
     cluster::core::Cluster,
-    cluster::node::Node,
-    network::adapter::NetworkAdapter,
     peer_manager::PeerManager,
     utils::NodeId
 };
@@ -32,7 +30,6 @@ pub struct Config {
 impl Config {
     pub fn build_cluster_env(
         self,
-        network: Arc<dyn NetworkAdapter>,
         auth: Arc<RwLock<dyn Authenticator>>,
     ) -> Cluster {
         let peer_manager = Arc::new(RwLock::new(self.peer_manager));
@@ -54,26 +51,11 @@ impl Config {
             graph: self.graph,
             storage: self.storage,
             engine: Arc::new(Mutex::new(engine)),
-            network: Arc::clone(&network),
             callback: Arc::new(noop_callback),
             peer_manager: Arc::clone(&peer_manager),
         };
 
-        let node = Node::new(
-            self.node_id.clone().into(),
-            self.address.clone() + ":" + &self.port.to_string(),
-            None,
-            0.0,
-        );
-
-        Cluster {
-            local_env: env,
-            network,
-            local_node: node,
-            peer_manager,
-            shutdown_sender: Mutex::new(None),
-            auth,
-        }
+        Cluster::new(env, self.node_id, auth)
     }
 
     pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> io::Result<()> {
