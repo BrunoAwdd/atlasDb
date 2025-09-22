@@ -3,6 +3,7 @@ pub mod config;
 pub mod node;
 pub mod storage;
 pub mod proposal;
+pub mod vote_data;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -14,8 +15,6 @@ use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    env::config::EnvConfig, 
-    network::adapter::NetworkAdapter, 
     peer_manager::PeerManager, 
     utils::NodeId
 };
@@ -28,13 +27,10 @@ use storage::{Storage, audit::save_audit};
 pub trait Callback: Fn(ConsensusResult) + Send + Sync {}
 impl<T> Callback for T where T: Fn(ConsensusResult) + Send + Sync {}
 
-
 pub struct AtlasEnv {
     pub graph: Graph,
     pub storage: Storage,
     pub engine: Arc<Mutex<ConsensusEngine>>,
-
-    pub network: Arc<dyn NetworkAdapter>,
 
     pub callback: Arc<dyn Callback>,
 
@@ -43,7 +39,6 @@ pub struct AtlasEnv {
 
 impl AtlasEnv {
     pub fn new(
-        network: Arc<dyn NetworkAdapter>, 
         callback:  Arc<dyn Callback>,
         peer_manager: Arc<RwLock<PeerManager>>,
     ) -> Self {
@@ -52,7 +47,6 @@ impl AtlasEnv {
             graph: Graph::new(),
             storage: Storage::new(),
             engine: Arc::new(Mutex::new(engine)),
-            network,
             callback,
             peer_manager,
         }
@@ -112,12 +106,6 @@ impl AtlasEnv {
         self.graph.print_graph();
         self.storage.print_summary();
     }
-
-    pub fn from_config(network: Arc<dyn NetworkAdapter>) -> Self {
-        let config = EnvConfig::load_from_file("config.json").expect("Failed to load config file");
-        config.build_env(network)
-    }
-
 
     pub async fn get_proposals(&self) -> Result<HashMap<String, Proposal>, String> {
         let proposals = self.engine.lock().await.pool.all().clone();
