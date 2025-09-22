@@ -5,11 +5,11 @@ use std::{
 use tokio::sync::{RwLock};
 
 use crate::{
-    env::proposal::Proposal,
-    network::{adapter::{ClusterMessage, NetworkAdapter}},
-    peer_manager::PeerManager,
-    utils::NodeId,
-    Node,
+    env::{
+        proposal::Proposal, vote_data::VoteData
+    },  
+    peer_manager::PeerManager, 
+    utils::NodeId
 };
 
 use super::{
