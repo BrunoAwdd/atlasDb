@@ -6,3 +6,5 @@
 Cargo.lock
 *.zip
 *.json
+review-by-gemini.md
+review-2-gemini.md
