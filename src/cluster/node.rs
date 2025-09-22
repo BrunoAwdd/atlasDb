@@ -47,6 +47,9 @@ impl Node {
     pub fn update_last_seen(&mut self) {
         self.last_seen = SystemTime::now();
     }
+
+    pub fn update_latency(&mut self, v: Option<u64>) {
+        self.latency = v;
     }
 
     pub fn get_last_seen(&self) -> SystemTime {
