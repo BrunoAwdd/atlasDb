@@ -7,6 +7,7 @@ use crate::cluster::node::Node;
 pub enum PeerCommand {
     Register(NodeId, Node),
     Drop(NodeId),
+    Disconnected(NodeId),
     Rotate,
     UpdateStats(NodeId, Node),
 }
