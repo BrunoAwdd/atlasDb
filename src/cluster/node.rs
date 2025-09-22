@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use serde::{Deserialize, Serialize};
 
 use crate::utils::NodeId;
@@ -9,7 +11,7 @@ pub struct Node {
     pub address: String,
     pub latency: Option<u64>,
     pub reliability_score: f32,
-    last_seen: u64,
+    last_seen: SystemTime,
 }
 
 
@@ -21,7 +23,17 @@ impl Node {
             address,
             latency,
             reliability_score,
-            last_seen: 0,
+            last_seen: SystemTime::now(),
+        }
+    }
+
+    pub fn placeholder() -> Self {
+        Self {
+            id: NodeId::default(),          // se tiver impl Default
+            address: String::new(),
+            latency: None,
+            reliability_score: 0.0,
+            last_seen: std::time::SystemTime::now(),
         }
     }
 
@@ -32,11 +44,12 @@ impl Node {
             self.latency.unwrap_or(999) < MAX_LATENCY
     }
 
-    pub fn update_last_seen(&mut self, timestamp: u64) {
-        self.last_seen = timestamp;
+    pub fn update_last_seen(&mut self) {
+        self.last_seen = SystemTime::now();
+    }
     }
 
-    pub fn get_last_seen(&self) -> u64 {
+    pub fn get_last_seen(&self) -> SystemTime {
         self.last_seen
     }
 
