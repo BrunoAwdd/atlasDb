@@ -6,6 +6,7 @@
 //! trait integrations, and conversion helpers.
 
 use serde::{Serialize, Deserialize};
+use libp2p::PeerId;
 
 /// Unique identifier for a node in the distributed cluster.
 ///
@@ -33,6 +34,12 @@ impl From<&str> for NodeId {
     /// ```
     fn from(s: &str) -> Self {
         NodeId(s.to_string())
+    }
+}
+
+impl From<PeerId> for NodeId {
+    fn from(p: PeerId) -> Self {
+        NodeId(p.to_string())
     }
 }
 #[cfg(test)]
