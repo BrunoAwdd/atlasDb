@@ -1,92 +1,72 @@
-use std::sync::Arc;
-
 use crate::{
     cluster::core::Cluster,
-    cluster_proto::{Ack, VoteMessage},
-    network::adapter::{ClusterMessage, VoteData},
-    utils::NodeId, Vote,
+    env::vote_data::{VoteData, vote_signing_bytes},
+    Vote,
 };
 
 impl Cluster {
-    pub(super) async fn vote_proposals(&self) -> Result<(), String> {
-        let engine_guard = self.local_env.engine.lock().await;
-        let proposal_pool = engine_guard.get_all_proposals().all().clone();
-        drop(engine_guard);
+    pub(crate) async fn vote_proposals(&self) -> Result<Vec<VoteData>, String> {
+        // pega proposals sem segurar o lock
+        let proposal_pool = {
+            let eng = self.local_env.engine.lock().await;
+            eng.get_all_proposals().all().clone()
+        };
 
-        for (_, proposal) in proposal_pool{
-            let content = proposal.content.clone();
-            let serialized = bincode::serialize(&content).unwrap();
+        let mut out = Vec::new();
 
+        for (_, proposal) in proposal_pool {
+            // 1) decide o voto
+            let serialized = bincode::serialize(&proposal.content).unwrap();
             let is_valid = self.auth.read().await.verify(serialized, &proposal.signature);
-
             let vote = match is_valid {
                 Ok(true) => Vote::Yes,
                 Ok(false) => Vote::No,
-                Err(_e) => Vote::Abstain
+                Err(_) => Vote::Abstain,
             };
 
-            let vote_to_sign = VoteData {        
+            // 2) monta VoteData (sem assinatura)
+            let mut vote_data = VoteData {
                 proposal_id: proposal.id.clone(),
-                vote: vote,
+                vote,
                 voter: self.local_node.id.clone(),
+                signature: [0u8; 64],
+                public_key: vec![],
             };
 
-            let vote_serialized = bincode::serialize(&vote_to_sign).unwrap();
-            let signed_vote = self.auth.read().await.sign(vote_serialized.clone(), "12345".to_string())?;
-    
-            let vote_data = vote_to_sign.into_cluster_message(Vec::new(), signed_vote);
+            // 3) assina canonicamente
+            let msg = vote_signing_bytes(&vote_data);
+            let sig_vec = self.auth.read().await.sign(msg, "12345".to_string())?;
+            let sig_arr: [u8; 64] = sig_vec
+                .try_into()
+                .map_err(|_| "assinatura inválida: tamanho incorreto")?;
+            vote_data.signature = sig_arr;
+            // se seu Auth expõe pubkey:
+            // vote_data.public_key = self.auth.read().await.public_key_bytes()?;
 
-            self.vote_proposal(vote_data, proposal.proposer).await?;
+            println!("📝 Publicando voto: {:?}", vote_data);
 
-            println!("Sending Votes...");
+            // 4) publica no tópico atlas/vote/v1
+            out.push(vote_data);
         }
 
-
-        Ok(())
+        Ok(out)
     }
-
-    async fn vote_proposal(&self, vote: ClusterMessage, proposer_id: NodeId) -> Result<(), String> {    
-        // Busca o proposer
-        let proposer = self.peer_manager
-            .read()
-            .await
-            .get_peer_stats(&proposer_id)
-            .ok_or_else(|| format!("Proposer node {} not found", proposer_id))?;
         
-        self.local_env
-            .engine
-            .lock()
-            .await
-            .vote_proposals(
-                vote,
-                Arc::clone(&self.network),
-                &proposer,
-            )
-            .await
-            .map_err(|e| format!("Erro ao votar propostas: {}", e))?;
-    
-        // Retorna o ClusterMessage original (já validado como Vote)
-        Ok(())
-    }
-    
-    pub(super) async fn handle_vote(&self, msg: VoteMessage) -> Result<Ack, String> {
-        let vote_data = VoteData::from_proto(msg.clone());
-        let vote_serialized = bincode::serialize(&vote_data).unwrap();
+    pub(crate) async fn handle_vote(&self, bytes: Vec<u8>) -> Result<(), String> {
+        let vote_data: VoteData = bincode::deserialize(&bytes)
+            .map_err(|e| format!("decode vote: {e}"))?;
 
-        let signature_array: [u8; 64] = msg.signature
+        let signature_array: [u8; 64] = vote_data.signature
             .as_slice()
             .try_into()
             .map_err(|_| "Assinatura com tamanho inválido")?;
 
         let auth = self.auth.read().await;
 
-        let is_valid = match auth.verify(vote_serialized, &signature_array) {
+        let is_valid = match auth.verify(bytes, &signature_array) {
             Ok(valid) => valid,
             Err(e) => {
-                return Ok(Ack {
-                    received: false,
-                    message: format!("Assinatura inválida: {}", e),
-                });
+                return Ok(());
             }
         };
         drop(auth);
@@ -99,17 +79,11 @@ impl Cluster {
 
 
         if is_valid {
-            self.local_env.engine.lock().await.receive_vote(msg.clone()).await;
+            self.local_env.engine.lock().await.receive_vote(vote_data.clone()).await;
     
-            Ok(Ack {
-                received: true,
-                message: format!("Votos {} recebidos por {}", msg.proposal_id.clone(), self.local_node.id),
-            })
+            Ok(())
         } else {
-            Ok(Ack {
-                received: false,
-                message: format!("Votos {} inválidos", msg.proposal_id),
-            })
+            Ok(())
         }
     }
 }
