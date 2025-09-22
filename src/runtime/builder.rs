@@ -1,91 +1,109 @@
-// src/runtime/builder.rs
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{oneshot, Mutex};
-use tracing::{info, error};
-use crate::error::AtlasError;
+use bincode::config;
+use tokio::sync::{mpsc, Mutex};
 
+use crate::error::AtlasError;
 pub type Result<T> = std::result::Result<T, AtlasError>;
 
 use crate::{
-  cluster::{builder::ClusterBuilder, core::Cluster, service::ClusterService},
-  cluster_proto::cluster_network_server::ClusterNetworkServer,
-  jobs::{bus::CommandBus, scheduler::spawn_scheduler},
-  cluster::command::ClusterCommand,
-  env::config::EnvConfig,
-  network::{adapter::NetworkAdapter, grcp_adapter::GRPCNetworkAdapter}, // ver nota #5
-  auth::Authenticator,
+    auth::Authenticator,
+    cluster::{builder::ClusterBuilder, core::Cluster},
+    env::config::EnvConfig,
+    network::p2p::{
+        adapter::{AdapterCmd, Libp2pAdapter},
+        config::P2pConfig,
+        events::AdapterEvent,
+        ports::{AdapterHandle, P2pPublisher}, // trait opcional p/ abstrair
+    },
+    runtime::maestro::Maestro,
+    config::Config,
 };
-use tokio::time::Duration as Dur;
 
 pub struct AtlasRuntime {
-  pub cluster: Arc<Cluster>,
-  pub bus: CommandBus,
+    pub cluster: Arc<Cluster>,
+    pub publisher: AdapterHandle,
+    // se quiser poder encerrar depois, guarde os JoinHandles:
+    // pub adapter_task: tokio::task::JoinHandle<()>,
+    // pub maestro_task: tokio::task::JoinHandle<()>,
+}
+
+impl AtlasRuntime {
+    pub async fn send_proposals(&self) -> Result<()> {
+        let proposals = self.cluster.get_proposals()
+            .await.map_err(|e| AtlasError::Other(e.to_string()))?;
+        for p in proposals {
+            self.publisher.publish(&p.id, p.bytes())
+                .await.map_err(|e| AtlasError::Other(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn send_votes(&self) -> Result<()> {
+        let votes = self.cluster.vote_proposals()
+            .await.map_err(|e| AtlasError::Other(e.to_string()))?;
+        for v in votes {
+            self.publisher.publish(&v.proposal_id, v.bytes())
+                .await.map_err(|e| AtlasError::Other(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+
 }
 
 pub async fn build_runtime(
-  config_path: &str,
-  network: Option<Arc<dyn NetworkAdapter>>,
-  auth: Arc<tokio::sync::RwLock<dyn Authenticator>>,
+    config_path: &str,
+    auth: Arc<tokio::sync::RwLock<dyn Authenticator>>,
+    p2p_cfg: P2pConfig,
 ) -> Result<AtlasRuntime> {
-  // carrega env/config
-  let net = match network {
-    Some(n) => n,
-    None => {
-      // address/port sairão do EnvConfig/ClusterBuilder
-      Arc::new(GRPCNetworkAdapter::new("0.0.0.0".into(), 50052))
-    }
-  };
-  let env = EnvConfig::load_from_file(config_path)?.build_env(Arc::clone(&net));
-  let cluster = ClusterBuilder::new()
-      .with_env(env)
-      .with_network(net.clone())
-      .with_auth(auth)
-      .build()
-      .map_err(|e| AtlasError::Other(e.to_string()))?;
+    let config = Config::load_from_file(config_path)?;
+    let cluster = Arc::new(config.build_cluster_env(auth));
 
-  // inicia gRPC
-  let arc = start_grpc(cluster).await?;
-  let bus = CommandBus::new(&arc.clone(), 100, 5);
+    // 2) Canais P2P
+    let (adapter_evt_tx, maestro_evt_rx) = mpsc::channel::<AdapterEvent>(64);
+    let (maestro_cmd_tx, adapter_cmd_rx) = mpsc::channel::<AdapterCmd>(32);
 
-  // scheduler + heartbeat recorrente
-  let sched = spawn_scheduler(bus.clone());
-  let _hb = sched.enqueue_every(
-      Dur::from_secs(5),
-      Some(Dur::from_millis(500)),
-      ClusterCommand::BroadcastHeartbeat,
-  ).await;
+    // 3) Adapter (Libp2p) + spawn
+    let adapter = Libp2pAdapter::new(p2p_cfg, adapter_evt_tx, adapter_cmd_rx)
+        .await
+        .map_err(|e| AtlasError::Other(format!("p2p init: {e}")))?;
+    tokio::spawn(async move { adapter.run().await });
 
-  Ok(AtlasRuntime { cluster: arc, bus })
+    // 4) Porta (publisher) e Maestro
+    let publisher = AdapterHandle { cmd_tx: maestro_cmd_tx };
+    let maestro = Maestro {
+        cluster: Arc::clone(&cluster),
+        p2p: publisher.clone(), // AdapterHandle implementa P2pPublisher
+        evt_rx: Mutex::new(maestro_evt_rx),
+    };
+    let maestro = Arc::new(maestro);
+    let m = Arc::clone(&maestro);
+    tokio::spawn(async move { m.run().await });
+
+    Ok(AtlasRuntime { cluster, publisher })
 }
 
 pub async fn run_cli() -> Result<()> {
-  // exemplo: configurações mínimas
-  // aqui você pode ler CLI/arquivo
-  let auth = Arc::new(tokio::sync::RwLock::new(
-      crate::auth::authenticator::SimpleAuthenticator::new(Vec::new()),
-  ));
+    // Exemplo: configs mínimas
+    let auth = Arc::new(tokio::sync::RwLock::new(
+        crate::auth::authenticator::SimpleAuthenticator::new(vec![]),
+    ));
 
-  let rt = build_runtime("config.json", None, auth).await?;
-  // bloqueia aqui conforme seu modelo (ou só retorna Ok(()))
-  loop { tokio::time::sleep(Duration::from_secs(60)).await; }
+    // Exemplo p2p config (ajuste conforme sua CLI / arquivo):
+    let p2p_cfg = P2pConfig {
+        listen_multiaddrs: vec!["/ip4/0.0.0.0/tcp/4001".into()],
+        bootstrap: vec![],
+        enable_mdns: true,
+        enable_kademlia: true,
+    };
+
+    let _rt = build_runtime("config.json", auth, p2p_cfg).await?;
+
+    // Bloqueia o processo (até ter shutdown)
+    loop {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
 }
 
-async fn start_grpc(mut cluster: Cluster) -> Result<Arc<Cluster>> {
-  let addr = cluster.local_node.address.parse().map_err(|e:std::net::AddrParseError| AtlasError::Other(e.to_string()))?;
-  let (tx, rx) = oneshot::channel();
-  cluster.shutdown_sender = Mutex::new(Some(tx));
-  let arc = Arc::new(cluster);
-  let svc = ClusterService::new(arc.clone());
 
-  info!("Starting gRPC server at {}", addr);
-  tokio::spawn(async move {
-      if let Err(e) = tonic::transport::Server::builder()
-          .tcp_nodelay(true)
-          .http2_keepalive_interval(Some(Duration::from_secs(30)))
-          .add_service(ClusterNetworkServer::new(svc))
-          .serve_with_shutdown(addr, async { let _ = rx.await; })
-          .await
-      { error!("gRPC error: {}", e); }
-  });
-  Ok(arc)
-}
