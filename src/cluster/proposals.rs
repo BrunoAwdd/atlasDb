@@ -1,13 +1,29 @@
 
-use tokio::sync::mpsc;
+use crate::{cluster::core::Cluster, env::proposal::Proposal, network::p2p::adapter::AdapterCmd};
 
-use crate::{
-    cluster::core::Cluster, 
-    env::proposal::Proposal, 
-    network::p2p::adapter::AdapterCmd,
-};
+const PROPOSAL_TOPIC: &str = "atlas/proposals/v1";
 
 impl Cluster {
+    /// Prepara e retorna um comando de publicação para uma nova proposta.
+    ///
+    /// Esta função adiciona a proposta ao pool de consenso local, a serializa
+    /// e, em seguida, retorna um `AdapterCmd::Publish` que pode ser enviado
+    /// pela camada de rede para disseminar a proposta via gossip.
+    pub async fn submit_proposal(&self, proposal: Proposal) -> Result<AdapterCmd, String> {
+        // 1. Adicionar a proposta ao nosso próprio pool de consenso primeiro.
+        self.add_proposal(proposal.clone()).await?;
+
+        // 2. Serializar a proposta para enviar pela rede.
+        let bytes = bincode::serialize(&proposal)
+            .map_err(|e| format!("failed to serialize proposal: {e}"))?;
+
+        // 3. Criar e retornar o comando para publicação, delegando o envio.
+        Ok(AdapterCmd::Publish {
+            topic: PROPOSAL_TOPIC.into(),
+            data: bytes,
+        })
+    }
+
     pub(super) async fn add_proposal(&self, proposal: Proposal) -> Result<(), String> {
         self.local_env.engine.lock().await
             .add_proposal(proposal.clone());
