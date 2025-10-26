@@ -7,6 +7,10 @@ edition = "2021"
 name = "atlas_db"
 path = "src/lib.rs"
 
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+
 [dependencies]
 async-trait = "0.1"
 bincode = "1.3"
