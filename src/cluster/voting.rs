@@ -28,7 +28,7 @@ impl Cluster {
             let mut vote_data = VoteData {
                 proposal_id: proposal.id.clone(),
                 vote,
-                voter: self.local_node.id.clone(),
+                voter: self.local_node.read().await.id.clone(),
                 signature: [0u8; 64],
                 public_key: vec![],
             };
@@ -75,7 +75,7 @@ impl Cluster {
         let votes = engine.get_all_votes().clone(); // clona os dados para sair do guard
         drop(engine); // opcional: solta o lock antes de usar votes
 
-        println!("Votes {} {:?}", self.local_node.id, &votes);
+        println!("Votes {} {:?}", self.local_node.read().await.id, &votes);
 
 
         if is_valid {

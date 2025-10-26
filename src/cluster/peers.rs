@@ -3,7 +3,7 @@ use crate::{peer_manager::PeerCommand, Cluster, Node, NodeId};
 impl Cluster {
     /// Adds a new node to the cluster by its unique identifier.
     pub async fn add_node(&self, id: NodeId, stats: Node) -> Result<(), String> {
-        if id == self.local_node.id {
+        if id == self.local_node.read().await.id {
             return Ok(());
         }
         let cmd = PeerCommand::Register(id, stats);
