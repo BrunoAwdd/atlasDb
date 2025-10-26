@@ -3,7 +3,11 @@
 /scripts
 /demo
 /.vscode
+/certs
 Cargo.lock
+key-a
+IDEA.MD
+key-b
 *.zip
 *.json
 review-by-gemini.md
