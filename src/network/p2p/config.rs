@@ -4,4 +4,5 @@ pub struct P2pConfig {
     pub bootstrap: Vec<String>,         // e.g. ["/ip4/.../p2p/<peerid>"]
     pub enable_mdns: bool,
     pub enable_kademlia: bool,
+    pub keypair_path: String,
 }
