@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package atlas;
+
+// O serviço de propostas.
+service ProposalService {
+  // Envia uma proposta para o nó líder.
+  rpc SubmitProposal (ProposalRequest) returns (ProposalReply);
+}
+
+// A mensagem de requisição contendo os dados da proposta.
+message ProposalRequest {
+  // Conteúdo da proposta, por exemplo, um JSON.
+  string content = 1;
+}
+
+// A mensagem de resposta.
+message ProposalReply {
+  // Mensagem de status, ex: "Proposta submetida com sucesso".
+  string message = 1;
+  // O ID da proposta que foi criada.
+  string proposal_id = 2;
+}
