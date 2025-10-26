@@ -14,7 +14,7 @@ use libp2p::PeerId;
 /// - Ensure type safety across APIs
 /// - Enable strong `HashMap`/`HashSet` keys
 /// - Provide readable formatting and conversions
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub String);
 
 impl std::fmt::Display for NodeId {
