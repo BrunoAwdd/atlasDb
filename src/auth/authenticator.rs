@@ -62,4 +62,8 @@ impl Authenticator for SimpleAuthenticator {
 
         Ok(expected_hex.as_bytes() == &received_signature[..])
     }
+
+    fn public_key(&self) -> Vec<u8> {
+        self.key.to_vec()
+    }
 }
