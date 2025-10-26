@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::peer_manager::{PeerManager, PeerCommand, PeerEvent};
@@ -46,7 +47,7 @@ use libp2p::{
     StreamProtocol, 
     Transport
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 
 pub enum AdapterCmd {
     Publish { topic: String, data: Vec<u8> },
@@ -58,18 +59,25 @@ pub struct Libp2pAdapter {
     pub swarm: Swarm<Behaviour>,
     pub evt_tx: mpsc::Sender<AdapterEvent>,
     cmd_rx: mpsc::Receiver<AdapterCmd>,
-    peer_mgr: PeerManager,
+    peer_mgr: Arc<RwLock<PeerManager>>,
     addr_book: HashMap<NodeId, HashSet<Multiaddr>>,
     dial_backoff: HashMap<NodeId, Instant>,
     last_kad_bootstrap: std::time::Instant,   
 }
 
 
+use crate::network::key_manager;
+use std::path::Path;
+
+
 impl Libp2pAdapter {
-    pub async fn new(cfg: P2pConfig, evt_tx: mpsc::Sender<AdapterEvent>, cmd_rx: mpsc::Receiver<AdapterCmd>) -> Result<Self, P2pError> {
+    pub async fn new(cfg: P2pConfig, evt_tx: mpsc::Sender<AdapterEvent>, cmd_rx: mpsc::Receiver<AdapterCmd>, peer_mgr: Arc<RwLock<PeerManager>>) -> Result<Self, P2pError> {
         // chave/peer id
-        let key = identity::Keypair::generate_ed25519();
+        let key = key_manager::load_or_generate_keypair(Path::new(&cfg.keypair_path))
+            .map_err(P2pError::Io)?;
         let peer_id = PeerId::from(key.public());
+
+        // ... (rest of the function is the same)
 
         // transporte
         let transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true))
@@ -150,7 +158,6 @@ impl Libp2pAdapter {
             }
         }
 
-        let peer_mgr = PeerManager::new(/*max_active*/ 8, /*max_reserve*/ 64);
         let addr_book = HashMap::new();
         let dial_backoff = HashMap::new();
         let last_kad_bootstrap = std::time::Instant::now();
@@ -162,6 +169,7 @@ impl Libp2pAdapter {
     pub async fn run(mut self) {
         use futures::StreamExt;
         let mut maintain = tokio::time::interval(Duration::from_secs(10));
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(3));
         
     
         loop {
@@ -177,7 +185,7 @@ impl Libp2pAdapter {
                                     self.swarm.behaviour_mut().kad.add_address(&peer_id, addr);
                                 }
                                 // toque o peer (marca last_seen = agora)
-                                self.touch_peer(id);
+                                self.touch_peer(id).await;
                             
                                 if self.last_kad_bootstrap.elapsed() >= Duration::from_secs(60) {
                                     let _ = self.swarm.behaviour_mut().kad.bootstrap();
@@ -190,13 +198,13 @@ impl Libp2pAdapter {
                             if let libp2p::ping::Event { peer, result: Ok(rtt), .. } = ev {
                                 let id: NodeId = peer.into();
                                 // atualiza latência e last_seen
-                                let mut n = self
-                                    .peer_mgr
+                                let mut peer_mgr = self.peer_mgr.write().await;
+                                let mut n = peer_mgr
                                     .get_peer_stats(&id)
                                     .unwrap_or_else(|| Node::placeholder());
                                 n.update_latency(Some(rtt.as_millis() as u64));
                                 n.update_last_seen();
-                                let _ = self.peer_mgr.handle_command(PeerCommand::UpdateStats(id, n));
+                                let _ = peer_mgr.handle_command(PeerCommand::UpdateStats(id, n));
                             }
                         }
     
@@ -205,18 +213,20 @@ impl Libp2pAdapter {
                             match ev {
                                 libp2p::mdns::Event::Discovered(list) => {
                                     for (peer, addr) in list {
-                                        let id: NodeId = peer_id.into();
+                                        let id: NodeId = peer.into();
                                         self.learn_addr(&id, addr.clone());
                                         self.swarm.behaviour_mut().kad.add_address(&peer, addr.clone());
                                         let node = Node { reliability_score: 0.0, latency: None, ..Default::default() };
-                                        let _ = self.peer_mgr.handle_command(PeerCommand::Register(id.clone(), node));
+                                        self.peer_mgr.write().await.handle_command(PeerCommand::Register(id.clone(), node));
                                         let _ = Swarm::dial(&mut self.swarm, addr);
-                                        let _ = self.evt_tx.send(AdapterEvent::PeerDiscovered(peer)).await;
+                                        if let Ok(_) = self.evt_tx.send(AdapterEvent::PeerDiscovered(peer)).await {
+                                            // Handle error if necessary
+                                        }
                                     }
                                 }
                                 libp2p::mdns::Event::Expired(list) => {
                                     for (peer, addr) in list {
-                                        let id: NodeId = peer_id.into();
+                                        let id: NodeId = peer.into();
                                         self.swarm.behaviour_mut().kad.remove_address(&peer, &addr);
                                         if let Some(set) = self.addr_book.get_mut(&id) {
                                             set.remove(&addr);
@@ -234,17 +244,37 @@ impl Libp2pAdapter {
                                     self.learn_addr(&id, addr.clone());
                                     let _ = Swarm::dial(&mut self.swarm, addr);
                                 }
-                                let _ = self.evt_tx.send(AdapterEvent::PeerDiscovered(peer)).await;
+                                if let Ok(_) = self.evt_tx.send(AdapterEvent::PeerDiscovered(peer)).await {
+                                    // Handle error if necessary
+                                }
                             }
                         }
     
                         SwarmEvent::Behaviour(ComposedEvent::Gossipsub(ev)) => {
                             match ev {
                                 GossipsubEvent::Message { propagation_source, message, .. } => {
-                                    let topic = message.topic.as_str().to_string();
-                                    let data  = message.data.clone();
-                                    tracing::info!("RX gossipsub topic={} size={} from={}", topic, data.len(), propagation_source);
-                                    // repassa para evt_tx
+                                    let topic = message.topic.as_str();
+                                    let data = message.data.clone();
+                                    let from = message.source.unwrap_or(propagation_source);
+                                    tracing::info!("RX gossipsub topic={} size={} from={}", topic, data.len(), from);
+
+                                    let event = match topic {
+                                        "atlas/heartbeat/v1" => AdapterEvent::Heartbeat {
+                                            from: from.into(),
+                                            data,
+                                        },
+                                        "atlas/proposal/v1" => AdapterEvent::Proposal(data),
+                                        "atlas/vote/v1" => AdapterEvent::Vote(data),
+                                        _ => AdapterEvent::Gossip {
+                                            topic: topic.to_string(),
+                                            from: from.into(),
+                                            data,
+                                        },
+                                    };
+
+                                    if let Err(e) = self.evt_tx.send(event).await {
+                                        tracing::error!("evt_tx send error: {e}");
+                                    }
                                 }
                                 GossipsubEvent::Subscribed { peer_id, topic } => {
                                     tracing::info!("peer {peer_id} subscribed to {}", topic.as_str());
@@ -262,34 +292,29 @@ impl Libp2pAdapter {
                                 Message::Request { request, channel, .. } => {
                                     // atividade do peer
                                     let id: NodeId = peer.into();
-                                    self.touch_peer(id);
+                                    self.touch_peer(id).await;
                                     let _ = (request, channel);
                                     // self.swarm.behaviour_mut().rr.send_response(channel, resp)?;
                                 }
                                 Message::Response { response, .. } => {
                                     let id: NodeId = peer.into();
-                                    self.touch_peer(id);
+                                    self.touch_peer(id).await;
                                     let _ = response;
                                 }
                             },
                         
                             // novas variantes (cubra com .. para estabilidade):
                             RequestResponseEvent::OutboundFailure { peer, .. } => {
-                                // Ex.: timeout, conexão fechada, dial failure...
-                                // Marque atividade mínima do peer; você pode também registrar métrica/decair score.
                                 let id: NodeId = peer.into();
-                                self.touch_peer(id);
-                                // log::debug!("RR outbound failure: {:?}", error); // se quiser capturar o erro, inclua `error`
+                                self.touch_peer(id).await;
                             }
                             RequestResponseEvent::InboundFailure { peer, .. } => {
                                 let id: NodeId = peer.into();
-                                self.touch_peer(id);
-                                // log::debug!("RR inbound failure: {:?}", error);
+                                self.touch_peer(id).await;
                             }
                             RequestResponseEvent::ResponseSent { peer, .. } => {
-                                // resposta enviada com sucesso
                                 let id: NodeId = peer.into();
-                                self.touch_peer(id);
+                                self.touch_peer(id).await;
                             }
                         
                             _ => {}
@@ -297,18 +322,21 @@ impl Libp2pAdapter {
                         
                         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                             let id: NodeId = peer_id.into();
-                            if !self.peer_mgr.known_peers.contains_key(&id) {
+                            let mut peer_mgr = self.peer_mgr.write().await;
+                            if !peer_mgr.known_peers.contains_key(&id) {
                                 let mut node = Node::placeholder();
                                 node.update_last_seen();
-                                let _ = self.peer_mgr.handle_command(PeerCommand::Register(id, node));
+                                let _ = peer_mgr.handle_command(PeerCommand::Register(id, node));
                             } else {
-                                self.touch_peer(id);
+                                // Drop the lock before calling touch_peer, which will lock it again
+                                drop(peer_mgr);
+                                self.touch_peer(id).await;
                             }
                         }
     
                         SwarmEvent::ConnectionClosed { peer_id, .. } => {
                             let id = peer_id.into();
-                            let _ = self.peer_mgr.handle_command(PeerCommand::Disconnected(id));
+                            self.peer_mgr.write().await.handle_command(PeerCommand::Disconnected(id));
                         }
     
                         _ => {}
@@ -316,25 +344,34 @@ impl Libp2pAdapter {
                 }
     
                 // 2) manutenção (braço separado!)
+                _ = heartbeat_interval.tick() => {
+                    let topic = IdentTopic::new("atlas/heartbeat/v1");
+                    let data = b"hi from adapter".to_vec();
+                    println!("💓 heartbeat");
+                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                        tracing::warn!("Failed to publish heartbeat: {e}");
+                    }
+                }
+
                 _ = maintain.tick() => {
-                    // disca alguns da reserva (que não estejam ativos)
-                    let active = self.peer_mgr.get_active_peers();
-                    let reserve: Vec<NodeId> = self
-                        .peer_mgr
+                    let peer_mgr = self.peer_mgr.read().await;
+                    let active = peer_mgr.get_active_peers();
+                    let reserve: Vec<NodeId> = peer_mgr
                         .get_reserve_peers()
                         .into_iter()
                         .filter(|id| !active.contains(id))
                         .take(8)
                         .collect();
+                    
+                    // Drop the read lock before acquiring a write lock
+                    drop(peer_mgr);
     
                     for id in reserve {
                         self.try_dial_with_backoff(&id);
                     }
     
-                    // rotação (no máx 1 swap por chamada)
-                    let _ = self.peer_mgr.handle_command(PeerCommand::Rotate);
+                    self.peer_mgr.write().await.handle_command(PeerCommand::Rotate);
     
-                    // bootstrap do KAD com cooldown de 60s
                     if self.last_kad_bootstrap.elapsed() >= Duration::from_secs(60) {
                         let _ = self.swarm.behaviour_mut().kad.bootstrap();
                         self.last_kad_bootstrap = std::time::Instant::now();
@@ -351,8 +388,9 @@ impl Libp2pAdapter {
                                 }
                                 Err(e) => {
                                     tracing::warn!("TX gossipsub FAIL topic={} err={e}", t.hash().to_string());
-                                    // opcional: re-enfileirar/retry depois de um pequeno delay
-                                    let _ = self.evt_tx.send(AdapterEvent::PublishFailed { topic: t.to_string(), data }).await;
+                                    if let Ok(_) = self.evt_tx.send(AdapterEvent::PublishFailed { topic: t.to_string(), data }).await {
+                                        // Handle error if necessary
+                                    }
                                 }
                             }
                         }
@@ -366,13 +404,13 @@ impl Libp2pAdapter {
         }
     }
     
-    fn touch_peer(&mut self, id: NodeId) {
-        let mut n = self
-            .peer_mgr
+    async fn touch_peer(&mut self, id: NodeId) {
+        let mut peer_mgr = self.peer_mgr.write().await;
+        let mut n = peer_mgr
             .get_peer_stats(&id)
             .unwrap_or_else(|| Node::placeholder());
         n.update_last_seen();
-        let _ = self.peer_mgr.handle_command(PeerCommand::UpdateStats(id, n));
+        let _ = peer_mgr.handle_command(PeerCommand::UpdateStats(id, n));
     }
     
 
