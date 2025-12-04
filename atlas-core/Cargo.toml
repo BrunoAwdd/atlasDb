@@ -1,0 +1,48 @@
+[package]
+name = "atlas-core"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "atlas_db"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+
+[build-dependencies]
+tonic-build.workspace = true
+prost-build.workspace = true
+tonic.workspace = true
+
+[dependencies]
+atlas-sdk = { path = "../atlas-sdk" }
+ed25519-dalek.workspace = true
+async-trait.workspace = true
+bincode.workspace = true
+env_logger.workspace = true
+futures.workspace = true
+hex.workspace = true
+log.workspace = true
+prost.workspace = true
+libp2p.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+uuid.workspace = true
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+mdns = ["libp2p/mdns"]
+default = []
