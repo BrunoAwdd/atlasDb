@@ -34,7 +34,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build_cluster_env(
+    pub async fn build_cluster_env(
         self,
         auth: Arc<RwLock<dyn Authenticator>>,
     ) -> Cluster {
@@ -55,7 +55,7 @@ impl Config {
 
         // Initialize Ledger
         use crate::ledger::Ledger;
-        let ledger = Ledger::new(&self.data_dir).expect("Failed to initialize Ledger from config");
+        let ledger = Ledger::new(&self.data_dir).await.expect("Failed to initialize Ledger from config");
         let mut storage = self.storage;
         storage.ledger = Some(Arc::new(ledger));
 

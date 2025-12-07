@@ -48,7 +48,18 @@ pub struct Storage {
 impl Storage {
     /// Constructs an empty storage instance.
     pub fn new(data_dir: &str) -> Self {
-        let ledger = Ledger::new(data_dir).expect("Failed to initialize Ledger");
+        // Since this is called from a synchronous context (builder::init), we need to block.
+        // We create a temporary runtime for this initialization.
+        // To avoid "Cannot start a runtime from within a runtime" panic (if called from async context like setup.rs),
+        // we spawn a dedicated thread.
+        let data_dir = data_dir.to_string();
+        let ledger = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(async {
+                Ledger::new(&data_dir).await.expect("Failed to initialize Ledger")
+            })
+        }).join().expect("Failed to join thread");
+
         Self {
             proposals: Vec::new(),
             votes: HashMap::new(),

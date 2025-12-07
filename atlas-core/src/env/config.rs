@@ -89,8 +89,15 @@ impl EnvConfig {
         let engine = ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_policy);
 
         // Initialize Ledger
+        // Initialize Ledger
         use crate::ledger::Ledger;
-        let ledger = Ledger::new(&self.data_dir).expect("Failed to initialize Ledger from config");
+        let data_dir = self.data_dir.clone();
+        let ledger = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(async {
+                Ledger::new(&data_dir).await.expect("Failed to initialize Ledger from config")
+            })
+        }).join().expect("Failed to join thread");
         self.storage.ledger = Some(Arc::new(ledger));
 
         fn noop_callback(_: ConsensusResult) {}

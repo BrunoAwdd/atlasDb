@@ -52,7 +52,7 @@ pub async fn build_runtime(
     grpc_addr: std::net::SocketAddr,
 ) -> Result<AtlasRuntime> {
     let config = Config::load_from_file(config_path)?;
-    let cluster = Arc::new(config.build_cluster_env(auth));
+    let cluster = Arc::new(config.build_cluster_env(auth).await);
 
     // 2) Canais P2P
     let (adapter_evt_tx, maestro_evt_rx) = mpsc::channel::<AdapterEvent>(64);

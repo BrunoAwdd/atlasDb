@@ -78,7 +78,7 @@ pub fn get_local_ip() -> std::net::IpAddr {
 pub async fn load_config(path: &str, auth: Arc<RwLock<dyn Authenticator>>) -> Result<Arc<Cluster>, Box<dyn std::error::Error>> {
     let config = Config::load_from_file(path).or_else(|_| Config::load_from_file("config.json"))?;
 
-    let cluster = config.build_cluster_env(auth);
+    let cluster = config.build_cluster_env(auth).await;
 
     Ok(Arc::new(cluster))
 }
