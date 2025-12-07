@@ -21,6 +21,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// Touched for rebuild
 pub struct Config {
     pub node_id: NodeId,
     pub address: String,
@@ -29,6 +30,7 @@ pub struct Config {
     pub graph: Graph,
     pub storage: Storage,
     pub peer_manager: PeerManager,
+    pub data_dir: String,
 }
 
 impl Config {
@@ -51,12 +53,19 @@ impl Config {
 
         engine.registry.replace(self.storage.votes.clone());
 
+        // Initialize Ledger
+        use crate::ledger::Ledger;
+        let ledger = Ledger::new(&self.data_dir).expect("Failed to initialize Ledger from config");
+        let mut storage = self.storage;
+        storage.ledger = Some(Arc::new(ledger));
+
         let env = AtlasEnv {
             graph: self.graph,
-            storage: Arc::new(RwLock::new(self.storage)),
+            storage: Arc::new(RwLock::new(storage)),
             engine: Arc::new(Mutex::new(engine)),
             callback: Arc::new(noop_callback),
             peer_manager: Arc::clone(&peer_manager),
+            data_dir: self.data_dir.clone(),
         };
 
         Cluster::new(env, self.node_id, auth)

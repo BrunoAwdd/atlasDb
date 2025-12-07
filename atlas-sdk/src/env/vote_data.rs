@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::{
     env::{
-        consensus::types::Vote
+        consensus::types::{Vote, ConsensusPhase}
     },
     utils::NodeId,
 };
@@ -13,6 +13,10 @@ pub struct VoteData {
     pub proposal_id: String,
     pub vote: Vote,
     pub voter: NodeId,
+    #[serde(default)]
+    pub phase: ConsensusPhase,
+    #[serde(default)]
+    pub view: u64,
     #[serde(with = "hex::serde")]
     pub signature: [u8; 64],
     pub public_key: Vec<u8>,
@@ -36,6 +40,8 @@ struct VoteSignView<'a> {
     id:       &'a str,
     vote:     &'a Vote,
     voter:    &'a NodeId,
+    phase:    &'a ConsensusPhase,
+    view:     u64,
 }
 
 pub fn vote_signing_bytes(v: &VoteData) -> Vec<u8> {
@@ -44,5 +50,7 @@ pub fn vote_signing_bytes(v: &VoteData) -> Vec<u8> {
         id: &v.proposal_id,
         vote: &v.vote,
         voter: &v.voter,
+        phase: &v.phase,
+        view: v.view,
     }).expect("serialize sign view")
 }

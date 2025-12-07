@@ -58,8 +58,10 @@ impl ConsensusEngine {
 
         match Vote::try_from(vote_msg.vote.clone()) {
             Ok(vote) => {
-                self.registry.register_vote(&vote_msg.proposal_id, voter.clone(), vote.clone());
-                info!("📥 [{}] votou {:?} na proposta [{}]", voter, vote, vote_msg.proposal_id);
+                match self.registry.register_vote(&vote_msg.proposal_id, vote_msg.phase.clone(), voter.clone(), vote.clone()) {
+                    Ok(_) => info!("📥 [{}] votou {:?} na proposta [{}] (Fase: {:?})", voter, vote, vote_msg.proposal_id, vote_msg.phase),
+                    Err(e) => warn!("🚨 EQUIVOCATION DETECTED: {}", e),
+                }
             }
             Err(_) => warn!("⚠️ Voto inválido ignorado: {}", vote_msg.vote.to_string()),
         }

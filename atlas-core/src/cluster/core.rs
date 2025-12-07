@@ -74,6 +74,7 @@ impl Cluster {
             graph: Graph::new(),
             storage: self.local_env.storage.read().await.clone(),
             peer_manager: self.peer_manager.read().await.clone(),
+            data_dir: self.local_env.data_dir.clone(),
         };
 
         config.save_to_file(path).expect("Failed to save initial configuration");

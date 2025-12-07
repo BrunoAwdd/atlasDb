@@ -7,11 +7,9 @@
 /.vscode
 atlas-core/certs
 atlas-core/keys
-atlas-core/node1
-atlas-core/node2
+atlas-core/example
+example/
 atlas-core/logs
-node1/
-node2/
 Cargo.lock
 key-a
 IDEA.MD

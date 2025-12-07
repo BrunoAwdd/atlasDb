@@ -31,12 +31,14 @@ pub struct AtlasEnv {
     pub callback: Arc<dyn Callback>,
 
     pub peer_manager: Arc<RwLock<PeerManager>>,
+    pub data_dir: String,
 }
 
 impl AtlasEnv {
     pub fn new(
         callback:  Arc<dyn Callback>,
         peer_manager: Arc<RwLock<PeerManager>>,
+        data_dir: &str,
     ) -> Self {
         let policy = QuorumPolicy {
             fraction: 0.7,
@@ -45,10 +47,11 @@ impl AtlasEnv {
         let engine = ConsensusEngine::new(Arc::clone(&peer_manager), policy);
         AtlasEnv {
             graph: Graph::new(),
-            storage: Arc::new(RwLock::new(Storage::new())),
+            storage: Arc::new(RwLock::new(Storage::new(data_dir))),
             engine: Arc::new(Mutex::new(engine)),
             callback,
             peer_manager,
+            data_dir: data_dir.to_string(),
         }
     }
 

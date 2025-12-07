@@ -9,7 +9,7 @@ use crate::{
 
 use atlas_sdk::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
 };
 
 /// Structure that represents the full audit data of a consensus session.
@@ -23,8 +23,8 @@ pub struct AuditData {
     /// List of all proposals submitted to the system.
     pub proposals: Vec<Proposal>,
 
-    /// Mapping of proposal ID to a map of node IDs and their corresponding votes.
-    pub votes: HashMap<String, HashMap<NodeId, Vote>>,
+    /// Mapping of proposal ID to a map of phases, node IDs and their corresponding votes.
+    pub votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, Vote>>>,
 
     /// Mapping of proposal ID to the final consensus result.
     pub results: HashMap<String, ConsensusResult>,
@@ -65,7 +65,7 @@ mod tests {
         proposal::Proposal
     };
     use atlas_sdk::{
-        env::consensus::types::{ConsensusResult, Vote},
+        env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
     };
 
     #[test]
@@ -80,21 +80,25 @@ mod tests {
             proposer: NodeId("node-A".into()),
             content: "Connect A to B".to_string(),
             parent: None,
+            height: 0,
             signature: [0u8; 64],
             public_key: vec![],
         };
         proposals.push(proposal.clone());
 
         // Simulates a Vote
+        let mut phase_map = HashMap::new();
         let mut vote_map = HashMap::new();
         vote_map.insert(NodeId("node-A".to_string()), Vote::Yes);
-        votes.insert(proposal.id.clone(), vote_map);
+        phase_map.insert(ConsensusPhase::Prepare, vote_map);
+        votes.insert(proposal.id.clone(), phase_map);
 
         // Simulates a consensus result
         let result = ConsensusResult {
             proposal_id: proposal.id.clone(),
             approved: true,
             votes_received: 1,
+            phase: ConsensusPhase::Prepare,
         };
         results.insert(proposal.id.clone(), result);
 
@@ -119,7 +123,7 @@ mod tests {
 
         let loaded_proposal = &loaded.proposals[0];
         assert_eq!(loaded_proposal.id, "prop-123");
-        assert_eq!(loaded.votes["prop-123"][&NodeId("node-A".to_string())], Vote::Yes);
+        assert_eq!(loaded.votes["prop-123"][&ConsensusPhase::Prepare][&NodeId("node-A".to_string())], Vote::Yes);
         assert_eq!(loaded.results["prop-123"].approved, true);
     }
 }

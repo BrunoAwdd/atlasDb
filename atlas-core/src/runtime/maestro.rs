@@ -28,11 +28,14 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         let proposer = local_node.id.clone();
         let public_key = self.cluster.auth.read().await.public_key().to_vec();
 
+        let height = self.cluster.local_env.storage.read().await.proposals.len() as u64 + 1;
+
         let mut proposal = Proposal {
             id,
             proposer,
             content,
             parent: None,
+            height,
             signature: [0u8; 64],
             public_key,
         };
@@ -72,6 +75,7 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
     pub async fn run(self: Arc<Self>) {
         info!("[MAESTRO DEBUG] Tarefa Maestro::run iniciada.");
         let mut election_timer = time::interval(Duration::from_secs(5));
+        let mut sync_timer = time::interval(Duration::from_secs(10));
 
         info!("[MAESTRO DEBUG] Entrando no loop principal.");
         loop {
@@ -82,20 +86,23 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                         // Processar o evento de rede
                         match evt {
                             AdapterEvent::Proposal(bytes) => {
+                                let bytes_clone = bytes.clone();
                                 if let Err(e) = self.cluster.handle_proposal(bytes).await {
                                     eprintln!("handle_proposal_bytes erro: {e}");
                                     continue;
                                 }
-                                match self.cluster.vote_proposals().await {
-                                    Ok(votes) => {
-                                        for vote in votes {
+                                // BFT Step 1: Receive Proposal -> Broadcast Prepare
+                                if let Ok(proposal) = bincode::deserialize::<atlas_sdk::env::proposal::Proposal>(&bytes_clone) {
+                                     match self.cluster.create_vote(&proposal.id, atlas_sdk::env::consensus::types::ConsensusPhase::Prepare).await {
+                                        Ok(Some(vote)) => {
                                             let bytes = bincode::serialize(&vote).unwrap();
                                             if let Err(e) = self.p2p.publish("atlas/vote/v1", bytes).await {
-                                                eprintln!("Erro ao publicar voto: {}", e);
+                                                eprintln!("Erro ao publicar voto Prepare: {}", e);
                                             }
-                                        }
+                                        },
+                                        Ok(None) => {},
+                                        Err(e) => eprintln!("create_vote Prepare erro: {e}"),
                                     }
-                                    Err(e) => eprintln!("vote_proposals erro: {e}"),
                                 }
                             }
     
@@ -103,16 +110,41 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                 if let Err(e) = self.cluster.handle_vote(bytes).await {
                                     eprintln!("handle_vote_bytes erro: {e}");
                                 } else {
-                                    // Check for consensus after receiving a vote
+                                    // Check for consensus progress
                                     match self.cluster.evaluate_proposals().await {
                                         Ok(results) => {
                                             for result in results {
                                                 if result.approved {
-                                                    info!("🎉 Proposta APROVADA: {}", result.proposal_id);
-                                                    tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
-                                                    
-                                                    if let Err(e) = self.cluster.commit_proposal(result).await {
-                                                        eprintln!("Erro ao commitar proposta: {}", e);
+                                                    match result.phase {
+                                                        atlas_sdk::env::consensus::types::ConsensusPhase::Prepare => {
+                                                            // Quorum(Prepare) -> Broadcast PreCommit
+                                                            match self.cluster.create_vote(&result.proposal_id, atlas_sdk::env::consensus::types::ConsensusPhase::PreCommit).await {
+                                                                Ok(Some(vote)) => {
+                                                                    let bytes = bincode::serialize(&vote).unwrap();
+                                                                    self.p2p.publish("atlas/vote/v1", bytes).await.ok();
+                                                                },
+                                                                _ => {}
+                                                            }
+                                                        },
+                                                        atlas_sdk::env::consensus::types::ConsensusPhase::PreCommit => {
+                                                            // Quorum(PreCommit) -> Broadcast Commit
+                                                            match self.cluster.create_vote(&result.proposal_id, atlas_sdk::env::consensus::types::ConsensusPhase::Commit).await {
+                                                                Ok(Some(vote)) => {
+                                                                    let bytes = bincode::serialize(&vote).unwrap();
+                                                                    self.p2p.publish("atlas/vote/v1", bytes).await.ok();
+                                                                },
+                                                                _ => {}
+                                                            }
+                                                        },
+                                                        atlas_sdk::env::consensus::types::ConsensusPhase::Commit => {
+                                                            // Quorum(Commit) -> Finalize
+                                                            info!("🎉 Proposta FINALIZADA (BFT): {}", result.proposal_id);
+                                                            tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
+                                                            
+                                                            if let Err(e) = self.cluster.commit_proposal(result).await {
+                                                                eprintln!("Erro ao commitar proposta: {}", e);
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -141,6 +173,49 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                 );
                             }
     
+                            AdapterEvent::TxRequest { from, req, req_id } => {
+                                match req {
+                                    crate::network::p2p::protocol::TxRequest::GetState { height } => {
+                                        info!("📥 Recebido pedido de estado de {} (altura > {})", from, height);
+                                        let proposals = self.cluster.local_env.storage.read().await.get_proposals_after(height).await;
+                                        let bundle = crate::network::p2p::protocol::TxBundle::State { proposals };
+                                        
+                                        // Send response
+                                        if let Err(e) = self.p2p.send_response(req_id, bundle).await {
+                                            eprintln!("Erro ao enviar resposta de estado: {}", e);
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            }
+
+                            AdapterEvent::TxBundle { from, bundle } => {
+                                match bundle {
+                                    crate::network::p2p::protocol::TxBundle::State { proposals } => {
+                                        info!("📦 Recebido pacote de estado de {} com {} propostas", from, proposals.len());
+                                        for p in proposals {
+                                            // Validate and add to storage
+                                            // TODO: Verify signatures? Yes, strictly we should.
+                                            // For now, assume they are valid or rely on handle_proposal logic if reused.
+                                            // But handle_proposal does gossip logic. Here we just want to store.
+                                            
+                                            // Verify signature
+                                            let sign_bytes = atlas_sdk::env::proposal::signing_bytes(&p);
+                                            let ok = self.cluster.auth.read().await
+                                                .verify_with_key(sign_bytes, &p.signature, &p.public_key)
+                                                .is_ok();
+
+                                            if ok {
+                                                self.cluster.local_env.storage.write().await.log_proposal(p);
+                                            } else {
+                                                tracing::warn!("❌ Assinatura inválida no State Transfer para proposta {}", p.id);
+                                            }
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            }
+
                             AdapterEvent::Gossip { topic, data, from } if topic == "atlas/heartbeat/v1" => {
                                 tracing::info!("❤️ hb (fallback) de {from} ({} bytes)", data.len());
                             }
@@ -184,6 +259,20 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                         info!("Este nó não é mais o líder. Parando servidor gRPC...");
                         if let Some(task) = handle_guard.take() {
                             task.abort();
+                        }
+                    }
+                }
+
+                _ = sync_timer.tick() => {
+                    let peers = self.cluster.peer_manager.read().await.get_active_peers();
+                    // Pick a random peer (or just the first one for simplicity)
+                    if let Some(node_id) = peers.iter().next() {
+                        let my_height = self.cluster.local_env.storage.read().await.proposals.len() as u64;
+                        if let Ok(peer) = node_id.0.parse::<libp2p::PeerId>() {
+                            info!("🔄 Solicitando sync para {} (minha altura: {})", peer, my_height);
+                            if let Err(e) = self.p2p.request_state(peer, my_height).await {
+                                eprintln!("Erro ao solicitar sync: {}", e);
+                            }
                         }
                     }
                 }

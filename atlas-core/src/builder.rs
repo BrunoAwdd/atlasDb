@@ -22,9 +22,12 @@ use crate::{
 };
 
 
+// Touched for rebuild
 pub fn init(path: Option<&str>, node_id: Option<String>, config: Option<Config>) {
     let peer_manager = PeerManager::new(10, 5);
     let ip = get_local_ip().to_string();
+    let node_id_str = node_id.clone().unwrap_or_else(|| "default".to_string());
+    let data_dir = format!("data/{}", node_id_str);
 
     let config = config.unwrap_or(Config {
         node_id: NodeId(node_id.unwrap_or("".to_string())),
@@ -32,8 +35,9 @@ pub fn init(path: Option<&str>, node_id: Option<String>, config: Option<Config>)
         port: 50052,
         quorum_policy: QuorumPolicy::default(),
         graph: Graph::new(),
-        storage: Storage::new(),
+        storage: Storage::new(&data_dir),
         peer_manager,
+        data_dir: data_dir.clone(),
     });
 
     config.save_to_file(path.unwrap_or("config.json")).expect("Failed to save initial configuration");

@@ -20,28 +20,41 @@ use super::{
 
 use atlas_sdk::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
 };
+
+use crate::ledger::Ledger;
+use std::sync::Arc;
 
 /// In-memory simulation of a distributed storage ledger.
 ///
 /// Used to persist proposals, vote traces, and final consensus outcomes.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Storage {
     /// All proposals submitted to the system.
     pub proposals: Vec<Proposal>,
 
-    /// Map of proposal ID → (node ID → vote).
-    pub votes: HashMap<String, HashMap<NodeId, Vote>>,
+    /// Map of proposal ID → Phase → (node ID → vote).
+    pub votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, Vote>>>,
 
     /// Map of proposal ID → final consensus result.
     pub results: HashMap<String, ConsensusResult>,
+
+    /// Persistent Ledger (Binlog + RocksDB)
+    #[serde(skip)]
+    pub ledger: Option<Arc<Ledger>>,
 }
 
 impl Storage {
     /// Constructs an empty storage instance.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(data_dir: &str) -> Self {
+        let ledger = Ledger::new(data_dir).expect("Failed to initialize Ledger");
+        Self {
+            proposals: Vec::new(),
+            votes: HashMap::new(),
+            results: HashMap::new(),
+            ledger: Some(Arc::new(ledger)),
+        }
     }
 
     /// Logs a newly submitted proposal.
@@ -49,16 +62,31 @@ impl Storage {
     /// This allows the system to retain proposal metadata for future auditing.
     pub fn log_proposal(&mut self, proposal: Proposal) {
         println!("📝 Storing proposal [{}]", proposal.id);
-        self.proposals.push(proposal);
+        self.proposals.push(proposal.clone());
+        
+        // Persist to Ledger
+        if let Some(ledger) = &self.ledger {
+            let ledger = ledger.clone();
+            let prop = proposal.clone();
+            tokio::spawn(async move {
+                if let Err(e) = ledger.append_proposal(&prop).await {
+                    eprintln!("❌ Failed to append proposal to ledger: {}", e);
+                }
+            });
+        } else {
+            eprintln!("⚠️ Ledger not initialized, proposal not persisted to disk!");
+        }
     }
 
-    /// Logs a vote submitted by a node for a given proposal.
+    /// Logs a vote submitted by a node for a given proposal in a specific phase.
     ///
-    /// Votes are stored per proposal and are associated with the node that cast them.
-    pub fn log_vote(&mut self, proposal_id: &str, node: NodeId, vote: Vote) {
-        println!("🧾 Logging vote from [{}] on [{}]", node, proposal_id);
+    /// Votes are stored per proposal/phase and are associated with the node that cast them.
+    pub fn log_vote(&mut self, proposal_id: &str, phase: ConsensusPhase, node: NodeId, vote: Vote) {
+        println!("🧾 Logging vote from [{}] on [{}] (Phase: {:?})", node, proposal_id, phase);
         self.votes
             .entry(proposal_id.to_string())
+            .or_default()
+            .entry(phase)
             .or_default()
             .insert(node, vote);
     }
@@ -109,6 +137,22 @@ impl Storage {
         self.votes = data.votes;
         self.results = data.results;
     }
+
+    /// Returns all proposals with height greater than the given height.
+    pub async fn get_proposals_after(&self, height: u64) -> Vec<Proposal> {
+        if let Some(ledger) = &self.ledger {
+            match ledger.get_proposals_after(height).await {
+                Ok(proposals) => return proposals,
+                Err(e) => eprintln!("❌ Failed to read from ledger: {}", e),
+            }
+        }
+        
+        // Fallback to in-memory (mostly for tests or if ledger fails)
+        self.proposals.iter()
+            .filter(|p| p.height > height)
+            .cloned()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -128,6 +172,7 @@ mod tests {
             proposer: node(proposer),
             content: content.to_string(),
             parent: None,
+            height: 0,
             signature: [0u8; 64],
             public_key: vec![],
         }
@@ -138,6 +183,7 @@ mod tests {
             approved,
             votes_received: votes,
             proposal_id: proposal_id.to_string(),
+            phase: atlas_sdk::env::consensus::types::ConsensusPhase::Commit,
         }
     }
 
@@ -157,10 +203,11 @@ mod tests {
     #[test]
     fn test_log_vote_adds_vote_entry() {
         let mut store = Storage::new();
-        store.log_vote("p1", node("n1"), Vote::Yes);
-        store.log_vote("p1", node("n2"), Vote::No);
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes);
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n2"), Vote::No);
 
-        let votes = store.votes.get("p1").unwrap();
+        let phases = store.votes.get("p1").unwrap();
+        let votes = phases.get(&ConsensusPhase::Prepare).unwrap();
         assert_eq!(votes.len(), 2);
         assert_eq!(votes.get(&node("n1")), Some(&Vote::Yes));
         assert_eq!(votes.get(&node("n2")), Some(&Vote::No));
@@ -181,10 +228,11 @@ mod tests {
     #[test]
     fn test_vote_overwrite_behavior() {
         let mut store = Storage::new();
-        store.log_vote("p1", node("n1"), Vote::No);
-        store.log_vote("p1", node("n1"), Vote::Yes); // overwrite
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::No);
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes); // overwrite
 
-        let votes = store.votes.get("p1").unwrap();
+        let phases = store.votes.get("p1").unwrap();
+        let votes = phases.get(&ConsensusPhase::Prepare).unwrap();
         assert_eq!(votes.len(), 1); // still 1 voter
         assert_eq!(votes.get(&node("n1")), Some(&Vote::Yes));
     }

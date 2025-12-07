@@ -17,6 +17,9 @@ pub struct Proposal {
     pub content: String,
 
     pub parent: Option<String>, // Optional parent proposal ID for versioning
+    
+    /// The sequence number/height of this proposal.
+    pub height: u64,
 
     #[serde(with = "hex::serde")]
     pub signature: [u8; 64],
@@ -42,6 +45,7 @@ struct ProposalSignView<'a> {
     proposer: &'a NodeId,
     content:  &'a str,
     parent:   &'a Option<String>,
+    height:   u64,
 }
 
 pub fn signing_bytes(p: &Proposal) -> Vec<u8> {
@@ -51,5 +55,6 @@ pub fn signing_bytes(p: &Proposal) -> Vec<u8> {
         proposer: &p.proposer,
         content: &p.content,
         parent: &p.parent,
+        height: p.height,
     }).expect("serialize sign view")
 }

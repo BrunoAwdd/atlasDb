@@ -1,4 +1,4 @@
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
+use tonic::transport::Channel;
 use crate::rpc::atlas::proposal_service_client::ProposalServiceClient;
 use crate::rpc::atlas::{ProposalRequest, ProposalReply};
 
@@ -12,21 +12,8 @@ pub async fn submit_proposal(
 ) -> Result<ProposalReply, Box<dyn std::error::Error>> {
     let mut last_error = None;
 
-    let server_ca_cert = tokio::fs::read("certs/ca.pem").await?;
-    let server_ca_cert = Certificate::from_pem(server_ca_cert);
-
-    let client_cert = tokio::fs::read("certs/client.pem").await?;
-    let client_key = tokio::fs::read("certs/client.key").await?;
-    let client_identity = Identity::from_pem(client_cert, client_key);
-
-    let tls_config = ClientTlsConfig::new()
-        .domain_name("localhost")
-        .ca_certificate(server_ca_cert)
-        .identity(client_identity);
-
     for addr in node_addresses {
         let channel = match Channel::from_shared(addr.clone())?
-            .tls_config(tls_config.clone())?
             .connect()
             .await
         {

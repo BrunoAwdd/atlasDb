@@ -10,6 +10,23 @@ pub enum Vote {
     Abstain
 }
 
+/// Phases of the BFT consensus protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ConsensusPhase {
+    /// Initial phase: Nodes vote on the proposal validity.
+    Prepare,
+    /// Intermediate phase: Nodes confirm they have seen a quorum of Prepares.
+    PreCommit,
+    /// Final phase: Nodes vote to commit the proposal.
+    Commit,
+}
+
+impl Default for ConsensusPhase {
+    fn default() -> Self {
+        Self::Prepare
+    }
+}
+
 impl From<Vote> for i32 {
     fn from(v: Vote) -> Self {
         match v {
@@ -54,4 +71,8 @@ pub struct ConsensusResult {
 
     /// The proposal ID this result corresponds to.
     pub proposal_id: String,
+
+    /// The phase for which the consensus result is valid.
+    #[serde(default)]
+    pub phase: ConsensusPhase,
 }

@@ -12,8 +12,9 @@ fn main() {
         port: 3001,
         quorum_policy: QuorumPolicy::default(),
         graph: Graph::new(),
-        storage: Storage::new(),
+        storage: Storage::new("node1/data"),
         peer_manager: PeerManager::new(10, 5),
+        data_dir: "node1/data".to_string(),
     };
     node1_config.save_to_file("node1/config.json").unwrap();
 
@@ -23,8 +24,9 @@ fn main() {
         port: 3002,
         quorum_policy: QuorumPolicy::default(),
         graph: Graph::new(),
-        storage: Storage::new(),
+        storage: Storage::new("node2/data"),
         peer_manager: PeerManager::new(10, 5),
+        data_dir: "node2/data".to_string(),
     };
     node2_config.save_to_file("node2/config.json").unwrap();
 }

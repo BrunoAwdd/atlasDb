@@ -40,15 +40,7 @@ impl AtlasRuntime {
         Ok(())
     }
 
-    pub async fn send_votes(&self) -> Result<()> {
-        let votes = self.cluster.vote_proposals()
-            .await.map_err(|e| AtlasError::Other(e.to_string()))?;
-        for v in votes {
-            self.publisher.publish(&v.proposal_id, v.bytes())
-                .await.map_err(|e| AtlasError::Other(e.to_string()))?;
-        }
-        Ok(())
-    }
+
 
 
 }

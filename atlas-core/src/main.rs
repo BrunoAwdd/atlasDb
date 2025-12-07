@@ -93,9 +93,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Configuração do nó
     let keypair = key_manager::load_or_generate_keypair(Path::new(keypair_path))?;
     let auth = Arc::new(RwLock::new(convert_libp2p_keypair(keypair.clone())?));
+
+    // Load config to get bootstrap peers
+    let config = atlas_db::config::Config::load_from_file(config_path)?;
+    let mut bootstrap_peers = Vec::new();
+    
+    // Add CLI dial addr if present
+    if let Some(addr) = dial_addr {
+        bootstrap_peers.push(addr.to_string());
+    }
+
     let p2p_config = P2pConfig {
         listen_multiaddrs: vec![p2p_listen_addr.into()],
-        bootstrap: dial_addr.map(|addr| vec![addr.into()]).unwrap_or_default(),
+        bootstrap: bootstrap_peers,
         enable_mdns: true,
         enable_kademlia: true,
         keypair_path: keypair_path.to_string(),

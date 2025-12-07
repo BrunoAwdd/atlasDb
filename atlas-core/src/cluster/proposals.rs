@@ -28,6 +28,8 @@ impl Cluster {
         self.local_env.engine.lock().await
             .add_proposal(proposal.clone());
 
+        self.local_env.storage.write().await.log_proposal(proposal);
+
         Ok(())
     }
 
@@ -58,7 +60,7 @@ impl Cluster {
         info!("✅ Assinatura verificada com sucesso para proposta {} (Proposer: {})", proposal.id, proposal.proposer);
         tracing::info!(target: "consensus", "EVENT:VERIFY_PROPOSAL_OK id={}", proposal.id);
 
-        self.local_env.engine.lock().await.add_proposal(proposal);
+        self.add_proposal(proposal).await?;
         Ok(())
     }
 
@@ -76,7 +78,11 @@ impl Cluster {
 
         // 2. Persist to disk (simple audit file)
         let node_id = self.local_node.read().await.id.clone();
-        let filename = format!("audit-{}.json", node_id);
+        let audit_dir = "audits";
+        if let Err(e) = std::fs::create_dir_all(audit_dir) {
+            warn!("Failed to create audit directory: {}", e);
+        }
+        let filename = format!("{}/audit-{}.json", audit_dir, node_id);
         self.local_env.export_audit(&filename).await;
 
         Ok(())

@@ -39,10 +39,11 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 uuid.workspace = true
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
+rocksdb = { git = "https://github.com/rust-rocksdb/rust-rocksdb", branch="master" }
 
 [dev-dependencies]
 tempfile.workspace = true
 
 [features]
 mdns = ["libp2p/mdns"]
-default = []
+default = ["mdns"]

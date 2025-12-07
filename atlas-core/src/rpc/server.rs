@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tonic::transport::{Server, ServerTlsConfig, Identity, Certificate};
+use tonic::transport::Server;
 
 use crate::runtime::maestro::Maestro;
 use crate::network::p2p::ports::P2pPublisher;
@@ -47,28 +47,13 @@ pub async fn run_server<P: P2pPublisher + 'static>(
     maestro: Arc<Maestro<P>>,
     addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[TLS] Servidor gRPC escutando em {}", addr);
-
-    // Carregar os certificados e a chave do servidor
-    let cert = tokio::fs::read("certs/server.pem").await?;
-    let key = tokio::fs::read("certs/server.key").await?;
-    let server_identity = Identity::from_pem(cert, key);
-
-    // Carregar o certificado da CA que assinou os certificados dos clientes
-    let ca_cert = tokio::fs::read("certs/ca.pem").await?;
-    let client_ca_cert = Certificate::from_pem(ca_cert);
-
-    // Configurar o TLS do servidor para exigir autenticação do cliente (mTLS)
-    let tls_config = ServerTlsConfig::new()
-        .identity(server_identity)
-        .client_ca_root(client_ca_cert);
+    println!("[Plaintext] Servidor gRPC escutando em {}", addr);
 
     let service = MyProposalService {
         maestro,
     };
 
     Server::builder()
-        .tls_config(tls_config)?
         .add_service(ProposalServiceServer::new(service))
         .serve(addr)
         .await?;
