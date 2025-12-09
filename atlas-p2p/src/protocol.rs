@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use atlas_sdk::env::proposal::Proposal;
+use atlas_common::env::proposal::Proposal;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TxRequest {

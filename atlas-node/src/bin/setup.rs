@@ -2,15 +2,14 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
-use atlas_db::network::key_manager;
-use atlas_db::network::p2p::config::P2pConfig;
-use atlas_db::env::config::EnvConfig;
-use atlas_db::env::storage::Storage;
-use atlas_db::peer_manager::PeerManager;
-use atlas_db::env::consensus::evaluator::QuorumPolicy;
+use atlas_p2p::key_manager;
+use atlas_p2p::config::P2pConfig;
+use atlas_node::config::Config;
+use atlas_ledger::storage::Storage;
+use atlas_p2p::PeerManager;
+use atlas_consensus::QuorumPolicy;
 use atlas_common::env::node::Graph;
-use libp2p::identity::Keypair;
-use libp2p::PeerId;
+use atlas_common::env::node::Node;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut peers = Vec::new();
 
-    let base_dir = "example";
+    let base_dir = "atlas-core/example";
     fs::create_dir_all(base_dir)?;
 
     // 1. Generate Keys and IDs first
@@ -53,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if i != j {
                 let addr = format!("/ip4/127.0.0.1/tcp/{}/p2p/{}", base_port + j, pid);
                 let node_id = atlas_common::utils::NodeId(pid.to_string());
-                let node = atlas_db::cluster::node::Node::new(
+                let node = Node::new(
                     node_id.clone(),
                     addr,
                     None,
@@ -79,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             min_voters,
         };
 
-        let config = atlas_db::config::Config {
+        let config = Config {
             node_id: atlas_common::utils::NodeId(peer_id.to_string()),
             address: "127.0.0.1".to_string(),
             port: p2p_port as u16,
@@ -98,22 +97,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Generate Start Script
     let mut script = String::from("#!/bin/bash\n\n");
     script.push_str("trap 'kill $(jobs -p)' EXIT\n\n");
+    // Get the directory where the script is located
+    script.push_str("DIR=\"$( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n");
     script.push_str("echo \"🚀 Starting AtlasDB Cluster with 4 nodes...\"\n\n");
 
-    for (i, peer_id, _) in &peers {
+    for (i, _peer_id, _) in &peers {
         let p2p_port = base_port + i;
         let grpc_port = base_grpc_port + i;
-        let node_dir = format!("{}/node{}", base_dir, i);
+        let node_subdir = format!("node{}", i);
         
+        // Use $DIR to make paths absolute based on script location
         let mut cmd = format!(
-            "cargo run --bin atlas-core -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config {}/config.json --keypair {}/keypair",
-            p2p_port, grpc_port, node_dir, node_dir
+            "cargo run --manifest-path \"$DIR/../../Cargo.toml\" --bin atlas-node -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config \"$DIR/{}/config.json\" --keypair \"$DIR/{}/keypair\"",
+            p2p_port, grpc_port, node_subdir, node_subdir
         );
 
         // Bootstrap: mDNS handles discovery now, no manual dial needed
         // if *i > 1 { ... }
 
-        script.push_str(&format!("{} > {}/node.log 2>&1 &\n", cmd, node_dir));
+        script.push_str(&format!("{} > \"$DIR/{}/node.log\" 2>&1 &\n", cmd, node_subdir));
         script.push_str(&format!("PID_{}=$!\n", i));
         script.push_str(&format!("echo \"Started Node {} (PID $PID_{})\"\n", i, i));
 

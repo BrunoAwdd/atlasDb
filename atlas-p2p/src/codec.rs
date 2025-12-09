@@ -1,15 +1,16 @@
 use async_trait::async_trait;
-use futures::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
-use libp2p::{request_response as rr, StreamProtocol}; // <- raiz, não swarm
+use libp2p::futures::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
+use libp2p::request_response::Codec;
+use libp2p::StreamProtocol;
 use std::io;
 
-use crate::network::p2p::protocol::{TxRequest, TxBundle};
+use crate::protocol::{TxRequest, TxBundle};
 
 #[derive(Clone, Default)]
 pub struct TxCodec;
 
 #[async_trait]
-impl rr::Codec for TxCodec {
+impl Codec for TxCodec {
     type Protocol = StreamProtocol;
     type Request  = TxRequest;
     type Response = TxBundle;

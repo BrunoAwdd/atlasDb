@@ -18,7 +18,7 @@ use atlas_common::env::proposal::Proposal;
 
 use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{Vote, ConsensusPhase},
+    env::consensus::types::{Vote, ConsensusPhase, ConsensusResult},
 };
 
 use crate::Ledger;

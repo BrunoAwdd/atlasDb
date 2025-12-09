@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tokio::sync::mpsc::{self, Sender, Receiver};
-use atlas_sdk::utils::NodeId;
-use crate::network::message::{ClusterMessage, NetworkError};
-use crate::network::traits::Network;
+use atlas_common::utils::NodeId;
+use crate::message::{ClusterMessage, NetworkError};
+use crate::traits::Network;
 
 #[derive(Clone)]
 pub struct InMemoryNetwork {

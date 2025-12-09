@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use atlas_sdk::env::proposal::Proposal;
-use atlas_sdk::env::vote_data::VoteData;
+use atlas_common::env::proposal::Proposal;
+use atlas_common::env::vote_data::VoteData;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClusterMessage {

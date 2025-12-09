@@ -2,8 +2,7 @@ use crate::cluster::core::Cluster;
 use atlas_common::env::proposal::Proposal;
 use atlas_common::env::consensus::types::ConsensusResult;
 use atlas_common::error::{AtlasError, Result};
-use atlas_ledger::storage::Storage;
-use atlas_p2p::{PeerManager, adapter::AdapterCmd};
+use atlas_p2p::adapter::AdapterCmd;
 use tracing::{info, warn};
 
 const PROPOSAL_TOPIC: &str = "atlas/proposal/v1";
@@ -17,6 +16,8 @@ impl Cluster {
     pub async fn submit_proposal(&self, proposal: Proposal) -> Result<AdapterCmd> {
         // 1. Adicionar a proposta ao nosso próprio pool de consenso primeiro.
         self.add_proposal(proposal.clone()).await?;
+
+        tracing::info!(target: "consensus", "EVENT:PROPOSE id={} proposer={}", proposal.id, proposal.proposer);
 
         // 2. Serializar a proposta para enviar pela rede.
         let bytes = bincode::serialize(&proposal)
@@ -38,12 +39,12 @@ impl Cluster {
         Ok(())
     }
 
-    pub(crate) async fn get_proposals(&self) -> Result<Vec<Proposal>> {
+    pub async fn get_proposals(&self) -> Result<Vec<Proposal>> {
         let proposals = self.local_env.engine.lock().await.pool.all().clone();
         Ok(proposals.values().cloned().collect())
     }
 
-    pub(crate) async fn handle_proposal(&self, bytes: Vec<u8>) -> Result<()> {
+    pub async fn handle_proposal(&self, bytes: Vec<u8>) -> Result<()> {
         let proposal: Proposal = bincode::deserialize(&bytes)
             .map_err(|e| AtlasError::Other(format!("decode proposal: {e}")))?;
 
@@ -51,7 +52,7 @@ impl Cluster {
         tracing::info!(target: "consensus", "EVENT:RECEIVE_PROPOSAL id={} from={}", proposal.id, proposal.proposer);
 
         // bytes canônicos para assinatura
-        let sign_bytes = crate::env::proposal::signing_bytes(&proposal);
+        let sign_bytes = atlas_common::env::proposal::signing_bytes(&proposal);
         let ok = self.auth.read().await
             .verify_with_key(sign_bytes, &proposal.signature, &proposal.public_key)
             .map_err(|e| AtlasError::Auth(format!("verify failed: {e}")))?;
@@ -69,17 +70,21 @@ impl Cluster {
         Ok(())
     }
 
-    pub(crate) async fn evaluate_proposals(&self) -> Result<Vec<atlas_common::env::consensus::types::ConsensusResult>> {
+    pub async fn evaluate_proposals(&self) -> Result<Vec<atlas_common::env::consensus::types::ConsensusResult>> {
         info!("🗳️ Avaliando consenso");
         let results = self.local_env.engine.lock().await.evaluate_proposals().await;
         Ok(results)
     }
     
-    pub(crate) async fn commit_proposal(&self, result: atlas_common::env::consensus::types::ConsensusResult) -> Result<()> {
+    pub async fn commit_proposal(&self, result: atlas_common::env::consensus::types::ConsensusResult) -> Result<()> {
         info!("💾 Committing proposal {} (Approved: {})", result.proposal_id, result.approved);
+        tracing::info!(target: "consensus", "EVENT:COMMIT id={} approved={}", result.proposal_id, result.approved);
         
         // 1. Log result to in-memory storage
         self.local_env.storage.write().await.log_result(&result.proposal_id, result.clone());
+
+        // 2. Remove from proposal pool to stop re-evaluation
+        self.local_env.engine.lock().await.remove_proposal(&result.proposal_id);
 
         // 2. Persist to disk (simple audit file)
         let node_id = self.local_node.read().await.id.clone();

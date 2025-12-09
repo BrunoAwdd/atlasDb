@@ -1,5 +1,7 @@
 use atlas_common::utils::NodeId;
-use crate::{peer_manager::PeerCommand, Cluster, Node};
+use atlas_p2p::peer_manager::PeerCommand;
+use atlas_common::env::node::Node;
+use crate::Cluster;
 
 impl Cluster {
     /// Adds a new node to the cluster by its unique identifier.

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use async_trait::async_trait;
-use atlas_sdk::utils::NodeId;
-use crate::network::message::{ClusterMessage, NetworkError};
+use atlas_common::utils::NodeId;
+use crate::message::{ClusterMessage, NetworkError};
 
 #[async_trait]
 pub trait Network: Send + Sync {

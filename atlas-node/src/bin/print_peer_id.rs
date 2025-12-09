@@ -1,4 +1,4 @@
-use atlas_db::network::key_manager;
+use atlas_p2p::key_manager;
 use libp2p::identity;
 use std::path::Path;
 

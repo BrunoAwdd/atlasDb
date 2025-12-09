@@ -1,11 +1,16 @@
 pub mod adapter;
+pub mod behaviour;
+pub mod codec;
 pub mod config;
+pub mod error;
 pub mod events;
-pub mod traits;
+pub mod in_memory;
+pub mod key_manager;
+pub mod message;
 pub mod peer_manager;
 pub mod ports;
-pub mod key_manager;
-pub mod in_memory; // If needed, or remove
+pub mod protocol;
+pub mod traits;
 
 // Re-export common types if needed
 pub use peer_manager::PeerManager;

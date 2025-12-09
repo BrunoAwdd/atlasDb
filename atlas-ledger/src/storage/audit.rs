@@ -1,15 +1,13 @@
 use std::fs;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use crate::{
-    env::{
-        proposal::Proposal
-    }
-};
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
+    env::{
+        proposal::Proposal,
+        consensus::types::{ConsensusResult, Vote, ConsensusPhase},
+    },
 };
 
 /// Structure that represents the full audit data of a consensus session.

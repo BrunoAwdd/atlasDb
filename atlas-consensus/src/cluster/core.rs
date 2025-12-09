@@ -7,7 +7,7 @@ use atlas_common::{
     utils::NodeId
 };
 
-use atlas_node::runtime::AtlasEnv;
+use crate::env::runtime::AtlasEnv;
 use atlas_p2p::PeerManager;
 use atlas_common::env::node::Graph;
 use atlas_ledger::storage::Storage;

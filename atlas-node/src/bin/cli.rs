@@ -1,4 +1,4 @@
-use atlas_db::rpc::client::submit_proposal;
+use atlas_node::rpc::client::submit_proposal;
 use std::env;
 
 #[tokio::main]

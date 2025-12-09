@@ -13,11 +13,7 @@ use atlas_common::{
 };
 
 use atlas_p2p::PeerManager;
-use crate::{
-    env::{
-        vote_data::VoteData
-    },
-};
+use atlas_common::env::vote_data::VoteData;
 
 use super::{
     evaluator::{ConsensusEvaluator, QuorumPolicy},
@@ -48,6 +44,11 @@ impl ConsensusEngine {
     pub(crate) fn add_proposal(&mut self, proposal: Proposal) {
         self.pool.add(proposal.clone());
         self.registry.register_proposal(&proposal.id);
+    }
+
+    /// Remove uma proposta do pool.
+    pub(crate) fn remove_proposal(&mut self, id: &str) {
+        self.pool.remove(id);
     }
     
     /// Registra voto recebido de um peer.

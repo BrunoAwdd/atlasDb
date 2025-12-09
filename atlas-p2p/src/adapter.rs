@@ -4,17 +4,17 @@ use std::time::{Duration, Instant};
 
 use atlas_common::utils::NodeId;
 use crate::config::P2pConfig;
-use crate::events::AdapterEvent;
-use crate::peer_manager::PeerManager;
-use crate::traits::NetworkAdapter;
+use crate::events::{AdapterEvent, ComposedEvent};
+use crate::peer_manager::{PeerManager, PeerCommand};
+// use crate::traits::NetworkAdapter;
 
-use crate::cluster::node::Node;
+use atlas_common::env::node::Node;
 
-use crate::network::p2p::{
-    protocol::TxRequest,
+use crate::protocol::{
+    TxRequest,
 };
 
-use super::{
+use crate::{
     behaviour::P2pBehaviour as Behaviour,
     error::P2pError,
 };
@@ -48,12 +48,14 @@ use libp2p::{
     yamux, 
     Multiaddr, 
     PeerId, 
-    StreamProtocol, 
-    Transport
+    Transport,
+    StreamProtocol,
 };
+use libp2p::futures::StreamExt; // Fix futures import
+
 use tokio::sync::{mpsc, RwLock};
 
-use crate::network::key_manager;
+use crate::key_manager;
 use std::path::Path;
 
 pub struct Libp2pAdapter {
@@ -65,14 +67,14 @@ pub struct Libp2pAdapter {
     addr_book: HashMap<NodeId, HashSet<Multiaddr>>,
     dial_backoff: HashMap<NodeId, Instant>,
     last_kad_bootstrap: std::time::Instant,
-    pending_responses: HashMap<u64, libp2p::request_response::ResponseChannel<crate::network::p2p::protocol::TxBundle>>,
+    pending_responses: HashMap<u64, libp2p::request_response::ResponseChannel<crate::protocol::TxBundle>>,
     next_req_id: u64,
 }
 
 pub enum AdapterCmd {
     Publish { topic: String, data: Vec<u8> },
     RequestTxs { peer: libp2p::PeerId, req: TxRequest },
-    SendResponse { req_id: u64, res: crate::network::p2p::protocol::TxBundle },
+    SendResponse { req_id: u64, res: crate::protocol::TxBundle },
     Shutdown,
 }
 
@@ -126,6 +128,7 @@ impl Libp2pAdapter {
         // request-response
         let rr = {
             let mut cfg = RequestResponseConfig::default();
+            #[allow(deprecated)]
             cfg.set_request_timeout(std::time::Duration::from_secs(3));
         
             let protocols = std::iter::once((
@@ -185,7 +188,7 @@ impl Libp2pAdapter {
 
     /// Loop principal: processa eventos do Swarm e repassa ao Cluster
     pub async fn run(mut self) {
-        use futures::StreamExt;
+        use libp2p::futures::StreamExt;
         let mut maintain = tokio::time::interval(Duration::from_secs(10));
         let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(3));
         

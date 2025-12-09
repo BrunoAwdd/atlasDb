@@ -1,5 +1,5 @@
-use crate::{
-    cluster::core::Cluster,
+use crate::cluster::core::Cluster;
+use atlas_common::{
     env::vote_data::{VoteData, vote_signing_bytes},
     error::{AtlasError, Result},
 };
@@ -10,7 +10,7 @@ use atlas_common::{
 use tracing::{info, warn};
 
 impl Cluster {
-    pub(crate) async fn create_vote(&self, proposal_id: &str, phase: atlas_common::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
+    pub async fn create_vote(&self, proposal_id: &str, phase: atlas_common::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
         // 1. Retrieve proposal
         let proposal = {
             let eng = self.local_env.engine.lock().await;
@@ -27,7 +27,7 @@ impl Cluster {
         // For PreCommit/Commit, we implicitly vote Yes if we reached this stage (quorum check done by caller).
         let vote = match phase {
             atlas_common::env::consensus::types::ConsensusPhase::Prepare => {
-                let sign_bytes = crate::env::proposal::signing_bytes(&proposal);
+                let sign_bytes = atlas_common::env::proposal::signing_bytes(&proposal);
                 let is_valid = self.auth.read().await
                     .verify_with_key(sign_bytes, &proposal.signature, &proposal.public_key)
                     .map_err(|e| AtlasError::Auth(format!("Verification failed: {}", e)))?;
@@ -63,7 +63,7 @@ impl Cluster {
         Ok(Some(vote_data))
     }
         
-    pub(crate) async fn handle_vote(&self, bytes: Vec<u8>) -> Result<()> {
+    pub async fn handle_vote(&self, bytes: Vec<u8>) -> Result<()> {
         let vote_data: VoteData = bincode::deserialize(&bytes)
             .map_err(|e| AtlasError::Other(format!("decode vote: {e}")))?;
 

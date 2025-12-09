@@ -4,8 +4,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration};
 use tracing::info;
-use crate::network::p2p::{ports::P2pPublisher, adapter::AdapterCmd, events::AdapterEvent};
-use crate::cluster::core::Cluster;
+use atlas_p2p::{ports::P2pPublisher, adapter::AdapterCmd, events::AdapterEvent};
+use atlas_consensus::cluster::core::Cluster;
 use crate::rpc;
 
 
@@ -17,7 +17,7 @@ pub struct Maestro<P: P2pPublisher> {
     pub grpc_server_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
-use crate::env::proposal::Proposal;
+use atlas_common::env::proposal::Proposal;
 
 
 impl<P: P2pPublisher + 'static> Maestro<P> {
@@ -159,26 +159,26 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                 tracing::debug!("❤️ HB de {from} ({:?} bytes)", data.len());
                                 
                                 // Update peer stats
-                                let node = crate::cluster::node::Node::new(from.clone(), "".to_string(), None, 0.0);
+                                let node = atlas_common::env::node::Node::new(from.clone(), "".to_string(), None, 0.0);
                                 self.cluster.peer_manager.write().await.handle_command(
-                                    crate::peer_manager::PeerCommand::UpdateStats(from, node)
+                                    atlas_p2p::peer_manager::PeerCommand::UpdateStats(from, node)
                                 );
                             }
 
                             AdapterEvent::PeerDiscovered(id) => {
                                 info!("🔍 Peer descoberto: {}", id);
-                                let node = crate::cluster::node::Node::new(id.clone(), "".to_string(), None, 0.0);
+                                let node = atlas_common::env::node::Node::new(id.clone(), "".to_string(), None, 0.0);
                                 self.cluster.peer_manager.write().await.handle_command(
-                                    crate::peer_manager::PeerCommand::Register(id, node)
+                                    atlas_p2p::peer_manager::PeerCommand::Register(id, node)
                                 );
                             }
     
                             AdapterEvent::TxRequest { from, req, req_id } => {
                                 match req {
-                                    crate::network::p2p::protocol::TxRequest::GetState { height } => {
+                                    atlas_p2p::protocol::TxRequest::GetState { height } => {
                                         info!("📥 Recebido pedido de estado de {} (altura > {})", from, height);
                                         let proposals = self.cluster.local_env.storage.read().await.get_proposals_after(height).await;
-                                        let bundle = crate::network::p2p::protocol::TxBundle::State { proposals };
+                                        let bundle = atlas_p2p::protocol::TxBundle::State { proposals };
                                         
                                         // Send response
                                         if let Err(e) = self.p2p.send_response(req_id, bundle).await {
@@ -191,7 +191,7 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
 
                             AdapterEvent::TxBundle { from, bundle } => {
                                 match bundle {
-                                    crate::network::p2p::protocol::TxBundle::State { proposals } => {
+                                    atlas_p2p::protocol::TxBundle::State { proposals } => {
                                         info!("📦 Recebido pacote de estado de {} com {} propostas", from, proposals.len());
                                         for p in proposals {
                                             // Validate and add to storage

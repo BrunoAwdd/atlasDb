@@ -1,8 +1,8 @@
-use atlas_db::config::Config;
-use atlas_db::env::consensus::evaluator::QuorumPolicy;
-use atlas_db::env::storage::Storage;
-use atlas_db::Graph;
-use atlas_db::peer_manager::PeerManager;
+use atlas_node::config::Config;
+use atlas_consensus::QuorumPolicy;
+use atlas_ledger::storage::Storage;
+use atlas_common::env::node::Graph;
+use atlas_p2p::PeerManager;
 use atlas_common::utils::NodeId;
 
 fn main() {

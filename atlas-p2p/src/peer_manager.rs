@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use atlas_common::utils::NodeId;
-use tracing::{info, warn};
+// use tracing::{info, warn};
 
-use crate::cluster::node::Node;
+use atlas_common::env::node::Node;
 
 
 
@@ -178,11 +178,11 @@ impl PeerManager {
 
     pub fn handle_command(&mut self, command: PeerCommand) -> PeerEvent {
         match &command {
-            PeerCommand::Register(id, _) => log::debug!("Registering peer: {:?}", id),
-            PeerCommand::Drop(id) => log::debug!("Dropping peer: {:?}", id),
-            PeerCommand::Disconnected(id)  => log::debug!("Disconnected {id:?}"),
-            PeerCommand::Rotate => log::debug!("Rotating peers"),
-            PeerCommand::UpdateStats(id, _) => log::debug!("Updating stats for peer: {:?}", id),
+            PeerCommand::Register(id, _) => tracing::debug!("Registering peer: {:?}", id),
+            PeerCommand::Drop(id) => tracing::debug!("Dropping peer: {:?}", id),
+            PeerCommand::Disconnected(id)  => tracing::debug!("Disconnected {id:?}"),
+            PeerCommand::Rotate => tracing::debug!("Rotating peers"),
+            PeerCommand::UpdateStats(id, _) => tracing::debug!("Updating stats for peer: {:?}", id),
         }
     
         match command {

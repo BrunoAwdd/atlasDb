@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::env::proposal::Proposal;
+use atlas_common::env::proposal::Proposal;
 
 /// Estrutura simples para armazenar e gerenciar propostas em memória.
 #[derive(Debug, Default, Clone)]
@@ -21,6 +21,11 @@ impl ProposalPool {
         if self.proposals.insert(proposal.clone().id, proposal).is_some() {
             eprintln!("⚠️ Proposal com id já existe no pool");
         }
+    }
+
+    /// Remove proposal from the pool.
+    pub fn remove(&mut self, id: &str) {
+        self.proposals.remove(id);
     }
 
     /// Get all proposals in the pool.
