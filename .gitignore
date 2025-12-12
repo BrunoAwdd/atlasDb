@@ -9,7 +9,10 @@
 atlas-core/certs
 atlas-core/keys
 atlas-core/example
+mel-blockchain/
 example/
+tools/
+docs/
 atlas-core/logs
 Cargo.lock
 key-a
