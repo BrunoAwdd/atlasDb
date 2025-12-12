@@ -60,6 +60,11 @@ async fn test_in_memory_network() {
         signature: [0u8; 64],
         public_key: vec![],
         height: 0,
+        hash: "hash".to_string(),
+        prev_hash: "prev_hash".to_string(),
+        round: 0,
+        time: 0,
+        state_root: "state_root".to_string(),
     });
 
     net_a.send_to(node_b_id.clone(), msg.clone()).await.expect("Failed to send to B");
@@ -81,6 +86,11 @@ async fn test_in_memory_network() {
         signature: [0u8; 64],
         public_key: vec![],
         height: 1,
+        hash: "hash2".to_string(),
+        prev_hash: "prev_hash2".to_string(),
+        round: 0,
+        time: 0,
+        state_root: "state_root2".to_string(),
     });
 
     net_a.broadcast(msg2).await.expect("Failed to broadcast");
