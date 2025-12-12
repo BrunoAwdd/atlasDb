@@ -126,8 +126,8 @@ impl Libp2pAdapter {
 
         // request-response
         let rr = {
-            let mut cfg = RequestResponseConfig::default();
-            cfg.set_request_timeout(std::time::Duration::from_secs(3));
+            let cfg = libp2p::request_response::Config::default()
+                .with_request_timeout(std::time::Duration::from_secs(3));
         
             let protocols = std::iter::once((
                 StreamProtocol::new("/atlas/tx/1"),
