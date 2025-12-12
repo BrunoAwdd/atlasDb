@@ -47,19 +47,27 @@ impl Config {
             self.quorum_policy,
         );
 
-        for proposal in &self.storage.proposals {
-            engine.pool.add(proposal.clone());
-            engine.registry.register_proposal(&proposal.id);
-        }
-
-        engine.registry.replace(self.storage.votes.clone());
-
-        // Initialize Ledger
         // Initialize Ledger
         // use crate::ledger::Ledger; // Already imported
         let ledger = Ledger::new(&self.data_dir).await.expect("Failed to initialize Ledger from config");
+        
+        // Load proposals from Ledger
+        let loaded_proposals = ledger.get_all_proposals().await.unwrap_or_else(|e| {
+            tracing::error!("Failed to load proposals from ledger: {}", e);
+            Vec::new()
+        });
+        
+        tracing::info!("📦 Loaded {} proposals from storage (via AtlasNode Config).", loaded_proposals.len());
+
         let mut storage = self.storage;
+        storage.proposals = loaded_proposals.clone();
         storage.ledger = Some(Arc::new(ledger));
+
+        // Add loaded proposals to engine
+        for proposal in &storage.proposals {
+            engine.pool.add(proposal.clone());
+            engine.registry.register_proposal(&proposal.id);
+        }
 
         let env = AtlasEnv {
             graph: self.graph,
