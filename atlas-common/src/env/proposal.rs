@@ -19,7 +19,28 @@ pub struct Proposal {
     pub parent: Option<String>, // Optional parent proposal ID for versioning
     
     /// The sequence number/height of this proposal.
+    /// The sequence number/height of this proposal.
     pub height: u64,
+
+    /// Hash of the proposal content/header
+    #[serde(default)]
+    pub hash: String,
+
+    /// Hash of the previous block/proposal
+    #[serde(default)]
+    pub prev_hash: String,
+
+    /// Consensus round number
+    #[serde(default)]
+    pub round: u64,
+
+    /// Timestamp of the proposal
+    #[serde(default)]
+    pub time: i64,
+
+    /// Root of the state merkle tree (placeholder for now)
+    #[serde(default)]
+    pub state_root: String,
 
     #[serde(with = "hex::serde")]
     pub signature: [u8; 64],
@@ -46,6 +67,11 @@ struct ProposalSignView<'a> {
     content:  &'a str,
     parent:   &'a Option<String>,
     height:   u64,
+    hash:     &'a str,
+    prev_hash: &'a str,
+    round:    u64,
+    time:     i64,
+    state_root: &'a str,
 }
 
 pub fn signing_bytes(p: &Proposal) -> Vec<u8> {
@@ -56,5 +82,10 @@ pub fn signing_bytes(p: &Proposal) -> Vec<u8> {
         content: &p.content,
         parent: &p.parent,
         height: p.height,
+        hash: &p.hash,
+        prev_hash: &p.prev_hash,
+        round: p.round,
+        time: p.time,
+        state_root: &p.state_root,
     }).expect("serialize sign view")
 }
