@@ -6,6 +6,8 @@ package atlas;
 service ProposalService {
   // Envia uma proposta para o nó líder.
   rpc SubmitProposal (ProposalRequest) returns (ProposalReply);
+  // Retorna o status atual do nó (líder, altura, view).
+  rpc GetStatus (StatusRequest) returns (StatusReply);
 }
 
 // A mensagem de requisição contendo os dados da proposta.
@@ -20,4 +22,13 @@ message ProposalReply {
   string message = 1;
   // O ID da proposta que foi criada.
   string proposal_id = 2;
+}
+
+message StatusRequest {}
+
+message StatusReply {
+  string node_id = 1;
+  string leader_id = 2;
+  uint64 height = 3;
+  uint64 view = 4;
 }

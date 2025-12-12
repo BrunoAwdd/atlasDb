@@ -10,3 +10,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rocksdb = { workspace = true }
 tracing = "0.1"
+sha2 = "0.10"
+bincode = "1.3"
+

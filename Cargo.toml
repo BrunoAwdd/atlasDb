@@ -15,8 +15,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.4", features = ["derive"] }
+chrono = "0.4"
 env_logger = "0.10"
 libp2p = { version = "0.53", features = ["full"] }
 rocksdb = { git = "https://github.com/rust-rocksdb/rust-rocksdb", branch="master" }

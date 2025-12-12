@@ -66,10 +66,12 @@ mod tests {
 
         assert_eq!(signature.len(), 64);
 
-        let valid = auth.verify(message.to_vec(), &signature).expect("Verification failed");
+        let signature_bytes: [u8; 64] = signature.clone().try_into().expect("Signature length mismatch");
+
+        let valid = auth.verify(message.to_vec(), &signature_bytes).expect("Verification failed");
         assert!(valid, "Signature should be valid");
 
-        let invalid_valid = auth.verify(b"wrong message".to_vec(), &signature).expect("Verification failed");
+        let invalid_valid = auth.verify(b"wrong message".to_vec(), &signature_bytes).expect("Verification failed");
         assert!(!invalid_valid, "Signature should be invalid for wrong message");
     }
 }

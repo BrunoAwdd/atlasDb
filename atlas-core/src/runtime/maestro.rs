@@ -28,14 +28,26 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         let proposer = local_node.id.clone();
         let public_key = self.cluster.auth.read().await.public_key().to_vec();
 
-        let height = self.cluster.local_env.storage.read().await.proposals.len() as u64 + 1;
+        let storage = self.cluster.local_env.storage.read().await;
+        
+        let (parent, height, prev_hash) = if let Some(last_prop) = storage.proposals.last() {
+            (Some(last_prop.id.clone()), last_prop.height + 1, last_prop.hash.clone())
+        } else {
+            (None, 1, "0000000000000000000000000000000000000000000000000000000000000000".to_string())
+        };
+        drop(storage); // Release lock
 
         let mut proposal = Proposal {
             id,
             proposer,
             content,
-            parent: None,
+            parent,
             height,
+            hash: String::new(), 
+            prev_hash,
+            round: 0, // Placeholder
+            time: chrono::Utc::now().timestamp(),
+            state_root: String::new(), // Placeholder
             signature: [0u8; 64],
             public_key,
         };
@@ -75,8 +87,26 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         Ok(proposal_id)
     }
 
+    pub async fn get_status(&self) -> (String, String, u64, u64) {
+        self.cluster.get_status().await
+    }
+
     pub async fn run(self: Arc<Self>) {
-        info!("[MAESTRO DEBUG] Tarefa Maestro::run iniciada.");
+        
+        // Start gRPC server immediately
+        {
+            let grpc_addr_copy = self.grpc_addr;
+            let maestro_clone = Arc::clone(&self);
+            let server_task = tokio::spawn(async move {
+                if let Err(e) = rpc::server::run_server(maestro_clone, grpc_addr_copy).await {
+                    eprintln!("Erro no servidor gRPC: {}", e);
+                }
+            });
+            let mut handle_guard = self.grpc_server_handle.lock().await;
+            *handle_guard = Some(server_task);
+            info!("Servidor gRPC iniciado em {}", grpc_addr_copy);
+        }
+
         let mut election_timer = time::interval(Duration::from_secs(5));
         let mut sync_timer = time::interval(Duration::from_secs(10));
 
@@ -235,37 +265,7 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                 },
 
                 _ = election_timer.tick() => {
-                    info!("[MAESTRO DEBUG] Timer da eleição disparou.");
                     self.cluster.elect_leader().await;
-
-                    // Bloco para isolar os borrows e evitar conflitos de ownership
-                    let (am_i_leader, grpc_addr_copy) = {
-                        let leader_guard = self.cluster.current_leader.read().await;
-                        let local_node_id = self.cluster.local_node.read().await.id.clone();
-                        let am_i = leader_guard.as_ref() == Some(&local_node_id);
-                        (am_i, self.grpc_addr) // Copia o endereço
-                    };
-
-                    let mut handle_guard = self.grpc_server_handle.lock().await;
-                    let server_running = handle_guard.is_some();
-
-                    info!("[MAESTRO DEBUG] Am I leader? {} | Server running? {}", am_i_leader, server_running);
-
-                    if am_i_leader && !server_running {
-                        info!("Este nó é o líder. Iniciando servidor gRPC...");
-                        let maestro_clone = Arc::clone(&self);
-                        let server_task = tokio::spawn(async move {
-                            if let Err(e) = rpc::server::run_server(maestro_clone, grpc_addr_copy).await {
-                                eprintln!("Erro no servidor gRPC: {}", e);
-                            }
-                        });
-                        *handle_guard = Some(server_task);
-                    } else if !am_i_leader && server_running {
-                        info!("Este nó não é mais o líder. Parando servidor gRPC...");
-                        if let Some(task) = handle_guard.take() {
-                            task.abort();
-                        }
-                    }
                 }
 
                 _ = sync_timer.tick() => {

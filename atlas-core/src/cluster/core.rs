@@ -113,4 +113,23 @@ impl Cluster {
             *current_leader_lock = new_leader;
         }
     }
+
+    pub async fn get_status(&self) -> (String, String, u64, u64) {
+        let node_id = self.local_node.read().await.id.0.clone();
+        
+        let leader_id = self.current_leader.read().await.clone()
+            .map(|id| id.0)
+            .unwrap_or("".to_string());
+
+        let storage = self.local_env.storage.read().await;
+        let last_proposal = storage.proposals.last();
+        
+        let (height, view) = if let Some(p) = last_proposal {
+            (p.height, p.round)
+        } else {
+            (0, 0)
+        };
+
+        (node_id, leader_id, height, view)
+    }
 }

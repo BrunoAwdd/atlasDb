@@ -7,6 +7,8 @@ use tracing::info;
 use atlas_p2p::{ports::P2pPublisher, adapter::AdapterCmd, events::AdapterEvent};
 use atlas_consensus::cluster::core::Cluster;
 use crate::rpc;
+use atlas_ledger::state::State;
+use atlas_common::crypto::merkle::calculate_merkle_root;
 
 
 pub struct Maestro<P: P2pPublisher> {
@@ -28,17 +30,39 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         let proposer = local_node.id.clone();
         let public_key = self.cluster.auth.read().await.public_key().to_vec();
 
-        let height = self.cluster.local_env.storage.read().await.proposals.len() as u64 + 1;
+        let storage = self.cluster.local_env.storage.read().await;
+        
+        let (parent, height, prev_hash) = if let Some(last_prop) = storage.proposals.last() {
+            (Some(last_prop.id.clone()), last_prop.height + 1, last_prop.hash.clone())
+        } else {
+            (None, 1, "0000000000000000000000000000000000000000000000000000000000000000".to_string())
+        };
+        drop(storage); // Release lock
 
         let mut proposal = Proposal {
             id,
-            proposer,
+            proposer: proposer.clone(),
             content,
-            parent: None,
+            parent,
             height,
+            hash: String::new(), 
+            prev_hash: prev_hash.clone(),
+            round: 0, // Placeholder
+            time: chrono::Utc::now().timestamp(),
+            state_root: {
+                let mut state = State::new();
+                state.insert("height".to_string(), height.to_be_bytes().to_vec());
+                state.insert("prev_hash".to_string(), prev_hash.as_bytes().to_vec());
+                state.insert("proposer".to_string(), proposer.to_string().as_bytes().to_vec());
+                // In a real app, we would add account balances here
+                calculate_merkle_root(&state.get_leaves())
+            },
             signature: [0u8; 64],
             public_key,
         };
+
+        // Calculate hash
+        proposal.hash = atlas_common::crypto::hash::compute_proposal_hash(&proposal);
 
         // Use standardized signing bytes (bincode of ProposalSignView)
         let msg = atlas_common::env::proposal::signing_bytes(&proposal);
@@ -46,11 +70,13 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         
         if signature_vec.len() == 64 {
             proposal.signature.copy_from_slice(&signature_vec);
-            info!("✅ Proposta assinada com sucesso! ID: {}", proposal.id);
-            tracing::info!(target: "consensus", "EVENT:PROPOSE id={} proposer={}", proposal.id, proposal.proposer);
+            info!("✅ Proposta assinada com sucesso! ID: {} Hash: {}", proposal.id, proposal.hash);
+            tracing::info!(target: "consensus", "EVENT:PROPOSE id={} proposer={} hash={}", proposal.id, proposal.proposer, proposal.hash);
         } else {
-            return Err(format!("Invalid signature length: {}", signature_vec.len()));
+            // TODO: Handle error properly
+            panic!("Invalid signature length: {}", signature_vec.len());
         }
+        
         let proposal_id = proposal.id.clone();
 
         // Chame o cluster para processar a proposta e retornar um comando de rede.
@@ -70,6 +96,10 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         }
 
         Ok(proposal_id)
+    }
+
+    pub async fn get_status(&self) -> (String, String, u64, u64) {
+        self.cluster.get_status().await
     }
 
     pub async fn run(self: Arc<Self>) {
@@ -96,8 +126,11 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                      match self.cluster.create_vote(&proposal.id, atlas_common::env::consensus::types::ConsensusPhase::Prepare).await {
                                         Ok(Some(vote)) => {
                                             let bytes = bincode::serialize(&vote).unwrap();
-                                            if let Err(e) = self.p2p.publish("atlas/vote/v1", bytes).await {
+                                            if let Err(e) = self.p2p.publish("atlas/vote/v1", bytes.clone()).await {
                                                 eprintln!("Erro ao publicar voto Prepare: {}", e);
+                                            }
+                                            if let Err(e) = self.cluster.handle_vote(bytes).await {
+                                                eprintln!("Erro ao processar voto próprio (Prepare): {}", e);
                                             }
                                         },
                                         Ok(None) => {},
@@ -121,7 +154,8 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                             match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::PreCommit).await {
                                                                 Ok(Some(vote)) => {
                                                                     let bytes = bincode::serialize(&vote).unwrap();
-                                                                    self.p2p.publish("atlas/vote/v1", bytes).await.ok();
+                                                                    self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
+                                                                    self.cluster.handle_vote(bytes).await.ok();
                                                                 },
                                                                 _ => {}
                                                             }
@@ -131,7 +165,8 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                             match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::Commit).await {
                                                                 Ok(Some(vote)) => {
                                                                     let bytes = bincode::serialize(&vote).unwrap();
-                                                                    self.p2p.publish("atlas/vote/v1", bytes).await.ok();
+                                                                    self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
+                                                                    self.cluster.handle_vote(bytes).await.ok();
                                                                 },
                                                                 _ => {}
                                                             }

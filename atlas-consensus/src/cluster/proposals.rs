@@ -1,9 +1,12 @@
 use crate::cluster::core::Cluster;
 use atlas_common::env::proposal::Proposal;
-use atlas_common::env::consensus::types::ConsensusResult;
+
 use atlas_common::error::{AtlasError, Result};
 use atlas_p2p::adapter::AdapterCmd;
 use tracing::{info, warn};
+use atlas_ledger::state::State;
+use atlas_common::crypto::merkle::calculate_merkle_root;
+
 
 const PROPOSAL_TOPIC: &str = "atlas/proposal/v1";
 
@@ -65,6 +68,21 @@ impl Cluster {
 
         info!("✅ Assinatura verificada com sucesso para proposta {} (Proposer: {})", proposal.id, proposal.proposer);
         tracing::info!(target: "consensus", "EVENT:VERIFY_PROPOSAL_OK id={}", proposal.id);
+
+        // Verify State Root (Merkle Tree)
+        let expected_root = {
+            let mut state = State::new();
+            state.insert("height".to_string(), proposal.height.to_be_bytes().to_vec());
+            state.insert("prev_hash".to_string(), proposal.prev_hash.as_bytes().to_vec());
+            state.insert("proposer".to_string(), proposal.proposer.to_string().as_bytes().to_vec());
+            calculate_merkle_root(&state.get_leaves())
+        };
+
+        if proposal.state_root != expected_root {
+            warn!("❌ State Root INVÁLIDO para proposta {}. Esperado: {}, Recebido: {}", proposal.id, expected_root, proposal.state_root);
+            return Err(AtlasError::Other(format!("state root mismatch for {}", proposal.id)));
+        }
+        info!("✅ State Root (Merkle) verificado com sucesso: {}", expected_root);
 
         self.add_proposal(proposal).await?;
         Ok(())

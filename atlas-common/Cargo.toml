@@ -15,4 +15,6 @@ tonic = "0.10" # For Status in AtlasError
 async-trait.workspace = true
 bincode.workspace = true
 hex = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+rs_merkle = "1.4"
 
