@@ -94,6 +94,13 @@ impl Cluster {
 
 
         if is_valid {
+            self.local_env.storage.write().await.log_vote(
+                &vote_data.proposal_id,
+                vote_data.phase.clone(),
+                vote_data.voter.clone(),
+                vote_data.vote.clone()
+            );
+
             self.local_env.engine.lock().await.receive_vote(vote_data.clone()).await;
     
             Ok(())
