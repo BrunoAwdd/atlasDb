@@ -76,7 +76,29 @@ impl Cluster {
         // 1. Log result to in-memory storage
         self.local_env.storage.write().await.log_result(&result.proposal_id, result.clone());
 
-        // 2. Persist to disk (simple audit file)
+        // 2. Execute Transaction (FIP-02)
+        // We need to fetch the full proposal to execute it.
+        let proposal_opt = self.local_env.storage.read().await.get_proposal(&result.proposal_id).await
+            .map_err(|e| AtlasError::Other(format!("Failed to fetch proposal for execution: {}", e)))?;
+
+        if let Some(proposal) = proposal_opt {
+            info!("⚙️ Executing transaction for proposal {}", proposal.id);
+            let storage = self.local_env.storage.read().await;
+            match storage.execute_transaction(&proposal).await {
+                Ok(entry) => {
+                    info!("✅ Transaction executed successfully. Entry ID: {}", entry.entry_id);
+                    tracing::info!(target: "ledger", "EVENT:TX_EXEC_SUCCESS id={} entry={}", proposal.id, entry.entry_id);
+                },
+                Err(e) => {
+                    warn!("❌ Transaction execution failed: {}", e);
+                    tracing::warn!(target: "ledger", "EVENT:TX_EXEC_FAIL id={} error={}", proposal.id, e);
+                }
+            }
+        } else {
+            warn!("⚠️ Proposal {} not found in storage, cannot execute transaction.", result.proposal_id);
+        }
+
+        // 3. Persist to disk (simple audit file)
         let node_id = self.local_node.read().await.id.clone();
         let audit_dir = "audits";
         if let Err(e) = std::fs::create_dir_all(audit_dir) {
