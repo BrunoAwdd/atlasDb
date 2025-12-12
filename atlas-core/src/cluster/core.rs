@@ -86,8 +86,12 @@ impl Cluster {
         let peer_manager = self.peer_manager.read().await;
         let active_peers = peer_manager.get_active_peers();
 
-        // Sugestão do usuário: não eleger um líder se não houver pares ativos.
-        if active_peers.is_empty() {
+        let local_node_id = self.local_node.read().await.id.clone();
+        let mut candidates: Vec<_> = active_peers.into_iter().collect();
+        candidates.push(local_node_id.clone());
+        candidates.sort(); // Deterministic order
+
+        if candidates.is_empty() {
             let mut leader_lock = self.current_leader.write().await;
             if leader_lock.is_some() {
                 info!("Perdeu todos os pares, abdicando da liderança.");
@@ -96,20 +100,21 @@ impl Cluster {
             return;
         }
 
-        let local_node_id = self.local_node.read().await.id.clone();
-        let mut candidates = active_peers;
-        candidates.insert(local_node_id.clone());
+        // Calculate current height (next proposal height)
+        let storage = self.local_env.storage.read().await;
+        let next_height = storage.proposals.len() as u64 + 1;
+        drop(storage);
 
-        // DEBUG: Imprime os candidatos em cada ciclo de eleição
-        info!("[ELECTION DEBUG] Node {:?} candidates: {:?}", local_node_id, candidates);
-
-        // Algoritmo de eleição simples: o nó com o maior ID vence.
-        let new_leader = candidates.into_iter().max();
+        // Round-Robin: (Height - 1) % NumCandidates
+        // Height starts at 1, so for Height 1 we want index 0.
+        let index = ((next_height - 1) as usize) % candidates.len();
+        let new_leader = candidates.get(index).cloned();
 
         let mut current_leader_lock = self.current_leader.write().await;
         
+        // Log only if leader changes or for debug (optional)
         if *current_leader_lock != new_leader {
-            info!("👑 Novo líder eleito: {:?}", new_leader);
+            info!("👑 Novo líder eleito para altura {}: {:?} (Candidatos: {:?})", next_height, new_leader, candidates);
             *current_leader_lock = new_leader;
         }
     }
