@@ -60,4 +60,30 @@ impl Binlog {
         let proposal: Proposal = serde_json::from_slice(&buffer)?;
         Ok(proposal)
     }
+
+    pub async fn read_all(&self) -> Result<Vec<Proposal>> {
+        let file_path = self.data_dir.join("00000.log");
+        tracing::info!("Reading binlog from: {:?}", file_path);
+        if !file_path.exists() {
+            tracing::warn!("Binlog file not found at: {:?}", file_path);
+            return Ok(Vec::new());
+        }
+
+        let mut file = File::open(&file_path).await?;
+        let mut content = String::new();
+        file.read_to_string(&mut content).await?;
+
+        let mut proposals = Vec::new();
+        let mut stream = serde_json::Deserializer::from_str(&content).into_iter::<Proposal>();
+
+        while let Some(proposal) = stream.next() {
+            match proposal {
+                Ok(p) => proposals.push(p),
+                Err(e) => tracing::error!("Error parsing proposal from binlog: {}", e),
+            }
+        }
+        tracing::info!("Read {} proposals from binlog", proposals.len());
+
+        Ok(proposals)
+    }
 }
