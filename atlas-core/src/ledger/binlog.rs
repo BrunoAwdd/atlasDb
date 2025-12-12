@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use atlas_sdk::env::proposal::Proposal;
+use atlas_common::env::proposal::Proposal;
 use crate::error::Result;
 
 #[derive(Debug)]

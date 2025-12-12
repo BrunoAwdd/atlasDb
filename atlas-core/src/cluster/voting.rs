@@ -4,13 +4,13 @@ use crate::{
     error::{AtlasError, Result},
 };
 
-use atlas_sdk::{
+use atlas_common::{
     env::consensus::types::Vote,
 };
 use tracing::{info, warn};
 
 impl Cluster {
-    pub(crate) async fn create_vote(&self, proposal_id: &str, phase: atlas_sdk::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
+    pub(crate) async fn create_vote(&self, proposal_id: &str, phase: atlas_common::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
         // 1. Retrieve proposal
         let proposal = {
             let eng = self.local_env.engine.lock().await;
@@ -26,7 +26,7 @@ impl Cluster {
         // For Prepare phase, we verify signature.
         // For PreCommit/Commit, we implicitly vote Yes if we reached this stage (quorum check done by caller).
         let vote = match phase {
-            atlas_sdk::env::consensus::types::ConsensusPhase::Prepare => {
+            atlas_common::env::consensus::types::ConsensusPhase::Prepare => {
                 let sign_bytes = crate::env::proposal::signing_bytes(&proposal);
                 let is_valid = self.auth.read().await
                     .verify_with_key(sign_bytes, &proposal.signature, &proposal.public_key)

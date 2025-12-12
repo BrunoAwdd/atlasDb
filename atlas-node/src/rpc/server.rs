@@ -6,7 +6,7 @@ use crate::runtime::maestro::Maestro;
 use atlas_p2p::ports::P2pPublisher;
 use crate::rpc::atlas::{
     proposal_service_server::{ProposalService, ProposalServiceServer},
-    ProposalRequest, ProposalReply,
+    ProposalRequest, ProposalReply, StatusRequest, StatusReply,
 };
 
 
@@ -39,6 +39,22 @@ impl<P: P2pPublisher + 'static> ProposalService for MyProposalService<P> {
                 Err(Status::internal(format!("Falha ao submeter proposta: {}", e)))
             }
         }
+    }
+
+    async fn get_status(
+        &self,
+        _request: Request<StatusRequest>,
+    ) -> Result<Response<StatusReply>, Status> {
+        let (node_id, leader_id, height, view) = self.maestro.get_status().await;
+        
+        let reply = StatusReply {
+            node_id,
+            leader_id,
+            height,
+            view,
+        };
+
+        Ok(Response::new(reply))
     }
 }
 

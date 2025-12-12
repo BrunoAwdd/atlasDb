@@ -40,14 +40,17 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
             public_key,
         };
 
+        // Calculate hash
+        proposal.hash = atlas_common::crypto::hash::compute_proposal_hash(&proposal);
+
         // Use standardized signing bytes (bincode of ProposalSignView)
-        let msg = atlas_sdk::env::proposal::signing_bytes(&proposal);
+        let msg = atlas_common::env::proposal::signing_bytes(&proposal);
         let signature_vec = self.cluster.auth.read().await.sign(msg).map_err(|e| e.to_string())?;
         
         if signature_vec.len() == 64 {
             proposal.signature.copy_from_slice(&signature_vec);
-            info!("✅ Proposta assinada com sucesso! ID: {}", proposal.id);
-            tracing::info!(target: "consensus", "EVENT:PROPOSE id={} proposer={}", proposal.id, proposal.proposer);
+            info!("✅ Proposta assinada com sucesso! ID: {} Hash: {}", proposal.id, proposal.hash);
+            tracing::info!(target: "consensus", "EVENT:PROPOSE id={} proposer={} hash={}", proposal.id, proposal.proposer, proposal.hash);
         } else {
             return Err(format!("Invalid signature length: {}", signature_vec.len()));
         }
@@ -77,7 +80,6 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         let mut election_timer = time::interval(Duration::from_secs(5));
         let mut sync_timer = time::interval(Duration::from_secs(10));
 
-        info!("[MAESTRO DEBUG] Entrando no loop principal.");
         loop {
             tokio::select! {
                 res = self.evt_rx.lock() => {
@@ -92,8 +94,8 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                     continue;
                                 }
                                 // BFT Step 1: Receive Proposal -> Broadcast Prepare
-                                if let Ok(proposal) = bincode::deserialize::<atlas_sdk::env::proposal::Proposal>(&bytes_clone) {
-                                     match self.cluster.create_vote(&proposal.id, atlas_sdk::env::consensus::types::ConsensusPhase::Prepare).await {
+                                if let Ok(proposal) = bincode::deserialize::<atlas_common::env::proposal::Proposal>(&bytes_clone) {
+                                     match self.cluster.create_vote(&proposal.id, atlas_common::env::consensus::types::ConsensusPhase::Prepare).await {
                                         Ok(Some(vote)) => {
                                             let bytes = bincode::serialize(&vote).unwrap();
                                             if let Err(e) = self.p2p.publish("atlas/vote/v1", bytes).await {
@@ -116,9 +118,9 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                             for result in results {
                                                 if result.approved {
                                                     match result.phase {
-                                                        atlas_sdk::env::consensus::types::ConsensusPhase::Prepare => {
+                                                        atlas_common::env::consensus::types::ConsensusPhase::Prepare => {
                                                             // Quorum(Prepare) -> Broadcast PreCommit
-                                                            match self.cluster.create_vote(&result.proposal_id, atlas_sdk::env::consensus::types::ConsensusPhase::PreCommit).await {
+                                                            match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::PreCommit).await {
                                                                 Ok(Some(vote)) => {
                                                                     let bytes = bincode::serialize(&vote).unwrap();
                                                                     self.p2p.publish("atlas/vote/v1", bytes).await.ok();
@@ -126,9 +128,9 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                                 _ => {}
                                                             }
                                                         },
-                                                        atlas_sdk::env::consensus::types::ConsensusPhase::PreCommit => {
+                                                        atlas_common::env::consensus::types::ConsensusPhase::PreCommit => {
                                                             // Quorum(PreCommit) -> Broadcast Commit
-                                                            match self.cluster.create_vote(&result.proposal_id, atlas_sdk::env::consensus::types::ConsensusPhase::Commit).await {
+                                                            match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::Commit).await {
                                                                 Ok(Some(vote)) => {
                                                                     let bytes = bincode::serialize(&vote).unwrap();
                                                                     self.p2p.publish("atlas/vote/v1", bytes).await.ok();
@@ -136,13 +138,16 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                                 _ => {}
                                                             }
                                                         },
-                                                        atlas_sdk::env::consensus::types::ConsensusPhase::Commit => {
+                                                        atlas_common::env::consensus::types::ConsensusPhase::Commit => {
                                                             // Quorum(Commit) -> Finalize
                                                             info!("🎉 Proposta FINALIZADA (BFT): {}", result.proposal_id);
                                                             tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
                                                             
                                                             if let Err(e) = self.cluster.commit_proposal(result).await {
                                                                 eprintln!("Erro ao commitar proposta: {}", e);
+                                                            } else {
+                                                                // Trigger election for the next block immediately
+                                                                self.cluster.elect_leader().await;
                                                             }
                                                         }
                                                     }
@@ -200,7 +205,7 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                             // But handle_proposal does gossip logic. Here we just want to store.
                                             
                                             // Verify signature
-                                            let sign_bytes = atlas_sdk::env::proposal::signing_bytes(&p);
+                                            let sign_bytes = atlas_common::env::proposal::signing_bytes(&p);
                                             let ok = self.cluster.auth.read().await
                                                 .verify_with_key(sign_bytes, &p.signature, &p.public_key)
                                                 .is_ok();

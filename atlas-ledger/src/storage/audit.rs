@@ -62,7 +62,7 @@ mod tests {
     use crate::env::{
         proposal::Proposal
     };
-    use atlas_sdk::{
+    use atlas_common::{
         env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
     };
 

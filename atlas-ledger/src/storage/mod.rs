@@ -167,7 +167,7 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_sdk::{
+    use atlas_common::{
         utils::NodeId,
     };
 
@@ -192,7 +192,7 @@ mod tests {
             approved,
             votes_received: votes,
             proposal_id: proposal_id.to_string(),
-            phase: atlas_sdk::env::consensus::types::ConsensusPhase::Commit,
+            phase: atlas_common::env::consensus::types::ConsensusPhase::Commit,
         }
     }
 

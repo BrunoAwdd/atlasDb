@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use crate::peer_manager::{PeerManager, PeerCommand};
 use crate::cluster::node::Node;
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,    
 };
 
@@ -34,7 +34,7 @@ use libp2p::{
     noise, 
     request_response::{
         Behaviour as RequestResponseBehaviour, 
-        Config as RequestResponseConfig, 
+
         Event as RequestResponseEvent, 
         Message,
         OutboundRequestId as RequestId, 
@@ -348,7 +348,7 @@ impl Libp2pAdapter {
                                 self.touch_peer(id).await;
                             }
                         
-                            _ => {}
+        
                         },
                         
                         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
@@ -373,7 +373,7 @@ impl Libp2pAdapter {
                         SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                             tracing::warn!("❌ Outgoing connection error to {:?}: {:?}", peer_id, error);
                         }
-                        SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error, connection_id: _, peer_id: _ } => {
+                        SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error, connection_id: _ } => {
                             tracing::warn!("❌ Incoming connection error from {:?} to {:?}: {:?}", send_back_addr, local_addr, error);
                         }
                         ev => {

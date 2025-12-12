@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use tracing::info;
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::ConsensusResult,
 };
 
 use super::{
@@ -54,7 +54,7 @@ impl ConsensusEvaluator {
         let mut results = Vec::new();
 
         // Iterate over all proposals and phases
-        use atlas_sdk::env::consensus::types::ConsensusPhase;
+        use atlas_common::env::consensus::types::ConsensusPhase;
         let phases = [ConsensusPhase::Prepare, ConsensusPhase::PreCommit, ConsensusPhase::Commit];
 
         for (proposal_id, _) in registry.all() {
@@ -86,7 +86,7 @@ impl ConsensusEvaluator {
 mod tests {
     use super::*;
     use crate::env::consensus::registry::VoteRegistry;
-    use atlas_sdk::env::consensus::types::{Vote, ConsensusPhase};
+    use atlas_common::env::consensus::types::{Vote, ConsensusPhase};
 
     #[test]
     fn test_bft_quorum_calculation() {

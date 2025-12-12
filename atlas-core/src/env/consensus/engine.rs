@@ -5,7 +5,7 @@ use std::{
 use tokio::sync::{RwLock};
 use tracing::{info, warn};
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
     env::consensus::types::{Vote, ConsensusResult},
 };

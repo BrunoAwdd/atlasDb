@@ -3,14 +3,11 @@ use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
 use atlas_db::network::key_manager;
-use atlas_db::network::p2p::config::P2pConfig;
-use atlas_db::env::config::EnvConfig;
 use atlas_db::env::storage::Storage;
 use atlas_db::peer_manager::PeerManager;
 use atlas_db::env::consensus::evaluator::QuorumPolicy;
-use atlas_sdk::env::node::Graph;
-use libp2p::identity::Keypair;
-use libp2p::PeerId;
+use atlas_common::env::node::Graph;
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (j, pid, _) in &peers {
             if i != j {
                 let addr = format!("/ip4/127.0.0.1/tcp/{}/p2p/{}", base_port + j, pid);
-                let node_id = atlas_sdk::utils::NodeId(pid.to_string());
+                let node_id = atlas_common::utils::NodeId(pid.to_string());
                 let node = atlas_db::cluster::node::Node::new(
                     node_id.clone(),
                     addr,
@@ -80,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let config = atlas_db::config::Config {
-            node_id: atlas_sdk::utils::NodeId(peer_id.to_string()),
+            node_id: atlas_common::utils::NodeId(peer_id.to_string()),
             address: "127.0.0.1".to_string(),
             port: p2p_port as u16,
             quorum_policy,
@@ -100,12 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     script.push_str("trap 'kill $(jobs -p)' EXIT\n\n");
     script.push_str("echo \"🚀 Starting AtlasDB Cluster with 4 nodes...\"\n\n");
 
-    for (i, peer_id, _) in &peers {
+    for (i, _peer_id, _) in &peers {
         let p2p_port = base_port + i;
         let grpc_port = base_grpc_port + i;
         let node_dir = format!("{}/node{}", base_dir, i);
         
-        let mut cmd = format!(
+        let cmd = format!(
             "cargo run --bin atlas-core -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config {}/config.json --keypair {}/keypair",
             p2p_port, grpc_port, node_dir, node_dir
         );

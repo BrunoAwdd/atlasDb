@@ -3,8 +3,8 @@ use tokio::sync::mpsc;
 use atlas_db::network::in_memory::InMemoryNetwork;
 use atlas_db::network::message::ClusterMessage;
 use atlas_db::network::traits::Network;
-use atlas_sdk::utils::NodeId;
-use atlas_sdk::env::proposal::Proposal;
+use atlas_common::utils::NodeId;
+use atlas_common::env::proposal::Proposal;
 
 #[tokio::test]
 async fn test_in_memory_network() {

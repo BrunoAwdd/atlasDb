@@ -5,6 +5,7 @@ members = [
     "atlas-p2p",
     "atlas-consensus",
     "atlas-node",
+    "atlas-core",
 ]
 resolver = "2"
 

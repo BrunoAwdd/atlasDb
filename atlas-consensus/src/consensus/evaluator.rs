@@ -3,7 +3,7 @@ use tracing::info;
 
 use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::ConsensusResult,
 };
 
 use super::{

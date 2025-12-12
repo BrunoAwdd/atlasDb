@@ -60,7 +60,7 @@ impl Network for InMemoryNetwork {
             peers.clone()
         };
 
-        for (peer_id, sender) in peers {
+        for (_peer_id, sender) in peers {
             let _ = sender.send(message.clone()).await;
         }
         Ok(())

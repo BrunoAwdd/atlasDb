@@ -7,7 +7,7 @@ use crate::{
     }
 };
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
     env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
 };
@@ -64,7 +64,7 @@ mod tests {
     use crate::env::{
         proposal::Proposal
     };
-    use atlas_sdk::{
+    use atlas_common::{
         env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
     };
 
@@ -81,6 +81,11 @@ mod tests {
             content: "Connect A to B".to_string(),
             parent: None,
             height: 0,
+            hash: "hash-123".to_string(),
+            prev_hash: "prev-hash-123".to_string(),
+            round: 1,
+            time: 1234567890,
+            state_root: "state-root-123".to_string(),
             signature: [0u8; 64],
             public_key: vec![],
         };

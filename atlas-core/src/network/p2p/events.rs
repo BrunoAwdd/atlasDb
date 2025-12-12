@@ -4,10 +4,10 @@ use libp2p::{
     kad,
     request_response,
     ping,
-    PeerId,
+
 };
 
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 use crate::network::p2p::protocol::{TxRequest, TxBundle};
 

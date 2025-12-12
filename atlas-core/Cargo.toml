@@ -17,7 +17,8 @@ prost-build.workspace = true
 tonic.workspace = true
 
 [dependencies]
-atlas-sdk = { path = "../atlas-sdk" }
+atlas-common = { path = "../atlas-common" }
+atlas-ledger = { path = "../atlas-ledger" }
 ed25519-dalek.workspace = true
 async-trait.workspace = true
 bincode.workspace = true

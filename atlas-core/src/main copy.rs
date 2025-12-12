@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::path::Path;
-use atlas_sdk::auth::ed25519::Ed25519Authenticator;
+use atlas_common::auth::ed25519::Ed25519Authenticator;
 use atlas_db::network::key_manager;
 use tracing::{info, error};
 

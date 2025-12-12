@@ -11,15 +11,15 @@ use tracing::{info, warn};
 use crate::{
     peer_manager::PeerManager, 
 };
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 use crate::env::consensus::{ConsensusEngine, evaluator::QuorumPolicy};
 
-use atlas_sdk::env::proposal::Proposal;
-use atlas_sdk::env::node::{Graph, Edge};
+use atlas_common::env::proposal::Proposal;
+use atlas_common::env::node::{Graph, Edge};
 use crate::env::storage::{Storage, audit::save_audit};
 
-use atlas_sdk::{
+use atlas_common::{
     env::{Callback, consensus::types::{ConsensusResult}},
 };
 

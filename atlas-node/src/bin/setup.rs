@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
 use atlas_p2p::key_manager;
-use atlas_p2p::config::P2pConfig;
+
 use atlas_node::config::Config;
 use atlas_ledger::storage::Storage;
 use atlas_p2p::PeerManager;
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let node_subdir = format!("node{}", i);
         
         // Use $DIR to make paths absolute based on script location
-        let mut cmd = format!(
+        let cmd = format!(
             "cargo run --manifest-path \"$DIR/../../Cargo.toml\" --bin atlas-node -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config \"$DIR/{}/config.json\" --keypair \"$DIR/{}/keypair\"",
             p2p_port, grpc_port, node_subdir, node_subdir
         );

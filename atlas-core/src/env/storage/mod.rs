@@ -18,7 +18,7 @@ use super::{
     proposal::Proposal,
 };
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
     env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
 };
@@ -169,7 +169,7 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_sdk::{
+    use atlas_common::{
         utils::NodeId,
     };
 

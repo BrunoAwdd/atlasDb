@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
     env::consensus::types::{Vote, ConsensusPhase},
 };

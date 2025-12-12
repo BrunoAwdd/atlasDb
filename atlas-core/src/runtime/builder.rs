@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, Mutex};
 use crate::error::AtlasError;
 pub type Result<T> = std::result::Result<T, AtlasError>;
 
-use atlas_sdk::{
+use atlas_common::{
     auth::Authenticator,
 };
 
@@ -95,7 +95,7 @@ pub async fn run_cli() -> Result<()> {
     let mut csprng = OsRng;
     let keypair = SigningKey::generate(&mut csprng);
     let auth = Arc::new(tokio::sync::RwLock::new(
-        atlas_sdk::auth::ed25519::Ed25519Authenticator::new(keypair)
+        atlas_common::auth::ed25519::Ed25519Authenticator::new(keypair)
     ));
 
     let keypair_path = std::env::var("KEYPAIR_PATH").unwrap_or_else(|_| "keys/keypair.bin".to_string());

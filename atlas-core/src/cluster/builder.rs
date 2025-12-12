@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::{RwLock};
-use atlas_sdk::{
+use atlas_common::{
     auth::Authenticator, 
     utils::NodeId
 };

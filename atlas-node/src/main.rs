@@ -56,7 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(non_blocking)
         .with_ansi(false)
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-            metadata.target() == "consensus"
+            metadata.target() == "consensus" || 
+            metadata.target().starts_with("atlas_ledger") || 
+            metadata.target().starts_with("atlas_node")
         }));
 
     let stdout_layer = tracing_subscriber::fmt::layer()
@@ -95,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth = Arc::new(RwLock::new(convert_libp2p_keypair(keypair.clone())?));
 
     // Load config to get bootstrap peers
-    let config = Config::load_from_file(config_path)?;
+    let _config = Config::load_from_file(config_path)?;
     let mut bootstrap_peers = Vec::new();
     
     // Add CLI dial addr if present

@@ -28,7 +28,7 @@ impl From<&str> for NodeId {
     ///
     /// Example:
     /// ```rust
-    /// use atlas_db::utils::NodeId;
+    /// use atlas_common::utils::NodeId;
     /// let id: NodeId = "node-A".into();
     /// ```
     fn from(s: &str) -> Self {

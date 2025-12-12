@@ -51,7 +51,6 @@ use libp2p::{
     Transport,
     StreamProtocol,
 };
-use libp2p::futures::StreamExt; // Fix futures import
 
 use tokio::sync::{mpsc, RwLock};
 
@@ -350,7 +349,7 @@ impl Libp2pAdapter {
                                 self.touch_peer(id).await;
                             }
                         
-                            _ => {}
+        
                         },
                         
                         SwarmEvent::ConnectionEstablished { peer_id, .. } => {

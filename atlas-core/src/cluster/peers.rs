@@ -1,4 +1,4 @@
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 use crate::{peer_manager::PeerCommand, Cluster, Node};
 
 impl Cluster {

@@ -3,7 +3,7 @@ use atlas_db::env::consensus::evaluator::QuorumPolicy;
 use atlas_db::env::storage::Storage;
 use atlas_db::Graph;
 use atlas_db::peer_manager::PeerManager;
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 fn main() {
     let node1_config = Config {

@@ -11,7 +11,7 @@ use tracing::info;
 
 use serde::{Serialize, Deserialize};
 
-use atlas_sdk::{
+use atlas_common::{
     env::{
         consensus::types::Vote, 
         consensus::types::ConsensusResult,
@@ -42,7 +42,7 @@ pub struct EnvConfig {
     
     // cluster engine
     pub proposals: Vec<Proposal>,
-    pub votes: HashMap<String, HashMap<atlas_sdk::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
+    pub votes: HashMap<String, HashMap<atlas_common::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
     pub quorum_policy: QuorumPolicy,
 
     pub data_dir: String,
@@ -55,7 +55,7 @@ impl EnvConfig {
         peer_manager: PeerManager, 
         quorum_policy: QuorumPolicy, 
         proposals: Vec<Proposal>,
-        votes: HashMap<String, HashMap<atlas_sdk::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
+        votes: HashMap<String, HashMap<atlas_common::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
         data_dir: String,
     ) -> Self {
         info!("📝 Criando nova configuração");

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::path::Path;
-use atlas_sdk::auth::{ed25519::Ed25519Authenticator, Authenticator};
+use atlas_common::auth::{ed25519::Ed25519Authenticator, Authenticator};
 use atlas_db::network::key_manager;
 use tracing::{info, error};
 
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth = Arc::new(RwLock::new(convert_libp2p_keypair(keypair.clone())?));
 
     // Load config to get bootstrap peers
-    let config = atlas_db::config::Config::load_from_file(config_path)?;
+    let _config = atlas_db::config::Config::load_from_file(config_path)?;
     let mut bootstrap_peers = Vec::new();
     
     // Add CLI dial addr if present

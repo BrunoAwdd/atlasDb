@@ -7,15 +7,14 @@ pub type Result<T> = std::result::Result<T, AtlasError>;
 use atlas_common::auth::Authenticator;
 
 use atlas_consensus::Cluster;
-use atlas_consensus::env::runtime::AtlasEnv;
+
 use atlas_p2p::{
     adapter::{AdapterCmd, Libp2pAdapter},
     config::P2pConfig,
     events::AdapterEvent,
     ports::{AdapterHandle, P2pPublisher},
 };
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
+
 
 use crate::runtime::maestro::Maestro;
 use crate::config::Config;

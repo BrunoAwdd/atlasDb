@@ -64,13 +64,13 @@ impl Cluster {
         Ok(())
     }
 
-    pub(crate) async fn evaluate_proposals(&self) -> Result<Vec<atlas_sdk::env::consensus::types::ConsensusResult>> {
+    pub(crate) async fn evaluate_proposals(&self) -> Result<Vec<atlas_common::env::consensus::types::ConsensusResult>> {
         info!("🗳️ Avaliando consenso");
         let results = self.local_env.engine.lock().await.evaluate_proposals().await;
         Ok(results)
     }
     
-    pub(crate) async fn commit_proposal(&self, result: atlas_sdk::env::consensus::types::ConsensusResult) -> Result<()> {
+    pub(crate) async fn commit_proposal(&self, result: atlas_common::env::consensus::types::ConsensusResult) -> Result<()> {
         info!("💾 Committing proposal {} (Approved: {})", result.proposal_id, result.approved);
         
         // 1. Log result to in-memory storage

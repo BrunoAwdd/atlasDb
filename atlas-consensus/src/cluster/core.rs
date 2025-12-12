@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing::info;
@@ -9,8 +9,6 @@ use atlas_common::{
 
 use crate::env::runtime::AtlasEnv;
 use atlas_p2p::PeerManager;
-use atlas_common::env::node::Graph;
-use atlas_ledger::storage::Storage;
 use super::node::Node;
 
 

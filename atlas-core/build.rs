@@ -4,8 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .build_client(true)
         .compile(
-            &["../atlas-sdk/proto/atlas.proto"], // list of protos to compile
-            &["../atlas-sdk/proto"], // path to search for protos
+            &["../atlas-common/proto/atlas.proto"], // list of protos to compile
+            &["../atlas-common/proto"], // path to search for protos
         )?;
     Ok(())
 }
