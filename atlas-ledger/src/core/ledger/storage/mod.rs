@@ -184,6 +184,11 @@ mod tests {
             height: 0,
             signature: [0u8; 64],
             public_key: vec![],
+            hash: "hash".to_string(),
+            prev_hash: "prev_hash".to_string(),
+            round: 0,
+            state_root: "root".to_string(),
+            time: 0,
         }
     }
 
@@ -196,9 +201,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_log_proposal_stores_correctly() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_log_proposal_stores_correctly() {
+        let mut store = Storage::new("/tmp/atlas_test_ledger_prop");
         let proposal = sample_proposal("p1", "n1", "create edge");
 
         store.log_proposal(proposal.clone());
@@ -209,9 +214,9 @@ mod tests {
         assert_eq!(store.proposals[0].proposer, node("n1"));
     }
 
-    #[test]
-    fn test_log_vote_adds_vote_entry() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_log_vote_adds_vote_entry() {
+        let mut store = Storage::new("/tmp/atlas_test_ledger_vote");
         store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes);
         store.log_vote("p1", ConsensusPhase::Prepare, node("n2"), Vote::No);
 
@@ -222,9 +227,9 @@ mod tests {
         assert_eq!(votes.get(&node("n2")), Some(&Vote::No));
     }
 
-    #[test]
-    fn test_log_result_registers_outcome() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_log_result_registers_outcome() {
+        let mut store = Storage::new("/tmp/atlas_test_ledger_res");
         let result = sample_result(true, 3, "p42");
 
         store.log_result("p42", result.clone());
@@ -234,9 +239,9 @@ mod tests {
         assert_eq!(store.results["p42"].votes_received, 3);
     }
 
-    #[test]
-    fn test_vote_overwrite_behavior() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_vote_overwrite_behavior() {
+        let mut store = Storage::new("/tmp/atlas_test_ledger_overwrite");
         store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::No);
         store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes); // overwrite
 
@@ -246,9 +251,9 @@ mod tests {
         assert_eq!(votes.get(&node("n1")), Some(&Vote::Yes));
     }
 
-    #[test]
-    fn test_print_summary_handles_all_states() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_print_summary_handles_all_states() {
+        let mut store = Storage::new("/tmp/atlas_test_ledger_summary");
 
         let p1 = sample_proposal("p1", "n1", "A → B");
         let p2 = sample_proposal("p2", "n2", "B → C");

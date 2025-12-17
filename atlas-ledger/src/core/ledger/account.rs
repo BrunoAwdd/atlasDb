@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::entry::{AssetId, EntryId};
+use atlas_common::entry::{AssetId, EntryId};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccountState {

@@ -1,10 +1,8 @@
-pub mod entry;
-pub mod account;
 
 use std::collections::HashMap;
 use sha2::{Digest, Sha256};
-use self::entry::{LedgerEntry, LegKind};
-use self::account::AccountState;
+use atlas_common::entry::{LedgerEntry, LegKind};
+use crate::core::ledger::account::AccountState;
 
 /// Represents the global state of the application.
 /// Now follows FIP-02: Double-Entry Accounting.
@@ -16,10 +14,22 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         let mut accounts = HashMap::new();
-        // Genesis: Mint account with funds
         let mut mint = AccountState::new();
         mint.balances.insert("USD".to_string(), 1_000_000);
+        mint.balances.insert("BRL".to_string(), 1_000_000); // System Mint BRL
         accounts.insert("mint".to_string(), mint);
+
+        // Genesis: User Wallet (Exposed - nbex)
+        let mut wallet_alice_exposed = AccountState::new();
+        wallet_alice_exposed.balances.insert("BRL".to_string(), 5_000);
+        wallet_alice_exposed.balances.insert("MOX".to_string(), 10_000);
+        accounts.insert("passivo:wallet:nbex1rcrhdf445z932u5jj6c63mmzfwhqduvzx5jggs645s83qyujq2pszwexur".to_string(), wallet_alice_exposed);
+
+        // Genesis: User Wallet (Hidden - nbhd)
+        let mut wallet_alice_hidden = AccountState::new();
+        wallet_alice_hidden.balances.insert("BRL".to_string(), 5_000);
+        wallet_alice_hidden.balances.insert("MOX".to_string(), 10_000);
+        accounts.insert("passivo:wallet:nbhd1szu6pkz5z27xn4a8pmcad3mt9r8xnyyafkneayzf7sdr3uwg43cqwqtw36".to_string(), wallet_alice_hidden);
 
         Self {
             accounts,

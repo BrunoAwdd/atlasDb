@@ -58,8 +58,7 @@ pub fn load_audit(path: &str) -> std::io::Result<AuditData> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
-    use crate::env::{
+    use atlas_common::env::{
         proposal::Proposal
     };
     use atlas_common::{
@@ -81,6 +80,11 @@ mod tests {
             height: 0,
             signature: [0u8; 64],
             public_key: vec![],
+            hash: "hash".to_string(),
+            prev_hash: "prev_hash".to_string(),
+            round: 0,
+            state_root: "root".to_string(),
+            time: 0,
         };
         proposals.push(proposal.clone());
 
@@ -107,8 +111,7 @@ mod tests {
         };
 
         // Save to a temporary file
-        let file = NamedTempFile::new().expect("Failed to create temp file");
-        let path = file.path().to_str().unwrap();
+        let path = "/tmp/audit_test_file.json";
 
         save_audit(path, &data).expect("Failed to save audit");
 
