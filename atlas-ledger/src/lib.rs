@@ -1,13 +1,14 @@
-pub mod binlog;
-pub mod index;
-pub mod storage;
-pub mod state;
-
+// pub mod bank; // moved to atlas-bank
+pub mod core;
+pub mod interface;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use atlas_common::env::proposal::Proposal;
 use atlas_common::error::Result;
+
+use crate::core::runtime::{binlog, index};
+use crate::core::ledger::state;
 
 #[derive(Debug)]
 pub struct Ledger {
@@ -21,11 +22,25 @@ impl Ledger {
         let binlog = binlog::Binlog::new(data_dir).await?;
         let index = index::Index::new(data_dir)?;
         
-        Ok(Self {
+        let ledger = Self {
             binlog: Arc::new(RwLock::new(binlog)),
             index: Arc::new(RwLock::new(index)),
             state: Arc::new(RwLock::new(state::State::new())),
-        })
+        };
+
+        // Replay Binlog to restore State
+        let proposals = ledger.get_all_proposals().await?;
+        if !proposals.is_empty() {
+            println!("Replaying {} transactions from WAL...", proposals.len());
+            for proposal in proposals {
+                if let Err(e) = ledger.execute_transaction(&proposal).await {
+                    eprintln!("Failed to replay transaction {}: {}", proposal.id, e);
+                    // Decide if we panic or continue. Warn for now.
+                }
+            }
+        }
+
+        Ok(ledger)
     }
 
     pub async fn append_proposal(&self, proposal: &Proposal) -> Result<()> {
@@ -60,44 +75,54 @@ impl Ledger {
 
     /// Executes a transaction (proposal content) and updates the state.
     /// Returns the generated LedgerEntry.
-    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<state::entry::LedgerEntry> {
-        // Parse transaction from proposal content (JSON)
-        #[derive(serde::Deserialize)]
-        struct Transaction {
-            from: String,
-            to: String,
-            amount: u128,
-            asset: String,
-            memo: Option<String>,
+    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<atlas_common::entry::LedgerEntry> {
+        // Attempt to parse as SignedTransaction
+        let (tx, signature, public_key) = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+            (signed_tx.transaction, Some(signed_tx.signature), Some(signed_tx.public_key))
+        } else {
+            // Fallback for legacy
+            let tx: atlas_common::transaction::Transaction = serde_json::from_str(&proposal.content)
+                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to parse transaction: {}", e)))?;
+            (tx, None, None)
+        };
+
+        // If signed, verify signature
+        if let (Some(sig), Some(pk)) = (signature, public_key) {
+             use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+             use atlas_common::transaction::signing_bytes;
+             
+             let verifying_key = VerifyingKey::from_bytes(pk.as_slice().try_into().unwrap_or(&[0u8; 32]))
+                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid public key: {}", e)))?;
+             let signature = Signature::from_slice(&sig)
+                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid signature format: {}", e)))?;
+             let msg = signing_bytes(&tx);
+
+             if verifying_key.verify(&msg, &signature).is_err() {
+                 return Err(atlas_common::error::AtlasError::Other("Invalid transaction signature".to_string()));
+             }
+        } else {
+             // For now we allow unsigned (legacy) but log warning?
+             // Or maybe we strictly enforce only if it looks like a signed one?
+             // Given we fallback, we proceed.
+             // In future, enforce strictness.
+             println!("⚠️ Executing unsigned transaction (legacy path)");
         }
 
-        let tx: Transaction = serde_json::from_str(&proposal.content)
-            .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid transaction format: {}", e)))?;
-
-        // Create LedgerEntry (Double Entry)
-        let legs = vec![
-            state::entry::Leg {
-                account: tx.from.clone(),
-                asset: tx.asset.clone(),
-                kind: state::entry::LegKind::Debit,
-                amount: tx.amount,
-            },
-            state::entry::Leg {
-                account: tx.to.clone(),
-                asset: tx.asset.clone(),
-                kind: state::entry::LegKind::Credit,
-                amount: tx.amount,
-            },
-        ];
-
-        let entry = state::entry::LedgerEntry::new(
-            format!("entry-{}", proposal.id),
-            legs,
-            proposal.hash.clone(),
-            proposal.height,
-            proposal.time,
+        // Use Accounting Engine to process transfer
+        // Updated path: bank::institution_subledger::engine
+        let mut entry = atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
+            &tx.from,
+            &tx.to,
+            tx.amount as u64,
+            &tx.asset,
             tx.memo,
-        );
+        ).map_err(|e| atlas_common::error::AtlasError::Other(format!("Accounting Engine Error: {}", e)))?;
+
+        // Enrich entry with proposal metadata
+        entry.entry_id = format!("entry-{}", proposal.id);
+        entry.tx_hash = proposal.hash.clone();
+        entry.block_height = proposal.height;
+        entry.timestamp = proposal.time;
 
         // Apply to state
         let mut state = self.state.write().await;
