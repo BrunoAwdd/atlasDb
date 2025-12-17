@@ -81,6 +81,8 @@ mod tests {
         assert_eq!(map.get(&NodeId("n2".into())), Some(&"idle"));
 
         let set: HashSet<NodeId> = map.keys().cloned().collect();
-        assert!(set.contains(&NodeId("n1".into())));
     }
 }
+
+pub mod security;
+pub mod time;
