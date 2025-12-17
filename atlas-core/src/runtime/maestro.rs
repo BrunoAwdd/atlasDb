@@ -9,9 +9,12 @@ use crate::cluster::core::Cluster;
 use crate::rpc;
 
 
+use atlas_mempool::Mempool;
+
 pub struct Maestro<P: P2pPublisher> {
     pub cluster: Arc<Cluster>,
     pub p2p: P,
+    pub mempool: Arc<Mempool>,
     pub evt_rx: Mutex<mpsc::Receiver<AdapterEvent>>,
     pub grpc_addr: SocketAddr,
     pub grpc_server_handle: Mutex<Option<JoinHandle<()>>>,
@@ -277,6 +280,25 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                             info!("🔄 Solicitando sync para {} (minha altura: {})", peer, my_height);
                             if let Err(e) = self.p2p.request_state(peer, my_height).await {
                                 eprintln!("Erro ao solicitar sync: {}", e);
+                            }
+                        }
+                    }
+
+                    // --- BLOCK PRODUCTION (Mempool Consumer) ---
+                    // Simple heuristic: If I am leader and have txs, produce a block (proposal)
+                    let (node_id, leader_id, _, _) = self.cluster.get_status().await;
+                    if node_id == leader_id {
+                        let candidates = self.mempool.get_candidates(1); // 1 tx per block for now to match Ledger logic
+                        if !candidates.is_empty() {
+                            info!("⛏️ Produzindo bloco com {} transações...", candidates.len());
+                            for (hash, tx) in candidates {
+                                if let Ok(content) = serde_json::to_string(&tx) {
+                                    if let Ok(prop_id) = self.submit_external_proposal(content).await {
+                                        info!("✅ Bloco produzido e proposto: {}", prop_id);
+                                        // Remove from mempool using the hash returned by mempool
+                                        self.mempool.remove_batch(&vec![hash]);
+                                    }
+                                }
                             }
                         }
                     }

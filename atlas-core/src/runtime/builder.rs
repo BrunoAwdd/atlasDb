@@ -20,9 +20,12 @@ use crate::{
     config::Config,
 };
 
+use atlas_mempool::Mempool;
+
 pub struct AtlasRuntime {
     pub cluster: Arc<Cluster>,
     pub publisher: AdapterHandle,
+    pub mempool: Arc<Mempool>,
     // se quiser poder encerrar depois, guarde os JoinHandles:
     // pub adapter_task: tokio::task::JoinHandle<()>,
     // pub maestro_task: tokio::task::JoinHandle<()>,
@@ -58,7 +61,10 @@ pub async fn build_runtime(
     let (adapter_evt_tx, maestro_evt_rx) = mpsc::channel::<AdapterEvent>(64);
     let (maestro_cmd_tx, adapter_cmd_rx) = mpsc::channel::<AdapterCmd>(32);
 
-    // 3) Adapter (Libp2p) + spawn
+    // 3) Init Mempool
+    let mempool = Arc::new(Mempool::new());
+
+    // 4) Adapter (Libp2p) + spawn
     let peer_manager = Arc::clone(&cluster.peer_manager);
     let adapter = Libp2pAdapter::new(p2p_cfg, adapter_evt_tx, adapter_cmd_rx, peer_manager)
         .await
@@ -69,11 +75,12 @@ pub async fn build_runtime(
 
     tokio::spawn(async move { adapter.run().await });
 
-    // 4) Porta (publisher) e Maestro
+    // 5) Porta (publisher) e Maestro
     let publisher = AdapterHandle { cmd_tx: maestro_cmd_tx };
     let maestro = Maestro {
         cluster: Arc::clone(&cluster),
         p2p: publisher.clone(), // AdapterHandle implementa P2pPublisher
+        mempool: Arc::clone(&mempool), // Inject mempool
         evt_rx: Mutex::new(maestro_evt_rx),
         grpc_addr,
         grpc_server_handle: Mutex::new(None),
@@ -82,7 +89,7 @@ pub async fn build_runtime(
     let m = Arc::clone(&maestro);
     tokio::spawn(async move { m.run().await });
 
-    Ok(AtlasRuntime { cluster, publisher })
+    Ok(AtlasRuntime { cluster, publisher, mempool })
 }
 
 pub async fn run_cli() -> Result<()> {

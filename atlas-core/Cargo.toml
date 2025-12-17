@@ -19,6 +19,7 @@ tonic.workspace = true
 [dependencies]
 atlas-common = { path = "../atlas-common" }
 atlas-ledger = { path = "../atlas-ledger" }
+atlas-mempool = { path = "../atlas-mempool" }
 ed25519-dalek.workspace = true
 async-trait.workspace = true
 chrono = { version = "0.4", workspace = true }
