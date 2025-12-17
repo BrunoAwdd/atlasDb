@@ -18,6 +18,7 @@ pub enum AtlasError {
     #[error("Invalid config: {0}")]
     Config(String),
 
+    #[cfg(feature = "grpc")]
     #[error("gRPC error: {0}")]
     Grpc(#[from] tonic::Status),
 
