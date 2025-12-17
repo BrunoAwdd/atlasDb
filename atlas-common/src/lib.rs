@@ -1,5 +1,9 @@
 pub mod env;
 pub mod auth;
 pub mod utils;
+pub mod address;
+pub mod transactions;
 pub mod crypto;
+pub mod transaction;
+pub mod entry;
 pub mod error;
