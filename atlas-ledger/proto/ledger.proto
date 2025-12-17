@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package ledger;
+
+service LedgerService {
+  rpc SubmitTransaction (SubmitTransactionRequest) returns (SubmitTransactionResponse);
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
+  rpc GetStatement (GetStatementRequest) returns (GetStatementResponse);
+}
+
+message SubmitTransactionRequest {
+  string from = 1;
+  string to = 2;
+  string amount = 3; // u128 as string
+  string asset = 4;
+  optional string memo = 5;
+  string signature = 6; // crypto signature for authentication
+  string public_key = 7; // public key of the signer
+}
+
+message SubmitTransactionResponse {
+  bool success = 1;
+  string tx_hash = 2;
+  string error_message = 3;
+}
+
+message GetBalanceRequest {
+  string address = 1;
+  string asset = 2;
+}
+
+message GetBalanceResponse {
+  string balance = 1; // u128 as string
+  string asset = 2;
+}
+
+message GetStatementRequest {
+  string address = 1;
+  uint64 limit = 2;
+}
+
+message TransactionRecord {
+    string tx_hash = 1;
+    string from = 2;
+    string to = 3;
+    string amount = 4;
+    string asset = 5;
+    uint64 timestamp = 6;
+    string memo = 7;
+}
+
+message GetStatementResponse {
+    repeated TransactionRecord transactions = 1;
+}
