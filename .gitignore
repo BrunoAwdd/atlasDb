@@ -9,7 +9,7 @@
 atlas-core/certs
 atlas-core/keys
 atlas-core/example
-mel-blockchain/
+
 example/
 tools/
 docs/
@@ -23,3 +23,8 @@ key-b
 *.log
 review-by-gemini.md
 review-2-gemini.md
+!atlas-wallet/frontend/public/manifest.json
+!atlas-wallet/frontend/tsconfig.node.json
+!atlas-wallet/frontend/package.json
+atlas-common/Cargo.toml
+atlas-common/src/error.rs

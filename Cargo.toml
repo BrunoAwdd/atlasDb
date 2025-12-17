@@ -6,6 +6,10 @@ members = [
     "atlas-consensus",
     "atlas-node",
     "atlas-core",
+    "atlas-wallet",
+    "atlas-kyc",
+    "atlas-bank", 
+    "atlas-mempool",
 ]
 resolver = "2"
 
