@@ -5,3 +5,4 @@ Modelo dual
 - POS - catões javacard integrados (Ligados como autorizadores)
 - Redis no menpool
 - ERC20 e ERC721 like
+- Rotação de lider
