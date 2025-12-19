@@ -100,8 +100,16 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         {
             let grpc_addr_copy = self.grpc_addr;
             let maestro_clone = Arc::clone(&self);
+
+            // Extract Ledger and Mempool references
+            let storage = self.cluster.local_env.storage.read().await;
+            let ledger = storage.ledger.clone().expect("Ledger should be initialized in Storage");
+            drop(storage);
+
+            let mempool = Arc::clone(&self.mempool);
+
             let server_task = tokio::spawn(async move {
-                if let Err(e) = rpc::server::run_server(maestro_clone, grpc_addr_copy).await {
+                if let Err(e) = rpc::server::run_server(maestro_clone, ledger, mempool, grpc_addr_copy).await {
                     eprintln!("Erro no servidor gRPC: {}", e);
                 }
             });
