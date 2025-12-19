@@ -66,6 +66,17 @@ impl Storage {
         }
     }
 
+    /// Creates a storage instance WITHOUT initializing the underlying Ledger (RocksDB).
+    /// This is useful for configuration generation where we don't need DB access.
+    pub fn new_detached() -> Self {
+        Self {
+            proposals: Vec::new(),
+            votes: HashMap::new(),
+            results: HashMap::new(),
+            ledger: None,
+        }
+    }
+
     /// Logs a newly submitted proposal.
     ///
     /// This allows the system to retain proposal metadata for future auditing.
