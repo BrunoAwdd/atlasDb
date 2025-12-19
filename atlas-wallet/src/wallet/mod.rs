@@ -58,7 +58,7 @@ impl Wallet {
         amount: u64,
         password: String,
         memo: Option<String>,
-    ) -> Result<(String, TransferRequest), String> {
+    ) -> Result<(String, TransferRequest, Vec<u8>), String> {
         actions::sing_transfer(self, to_address, amount, password, memo)
     }
 
