@@ -11,8 +11,8 @@ import {
 } from "@/utils/storage";
 
 import "../App.css";
-import init, { create_vault, load_vault, get_data } from "../pkg/nimble_wallet";
-import wasmUrl from "../pkg/nimble_wallet_bg.wasm?url";
+import init, { create_vault, load_vault, get_data } from "../pkg/atlas_wallet";
+import wasmUrl from "../pkg/atlas_wallet_bg.wasm?url";
 
 export default function Home() {
   const [password, setPassword] = useState("");
@@ -67,7 +67,7 @@ export default function Home() {
   const handleLoadVault = async () => {
     try {
       setStatus("Carregando carteira...");
-      await init();
+      await init(wasmUrl);
 
       const base64 = await loadStoredVault(selectedVault);
 
