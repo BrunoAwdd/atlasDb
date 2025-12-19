@@ -9,7 +9,8 @@
 atlas-core/certs
 atlas-core/keys
 atlas-core/example
-
+data/
+guides/
 example/
 tools/
 docs/
