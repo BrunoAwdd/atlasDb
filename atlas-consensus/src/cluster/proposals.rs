@@ -4,7 +4,7 @@ use atlas_common::env::proposal::Proposal;
 use atlas_common::error::{AtlasError, Result};
 use atlas_p2p::adapter::AdapterCmd;
 use tracing::{info, warn};
-use atlas_ledger::state::State;
+// use atlas_ledger::state::State;
 use atlas_common::crypto::merkle::calculate_merkle_root;
 
 
@@ -70,12 +70,26 @@ impl Cluster {
         tracing::info!(target: "consensus", "EVENT:VERIFY_PROPOSAL_OK id={}", proposal.id);
 
         // Verify State Root (Merkle Tree)
+        // Verify State Root (Merkle Tree of metadata)
         let expected_root = {
-            let mut state = State::new();
-            state.insert("height".to_string(), proposal.height.to_be_bytes().to_vec());
-            state.insert("prev_hash".to_string(), proposal.prev_hash.as_bytes().to_vec());
-            state.insert("proposer".to_string(), proposal.proposer.to_string().as_bytes().to_vec());
-            calculate_merkle_root(&state.get_leaves())
+            // Manual construction of leaves for metadata
+            // Keys: "height", "prev_hash", "proposer"
+            // We mimic the old State behavior: valid leaves are Hash(Key + Value)
+            use sha2::{Digest, Sha256};
+            
+            let mut leaves_map = std::collections::BTreeMap::new();
+            leaves_map.insert("height", proposal.height.to_be_bytes().to_vec());
+            leaves_map.insert("prev_hash", proposal.prev_hash.as_bytes().to_vec());
+            leaves_map.insert("proposer", proposal.proposer.to_string().as_bytes().to_vec());
+
+            let leaves: Vec<Vec<u8>> = leaves_map.iter().map(|(k, v)| {
+                let mut hasher = Sha256::new();
+                hasher.update(k.as_bytes());
+                hasher.update(v);
+                hasher.finalize().to_vec()
+            }).collect();
+
+            calculate_merkle_root(&leaves)
         };
 
         if proposal.state_root != expected_root {
