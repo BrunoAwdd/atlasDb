@@ -68,11 +68,23 @@ impl Session {
         if self.profile.address().as_str() == to_address {            
             return Err(NimbleError::from("Same address transaction not allowed"));
         }
-        let payload = TransferPayload::new(&self.profile.address().as_str(), to_address.clone(), amount, nonce);
+        // Create Transaction struct exactly as Ledger expects for verification
+        // Ledger uses atlas_common::transaction::Transaction
+        let transaction = atlas_common::transaction::Transaction {
+            from: self.profile.address().as_str().to_string(),
+            to: to_address.clone(),
+            amount: amount as u128, // Ledger uses u128
+            asset: "BRL".to_string(), // Hardcoded as per frontend logic, ideally param
+            memo: memo.clone(),
+        };
+
+        // Use the same signing bytes logic as Ledger: bincode::serialize(&transaction)
+        let msg = atlas_common::transaction::signing_bytes(&transaction);
 
         self.unlock_key(password)?;
-
-        let signature = self.sign_message(payload.to_string().as_bytes())?;
+        let signature = self.sign_message(&msg)?;
+        
+        let payload = TransferPayload::new(&self.profile.address().as_str(), to_address.clone(), amount, nonce);
 
         let request = TransferRequest::build_signed_request(
             self.profile.address().as_str().to_string(),
@@ -144,6 +156,10 @@ impl Session {
         self.unlocked_at = None;
     }
 
+    pub fn get_public_key(&self) -> Option<Vec<u8>> {
+        self.verifying_key.map(|vk| vk.as_bytes().to_vec())
+    }
+    
     /// Limpa os dados da sessão (para segurança)
     pub fn clear(&mut self) {
         self.profile.zeroize();
