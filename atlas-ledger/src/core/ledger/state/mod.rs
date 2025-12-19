@@ -23,13 +23,13 @@ impl State {
         let mut wallet_alice_exposed = AccountState::new();
         wallet_alice_exposed.balances.insert("BRL".to_string(), 5_000);
         wallet_alice_exposed.balances.insert("MOX".to_string(), 10_000);
-        accounts.insert("passivo:wallet:nbex1rcrhdf445z932u5jj6c63mmzfwhqduvzx5jggs645s83qyujq2pszwexur".to_string(), wallet_alice_exposed);
+        accounts.insert("passivo:wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
 
         // Genesis: User Wallet (Hidden - nbhd)
         let mut wallet_alice_hidden = AccountState::new();
         wallet_alice_hidden.balances.insert("BRL".to_string(), 5_000);
         wallet_alice_hidden.balances.insert("MOX".to_string(), 10_000);
-        accounts.insert("passivo:wallet:nbhd1szu6pkz5z27xn4a8pmcad3mt9r8xnyyafkneayzf7sdr3uwg43cqwqtw36".to_string(), wallet_alice_hidden);
+        accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
 
         Self {
             accounts,
