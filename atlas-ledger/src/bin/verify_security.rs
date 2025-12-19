@@ -7,8 +7,13 @@ use rand::rngs::OsRng;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "http://0.0.0.0:50051";
+    // Verify args for port
+    let args: Vec<String> = std::env::args().collect();
+    let port = args.get(1).unwrap_or(&"50051".to_string()).clone();
+    
+    let addr = format!("http://0.0.0.0:{}", port);
     println!("Connecting to {}...", addr);
+
     let mut client = LedgerServiceClient::connect(addr).await?;
 
     // 1. Setup Identity
