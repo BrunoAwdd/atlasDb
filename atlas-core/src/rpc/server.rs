@@ -61,16 +61,26 @@ impl<P: P2pPublisher + 'static> ProposalService for MyProposalService<P> {
 // Função para iniciar o servidor gRPC com mTLS.
 pub async fn run_server<P: P2pPublisher + 'static>(
     maestro: Arc<Maestro<P>>,
+    ledger: Arc<atlas_ledger::Ledger>,
+    mempool: Arc<atlas_mempool::Mempool>,
     addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[Plaintext] Servidor gRPC escutando em {}", addr);
+    println!("[Unified] Servidor gRPC escutando em {}", addr);
 
-    let service = MyProposalService {
+    let proposal_service = MyProposalService {
         maestro,
     };
 
+    let ledger_service = atlas_ledger::interface::api::service::LedgerServiceImpl {
+        ledger,
+        mempool,
+    };
+
+    use atlas_ledger::interface::api::service::ledger_proto::ledger_service_server::LedgerServiceServer;
+
     Server::builder()
-        .add_service(ProposalServiceServer::new(service))
+        .add_service(ProposalServiceServer::new(proposal_service))
+        .add_service(LedgerServiceServer::new(ledger_service))
         .serve(addr)
         .await?;
 
