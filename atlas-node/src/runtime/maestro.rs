@@ -7,13 +7,15 @@ use tracing::info;
 use atlas_p2p::{ports::P2pPublisher, adapter::AdapterCmd, events::AdapterEvent};
 use atlas_consensus::cluster::core::Cluster;
 use crate::rpc;
-use atlas_ledger::state::State;
+// use atlas_ledger::state::State;
 use atlas_common::crypto::merkle::calculate_merkle_root;
+use atlas_mempool::Mempool;
 
 
 pub struct Maestro<P: P2pPublisher> {
     pub cluster: Arc<Cluster>,
     pub p2p: P,
+    pub mempool: Arc<Mempool>,
     pub evt_rx: Mutex<mpsc::Receiver<AdapterEvent>>,
     pub grpc_addr: SocketAddr,
     pub grpc_server_handle: Mutex<Option<JoinHandle<()>>>,
@@ -50,12 +52,22 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
             round: 0, // Placeholder
             time: chrono::Utc::now().timestamp(),
             state_root: {
-                let mut state = State::new();
-                state.insert("height".to_string(), height.to_be_bytes().to_vec());
-                state.insert("prev_hash".to_string(), prev_hash.as_bytes().to_vec());
-                state.insert("proposer".to_string(), proposer.to_string().as_bytes().to_vec());
-                // In a real app, we would add account balances here
-                calculate_merkle_root(&state.get_leaves())
+                // Manual construction of leaves for metadata
+                use sha2::{Digest, Sha256};
+                
+                let mut leaves_map = std::collections::BTreeMap::new();
+                leaves_map.insert("height", height.to_be_bytes().to_vec());
+                leaves_map.insert("prev_hash", prev_hash.as_bytes().to_vec());
+                leaves_map.insert("proposer", proposer.to_string().as_bytes().to_vec());
+
+                let leaves: Vec<Vec<u8>> = leaves_map.iter().map(|(k, v)| {
+                    let mut hasher = Sha256::new();
+                    hasher.update(k.as_bytes());
+                    hasher.update(v);
+                    hasher.finalize().to_vec()
+                }).collect();
+
+                calculate_merkle_root(&leaves)
             },
             signature: [0u8; 64],
             public_key,
@@ -106,8 +118,31 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
         info!("[MAESTRO DEBUG] Tarefa Maestro::run iniciada.");
         let mut election_timer = time::interval(Duration::from_secs(5));
         let mut sync_timer = time::interval(Duration::from_secs(10));
+        let mut block_timer = time::interval(Duration::from_millis(2000));
 
         info!("[MAESTRO DEBUG] Entrando no loop principal.");
+
+        // Start gRPC server immediately (Unconditionally)
+        {
+            let grpc_addr_copy = self.grpc_addr;
+            let maestro_clone = Arc::clone(&self);
+            
+            // Extract Ledger and Mempool
+            let storage = self.cluster.local_env.storage.read().await;
+            let ledger = storage.ledger.clone().expect("Ledger should be initialized");
+            drop(storage);
+            let mempool = Arc::clone(&self.mempool);
+
+            let server_task = tokio::spawn(async move {
+                if let Err(e) = rpc::server::run_server(maestro_clone, ledger, mempool, grpc_addr_copy).await {
+                    eprintln!("Erro no servidor gRPC: {}", e);
+                }
+            });
+            let mut handle_guard = self.grpc_server_handle.lock().await;
+            *handle_guard = Some(server_task);
+            info!("Servidor gRPC iniciado em {}", grpc_addr_copy);
+        }
+
         loop {
             tokio::select! {
                 res = self.evt_rx.lock() => {
@@ -307,6 +342,45 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                             info!("🔄 Solicitando sync para {} (minha altura: {})", peer, my_height);
                             if let Err(e) = self.p2p.request_state(peer, my_height).await {
                                 eprintln!("Erro ao solicitar sync: {}", e);
+                            }
+                        }
+                    }
+                }
+
+                _ = block_timer.tick() => {
+                    // Block Production Logic
+                    // 1. Check if I am leader
+                    let leader_guard = self.cluster.current_leader.read().await;
+                    let local_node_id = self.cluster.local_node.read().await.id.clone();
+                    let am_i_leader = leader_guard.as_ref() == Some(&local_node_id);
+                    drop(leader_guard);
+
+                    if am_i_leader {
+                        // 2. Check Mempool
+                        let candidates = self.mempool.get_candidates(1); // Get 1 for now (Ledger expects 1)
+                        if let Some((hash, tx)) = candidates.first() {
+                            info!("⛏️ Producing block with transaction: {}", hash);
+                            
+                            // 3. Serialize content
+                            // We serialization must match Ledger expectation: SignedTransaction JSON
+                             let content = match serde_json::to_string(tx) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    tracing::error!("Failed to serialize transaction: {}", e);
+                                    continue;
+                                }
+                            };
+
+                            // 4. Submit Proposal
+                            match self.submit_external_proposal(content).await {
+                                Ok(pid) => {
+                                    info!("✅ Block Produced! Proposal ID: {}", pid);
+                                    // 5. Remove from Mempool (Optimistic)
+                                    self.mempool.remove_batch(&[hash.clone()]);
+                                },
+                                Err(e) => {
+                                    tracing::error!("❌ Failed to produce block: {}", e);
+                                }
                             }
                         }
                     }

@@ -51,17 +51,22 @@ pub async fn build_runtime(
     grpc_addr: std::net::SocketAddr,
 ) -> Result<AtlasRuntime> {
     let config = Config::load_from_file(config_path)?;
+    tracing::info!("🔄 [DEBUG] Config loaded. Building cluster env...");
+    
     let cluster = Arc::new(config.build_cluster_env(auth).await);
+    tracing::info!("✅ [DEBUG] Cluster env built (Ledger init success).");
 
     // 2) Canais P2P
     let (adapter_evt_tx, maestro_evt_rx) = mpsc::channel::<AdapterEvent>(64);
     let (maestro_cmd_tx, adapter_cmd_rx) = mpsc::channel::<AdapterCmd>(32);
 
     // 3) Adapter (Libp2p) + spawn
+    tracing::info!("🔄 [DEBUG] Initializing P2P Adapter...");
     let peer_manager = Arc::clone(&cluster.peer_manager);
     let adapter = Libp2pAdapter::new(p2p_cfg, adapter_evt_tx, adapter_cmd_rx, peer_manager)
         .await
         .map_err(|e| AtlasError::Other(format!("p2p init: {e}")))?;
+    tracing::info!("✅ [DEBUG] P2P Adapter initialized.");
 
     let local_node_id = adapter.peer_id.to_string().into();
     cluster.local_node.write().await.id = local_node_id;
@@ -70,9 +75,13 @@ pub async fn build_runtime(
 
     // 4) Porta (publisher) e Maestro
     let publisher = AdapterHandle { cmd_tx: maestro_cmd_tx };
+    // Initialize Mempool
+    let mempool = Arc::new(atlas_mempool::Mempool::default());
+
     let maestro = Maestro {
         cluster: Arc::clone(&cluster),
         p2p: publisher.clone(), // AdapterHandle implementa P2pPublisher
+        mempool: Arc::clone(&mempool),
         evt_rx: Mutex::new(maestro_evt_rx),
         grpc_addr,
         grpc_server_handle: Mutex::new(None),
