@@ -7,15 +7,16 @@ use tokio::sync::RwLock;
 use atlas_common::env::proposal::Proposal;
 use atlas_common::error::Result;
 
-use crate::core::runtime::{binlog, index};
-use crate::core::ledger::state;
-
 #[derive(Debug)]
 pub struct Ledger {
-    binlog: Arc<RwLock<binlog::Binlog>>,
-    index: Arc<RwLock<index::Index>>,
+    pub binlog: Arc<RwLock<binlog::Binlog>>,
+    pub index: Arc<RwLock<index::Index>>,
     pub state: Arc<RwLock<state::State>>,
 }
+
+// Public Re-exports
+pub use core::runtime::{binlog, index};
+pub use core::ledger::{state, storage};
 
 impl Ledger {
     pub async fn new(data_dir: &str) -> Result<Self> {
@@ -49,6 +50,16 @@ impl Ledger {
 
         let (file_id, offset, len) = binlog.append(proposal).await?;
         index.index_proposal(&proposal.id, file_id, offset, len)?;
+        
+        // CRITICAL FIX: Update State immediately!
+        // Drop locks before executing to avoid potential deadlock issues (though execute takes its own locks)
+        drop(binlog);
+        drop(index);
+
+        match self.execute_transaction(proposal).await {
+            Ok(_) => tracing::info!("✅ State updated for proposal {}", proposal.id),
+            Err(e) => tracing::error!("❌ Failed to update state for proposal {}: {}", proposal.id, e),
+        }
         
         Ok(())
     }
