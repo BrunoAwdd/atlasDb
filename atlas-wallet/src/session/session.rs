@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration; // Keep Duration for logic if needed, or just use u64 seconds
 
 use crate::errors::NimbleError;
 use crate::identity::errors::IdentityError;
@@ -13,7 +13,7 @@ pub struct Session {
     pub profile: Profile,
     verifying_key: Option<ed25519_dalek::VerifyingKey>,
     signing_key: Option<ed25519_dalek::SigningKey>,
-    unlocked_at: Option<Instant>
+    unlocked_at: Option<u64>
 }
 
 impl Session {
@@ -90,12 +90,17 @@ impl Session {
     fn set_signing_key(&mut self, secret: SigningKey) {
         self.verifying_key = Some(ed25519_dalek::VerifyingKey::from(&secret));
         self.signing_key = Some(secret);
-        self.unlocked_at = Some(Instant::now().checked_add(Duration::from_secs(600)).expect("failed to add duration to now"));
+        // Expiration in 10 minutes (600 seconds)
+        let now = atlas_common::utils::time::current_time();
+        self.unlocked_at = Some(now + 600);
     }
 
     fn is_expired(&self) -> bool {
         match self.unlocked_at {
-            Some(instant) => instant.elapsed() > Duration::from_secs(600),
+            Some(expiration_time) => {
+                 let now = atlas_common::utils::time::current_time();
+                 now > expiration_time
+            },
             None => true,
         }
     }

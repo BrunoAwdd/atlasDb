@@ -9,11 +9,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// # Panics
 ///
 /// Panics if the system clock is set before the UNIX epoch.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn current_time() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time is before UNIX EPOCH")
         .as_secs()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn current_time() -> u64 {
+    (js_sys::Date::now() / 1000.0) as u64
 }
 
 #[cfg(test)]
