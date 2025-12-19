@@ -24,3 +24,7 @@ sha2 = "0.10"
 rs_merkle = "1.4"
 getrandom = { version = "0.2", features = ["js"] }
 
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
