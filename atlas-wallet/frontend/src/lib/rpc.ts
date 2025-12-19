@@ -51,7 +51,19 @@ export class GrpcWebRpc implements Rpc {
     // Frame format: [flag, len(4bytes), payload]
 
     if (responseBuffer.length < 5) {
-      throw new Error("Invalid response: too short");
+      if (
+        response.headers.has("grpc-status") &&
+        response.headers.get("grpc-status") !== "0"
+      ) {
+        throw new Error(
+          `gRPC Error Status: ${response.headers.get(
+            "grpc-status"
+          )} Message: ${response.headers.get("grpc-message")}`
+        );
+      }
+      throw new Error(
+        `Invalid response: too short (len=${responseBuffer.length}). Status: ${response.status}`
+      );
     }
 
     // Check flag (buf[0]). If 0x80 bit set, it's trailers.
