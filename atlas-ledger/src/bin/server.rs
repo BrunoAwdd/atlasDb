@@ -7,6 +7,7 @@ use tower_http::cors::{CorsLayer, Any};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "0.0.0.0:50051".parse()?;
+    println!("⚠️  DEPRECATED: This standalone server is deprecated. Please use `atlas-node` instead.");
     println!("Atlas Ledger Server listening on {}", addr);
 
     // Initialize Ledger with a temp path for simulation
