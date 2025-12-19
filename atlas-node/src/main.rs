@@ -24,6 +24,24 @@ use tracing_subscriber::prelude::*;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Inicializar o logger
     let args: Vec<String> = std::env::args().collect();
+
+    // PANIC HOOK (Windows Debugging)
+    std::panic::set_hook(Box::new(|info| {
+        let msg = match info.payload().downcast_ref::<&'static str>() {
+            Some(s) => *s,
+            None => match info.payload().downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "Box<Any>",
+            },
+        };
+        let location = match info.location() {
+            Some(l) => format!("at {}:{}:{}", l.file(), l.line(), l.column()),
+            None => "unknown location".to_string(),
+        };
+        let err_msg = format!("CRASH: {} {}\n", msg, location);
+        eprintln!("{}", err_msg);
+        let _ = std::fs::write("panic.log", err_msg);
+    }));
     
     // Check if running in CLI mode (no args or specific flag)
     // Wait, the original main.rs had logic to run CLI if no args.
@@ -80,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Porta gRPC: {}", grpc_port);
 
     // 2. Auto-Configuração
-    if let Err(e) = ensure_config(config_path) {
+    if let Err(e) = ensure_config(config_path, p2p_listen_addr) {
         error!("Falha na auto-configuração: {}", e);
         return Err(e);
     }
@@ -161,24 +179,27 @@ fn convert_libp2p_keypair(keypair: libp2p::identity::Keypair) -> Result<Ed25519A
     Ed25519Authenticator::from_bytes(secret_bytes).map_err(|e| e.into())
 }
 
-fn ensure_config(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn ensure_config(path: &str, listen_addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !Path::new(path).exists() {
         info!("⚠️ Config não encontrada. Gerando padrão em {}...", path);
         
         let node_id = format!("node-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
         
+        // Extract IP from /ip4/x.x.x.x/tcp/..
+        let ip = listen_addr.split('/').nth(2).unwrap_or("127.0.0.1");
+
         let config = Config {
             node_id: NodeId(node_id),
-            address: "127.0.0.1".to_string(),
+            address: ip.to_string(),
             port: 50051,
             quorum_policy: atlas_consensus::QuorumPolicy { fraction: 0.67, min_voters: 1 },
             graph: atlas_common::env::node::Graph::new(),
-            storage: atlas_ledger::storage::Storage::new("data/db"),
+            storage: atlas_ledger::storage::Storage::new_detached(),
             peer_manager: atlas_p2p::PeerManager::new(10, 10),
             data_dir: "data/db".to_string(),
         };
         config.save_to_file(path)?;
-        info!("✅ Config gerada com sucesso!");
+        info!("✅ Config gerada com sucesso! (IP: {})", ip);
     }
     Ok(())
 }

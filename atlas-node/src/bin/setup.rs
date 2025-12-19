@@ -94,27 +94,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("✅ Node {}: ID={}, P2P={}, gRPC={}", i, peer_id, p2p_port, grpc_port);
     }
 
-    // 3. Generate Start Script
+    // 3. Generate Start Script (Bash)
     let mut script = String::from("#!/bin/bash\n\n");
     script.push_str("trap 'kill $(jobs -p)' EXIT\n\n");
-    // Get the directory where the script is located
     script.push_str("DIR=\"$( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"\n");
     script.push_str("echo \"🚀 Starting AtlasDB Cluster with 4 nodes...\"\n\n");
+
+    // Generate Start Script (Batch/Windows)
+    let mut script_bat = String::from("@echo off\n");
+    script_bat.push_str("echo 🚀 Starting AtlasDB Cluster with 4 nodes...\n\n");
 
     for (i, _peer_id, _) in &peers {
         let p2p_port = base_port + i;
         let grpc_port = base_grpc_port + i;
         let node_subdir = format!("node{}", i);
         
-        // Use $DIR to make paths absolute based on script location
+        // Bash
         let cmd = format!(
             "cargo run --manifest-path \"$DIR/../../Cargo.toml\" --bin atlas-node -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config \"$DIR/{}/config.json\" --keypair \"$DIR/{}/keypair\"",
             p2p_port, grpc_port, node_subdir, node_subdir
         );
-
-        // Bootstrap: mDNS handles discovery now, no manual dial needed
-        // if *i > 1 { ... }
-
         script.push_str(&format!("{} > \"$DIR/{}/node.log\" 2>&1 &\n", cmd, node_subdir));
         script.push_str(&format!("PID_{}=$!\n", i));
         script.push_str(&format!("echo \"Started Node {} (PID $PID_{})\"\n", i, i));
@@ -122,14 +121,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if *i == 1 {
             script.push_str("sleep 5\n");
         }
+
+        // Batch
+        // Note: 'start' spawns a new window. /B spawns in same window background? No, usually start "Title" cmd
+        // We assume executing from base_dir for relative paths or use %~dp0
+        let cmd_bat = format!(
+            "start \"Node {}\" cargo run --manifest-path \"%~dp0..\\..\\Cargo.toml\" --bin atlas-node -- --listen /ip4/127.0.0.1/tcp/{} --grpc-port {} --config \"%~dp0{}\\config.json\" --keypair \"%~dp0{}\\keypair\"",
+            i, p2p_port, grpc_port, node_subdir, node_subdir
+        );
+        script_bat.push_str(&format!("{}\n", cmd_bat));
+        // Batch doesn't have an easy "sleep 5" compatible everywhere, but 'timeout /t 5' works on modern windows
+        if *i == 1 {
+            script_bat.push_str("timeout /t 5\n");
+        }
     }
 
     script.push_str("\nwait\n");
     
     let script_path = format!("{}/start_cluster.sh", base_dir);
     fs::write(&script_path, script)?;
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))?;
+
+    let bat_path = format!("{}/start_cluster.bat", base_dir);
+    fs::write(&bat_path, script_bat)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))?;
+    }
 
     println!("\n✨ Cluster setup complete! Run ./{}/start_cluster.sh to start.", base_dir);
 
