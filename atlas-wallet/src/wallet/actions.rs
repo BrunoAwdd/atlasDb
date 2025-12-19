@@ -20,7 +20,7 @@ pub(super) fn sing_transfer(
     amount: u64,
     password: String,
     memo: Option<String>,
-) -> Result<(String, TransferRequest), String> {
+) -> Result<(String, TransferRequest, Vec<u8>), String> {
     let session = wallet.session.as_mut().ok_or_else(|| "Sessão não carregada".to_string())?;
     
     let nonce = (wallet.transfer_map.lock().map_err(|_| "Erro ao acessar mapa".to_string())?.len() as u64) + 1;
@@ -33,6 +33,8 @@ pub(super) fn sing_transfer(
         nonce,
     ).map_err(|e| format!("Erro ao criar transferência: {:?}", e))?;
 
+    let public_key = session.get_public_key().ok_or_else(|| "Erro ao obter chave pública".to_string())?;
+
     let id = hex::encode(&request.sig2);
 
     {
@@ -40,7 +42,7 @@ pub(super) fn sing_transfer(
         map.insert(id.clone(), request.clone());
     }
 
-    Ok((id, request))
+    Ok((id, request, public_key))
 }
 
 pub(super) fn sign_message(wallet: &mut Wallet, message: Vec<u8>, password: String) -> Result<String, String> {
