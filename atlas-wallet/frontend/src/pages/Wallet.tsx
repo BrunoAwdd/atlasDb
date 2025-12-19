@@ -16,13 +16,7 @@ import {
   ArrowDownLeft,
   LogOut,
 } from "lucide-react";
-import wasmUrl from "../pkg/nimble_wallet_bg.wasm?url";
-
-import init, {
-  get_data,
-  sing_transfer,
-  switch_profile,
-} from "../pkg/nimble_wallet";
+import { get_data, sing_transfer, switch_profile } from "../pkg/atlas_wallet";
 
 function WalletView() {
   const [wallet, setWallet] = useState<any>(null); // você pode definir o tipo melhor depois
@@ -46,26 +40,46 @@ function WalletView() {
 
   async function fetchData() {
     // --- gRPC Integration ---
-    await init(wasmUrl);
-
     let session;
     try {
-      // We still use WASM to load the identity/keys locally
+      // Assume WASM initialized by Home.tsx.
+      // If we reload page here, state is lost anyway, so we must rely on Home to init and load.
+      // Calling init() again here RESETS the WASM memory (wiping the session).
+      // console.log("Initializing WASM in Wallet...");
+      // await init(wasmUrl);
+
+      console.log("Fetching data from WASM...");
       session = await get_data();
       console.log("Identity Loaded from WASM:", session);
     } catch (error) {
-      console.error("Error loading identity:", error);
-      setStatus("Erro ao carregar chave/identidade.");
+      console.error(
+        "Error loading identity from WASM (not initialized?):",
+        error
+      );
+      // If error (e.g. wasm not init), we assume no session.
+      setStatus("Sessão não encontrada.");
       return;
     }
 
-    if (session instanceof Map) {
-      const exposed = session.get("exposed");
-      const hidden = session.get("hidden");
+    if (session) {
+      let exposedAddr, hiddenAddr;
 
-      // Addresses from WASM
-      const exposedAddr = exposed.get("address");
-      const hiddenAddr = hidden.get("address");
+      if (session instanceof Map) {
+        exposedAddr = session.get("exposed").get("address");
+        hiddenAddr = session.get("hidden").get("address");
+      } else {
+        // Standard Object from serde_wasm_bindgen
+        exposedAddr = session.exposed?.address;
+        hiddenAddr = session.hidden?.address;
+      }
+
+      if (!exposedAddr || !hiddenAddr) {
+        console.error("Endereços não encontrados no session:", session);
+        setStatus("Dados da carteira incompletos.");
+        return;
+      }
+
+      // ... rest of the logic
 
       // Determine which address to track for history based on activeProfile
       const currentTrackingAddr =
@@ -120,7 +134,7 @@ function WalletView() {
         },
       });
     } else {
-      setStatus("Formato inesperado de dados da carteira.");
+      setStatus("Carteira vazia / Erro no formato.");
     }
   }
 
@@ -128,7 +142,7 @@ function WalletView() {
     try {
       setStatus("Assinando (WASM)...");
 
-      await init(wasmUrl);
+      // await init(wasmUrl); // Don't reset state!
       const password = prompt("Digite sua senha para assinar a transação");
 
       if (!password) {
@@ -136,24 +150,80 @@ function WalletView() {
         return;
       }
 
+      // Define Memo constant to ensure Signature matches Verification
+      const txMemo = "Web Wallet Transfer";
+
       // 1. Sign with WASM
-      // We assume sing_transfer returns the Signature string + validation
-      // result.get("signature") ?
+      // Result is a Map: { id: "...", transfer: { transaction: {...}, signature: [...], public_key: [...] } }
       const result = await sing_transfer(
         toAddress,
         BigInt(amount),
         password,
-        null
+        txMemo
       );
 
-      console.log("Assinatura gerada:", result);
-      // Assuming result is the signature string directly or we need to extract it
-      // For now, let's assume result IS the signature or has it.
-      // If result is Map, maybe result.get("signature")
-      // If the current WASM returns a mocked 'tx object', we might need to adjust logic
-      // But let's assume valid signature is available.
+      console.log("Assinatura gerada (RAW):", result);
+      console.log("Type of result:", result?.constructor?.name);
+      if (result instanceof Map) {
+        console.log("Result keys:", Array.from(result.keys()));
+        const transfer = result.get("transfer");
+        console.log("Transfer object:", transfer);
+        if (transfer instanceof Map)
+          console.log("Transfer keys:", Array.from(transfer.keys()));
+      } else {
+        console.log("Result keys (Object):", Object.keys(result));
+        console.log("Transfer object:", result?.transfer);
+      }
 
-      const signature = typeof result === "string" ? result : "mock_sig_123";
+      // Helper function for bytes to hex
+      const toHex = (bytes: any) => {
+        if (!bytes) return "";
+        const arr = Array.from(bytes) as number[];
+        return arr.map((b) => b.toString(16).padStart(2, "0")).join("");
+      };
+
+      let sigRaw: any, pkRaw: any; // Keep any to handle various WASM return shapes safely
+      let sigIsHex = false;
+
+      // Handle Map (wasm-bindgen default) or Object
+      if (result instanceof Map) {
+        const transfer = result.get("transfer");
+        if (transfer instanceof Map) {
+          sigRaw = transfer.get("signature");
+          pkRaw = transfer.get("public_key");
+        } else {
+          // WASM might return struct with direct fields
+          sigRaw = transfer.signature;
+          pkRaw = transfer.public_key;
+        }
+        // The new WASM returns signature as Hex String (from sig2)
+        if (typeof sigRaw === "string") sigIsHex = true;
+      } else {
+        // Fallback or Object structure
+        if (result.transfer) {
+          sigRaw = result.transfer.signature;
+          pkRaw = result.transfer.public_key;
+          if (typeof sigRaw === "string") sigIsHex = true;
+        }
+      }
+
+      // Ensure we have data
+      if (!sigRaw || !pkRaw) {
+        throw new Error("Falha ao extrair assinatura/chave pública do WASM");
+      }
+
+      let signatureHex = "";
+      if (sigIsHex) {
+        signatureHex = sigRaw;
+      } else {
+        signatureHex = toHex(sigRaw);
+      }
+
+      // Convert Public Key to Hex (it comes as byte array/vector from WASM)
+      const publicKeyHex = toHex(pkRaw);
+
+      // console.log("Sending Signature (Hex):", signatureHex);
+      // console.log("Sending Public Key (Hex):", publicKeyHex);
 
       setStatus("Enviando (gRPC)...");
 
@@ -168,8 +238,9 @@ function WalletView() {
         to: toAddress,
         amount: amount.toString(),
         asset: "BRL",
-        memo: "Web Wallet Transfer",
-        signature: signature,
+        memo: txMemo, // Use the SAME memo signed by WASM
+        signature: signatureHex,
+        public_key: publicKeyHex,
       });
 
       console.log("Ledger Response:", txResponse);
@@ -205,7 +276,7 @@ function WalletView() {
     const newProfile = val as "exposed" | "hidden";
 
     setStatus("Trocando perfil...");
-    await init(wasmUrl);
+    // await init(wasmUrl);
     await switch_profile();
     setStatus(`Perfil trocado para: ${newProfile} com sucesso!`);
     setActiveProfile(newProfile);
