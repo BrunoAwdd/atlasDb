@@ -5,31 +5,18 @@ use serde_wasm_bindgen;
 
 use crate::wallet::{create_vault as create_vault_default, Wallet};
 
+use std::cell::RefCell;
+
+thread_local! {
+    static WALLET: RefCell<Wallet> = RefCell::new(Wallet::new());
+}
+
 #[wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
 }
 
-/// Creates a new Wallet instance and returns a pointer to it.
-/// The caller is responsible for freeing the memory with `wallet_free`.
-#[wasm_bindgen]
-pub fn wallet_new() -> usize {
-    let wallet = Box::new(Wallet::new());
-    Box::into_raw(wallet) as usize
-}
-
-/// Frees the memory of a Wallet instance.
-#[wasm_bindgen]
-pub fn wallet_free(wallet_ptr: usize) {
-    if wallet_ptr == 0 {
-        return;
-    }
-    unsafe {
-        let _ = Box::from_raw(wallet_ptr as *mut Wallet);
-    }
-}
-
-// `create_vault` remains a free function as it doesn't operate on a Wallet instance.
+// `create_vault` remains a free function
 #[wasm_bindgen]
 pub fn create_vault(
     password: String, 
@@ -47,53 +34,53 @@ pub fn create_vault(
 }
 
 #[wasm_bindgen]
-pub fn load_vault(wallet_ptr: usize, password: String, encoded: JsValue) -> Result<(), JsValue> {
-    let wallet = unsafe { &mut *(wallet_ptr as *mut Wallet) };
+pub fn load_vault(password: String, encoded: JsValue) -> Result<(), JsValue> {
     let array = Uint8Array::new(&encoded);
     let mut encoded_vec = vec![0u8; array.length() as usize];
     array.copy_to(&mut encoded_vec);
 
-    wallet.load_vault(password, encoded_vec).map_err(|e| JsValue::from_str(&e))?;
-
-    Ok(())
+    WALLET.with(|wallet| {
+        wallet.borrow_mut().load_vault(password, encoded_vec).map_err(|e| JsValue::from_str(&e))
+    })
 }
 
 #[wasm_bindgen]
-pub fn get_data(wallet_ptr: usize) -> Result<JsValue, JsValue> {
-    let wallet = unsafe { &*(wallet_ptr as *mut Wallet) };
-    let wallet_data = wallet.get_data()?;
-
-    serde_wasm_bindgen::to_value(&wallet_data)
-        .map_err(|e| JsValue::from_str(&format!("Erro de serialização: {:?}", e)))
+pub fn get_data() -> Result<JsValue, JsValue> {
+    WALLET.with(|wallet| {
+        let wallet_data = wallet.borrow().get_data()?;
+        serde_wasm_bindgen::to_value(&wallet_data)
+            .map_err(|e| JsValue::from_str(&format!("Erro de serialização: {:?}", e)))
+    })
 }
 
 #[wasm_bindgen]
 pub fn sing_transfer(
-    wallet_ptr: usize,
     to_address: String,
     amount: u64,
     password: String,
     memo: Option<String>,
 ) -> Result<JsValue, JsValue> {
-    let wallet = unsafe { &mut *(wallet_ptr as *mut Wallet) };
-    let (id,request) = wallet.sing_transfer(to_address, amount, password, memo)?;
+    WALLET.with(|wallet| {
+        let mut w = wallet.borrow_mut();
+        let (id, request, public_key) = w.sing_transfer(to_address, amount, password, memo)?;
 
-    let payload = serde_json::json!({
-        "id": id,
-        "transfer": request
-    });
+        let payload = serde_json::json!({
+            "id": id,
+            "transfer": {
+                "signature": hex::encode(request.sig2),
+                "public_key": public_key,
+                "transaction": request
+            }
+        });
 
-    let serialized = serde_wasm_bindgen::to_value(&payload)
-        .map_err(|e| JsValue::from_str(&format!("Erro ao serializar: {:?}", e)))?;
-
-    Ok(serialized)
+        serde_wasm_bindgen::to_value(&payload)
+            .map_err(|e| JsValue::from_str(&format!("Erro ao serializar: {:?}", e)))
+    })
 }
 
-
 #[wasm_bindgen]
-pub fn switch_profile(wallet_ptr: usize) -> Result<(), JsValue> {
-    let wallet = unsafe { &mut *(wallet_ptr as *mut Wallet) };
-    wallet.switch_profile().map_err(|e| JsValue::from_str(&e))?;
-
-    Ok(())
+pub fn switch_profile() -> Result<(), JsValue> {
+    WALLET.with(|wallet| {
+        wallet.borrow_mut().switch_profile().map_err(|e| JsValue::from_str(&e))
+    })
 }
