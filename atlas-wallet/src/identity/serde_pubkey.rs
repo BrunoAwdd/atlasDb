@@ -6,16 +6,14 @@ pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error
 where
     S: Serializer,
 {
-    let hex = hex::encode(key.to_bytes());
-    serializer.serialize_str(&hex)
+    serializer.serialize_bytes(key.as_bytes())
 }
 
 pub fn deserialize<'de, D>(deserializer: D) -> Result<VerifyingKey, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    let bytes = hex::decode(&s).map_err(D::Error::custom)?;
+    let bytes = <Vec<u8>>::deserialize(deserializer)?;
     let array: [u8; 32] = bytes.try_into().map_err(|_| D::Error::custom("Invalid length"))?;
     VerifyingKey::from_bytes(&array).map_err(D::Error::custom)
 }
