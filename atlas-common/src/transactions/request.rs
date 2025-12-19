@@ -125,7 +125,7 @@ impl TransferRequest {
             amount: payload.amount,
             sig2,
             memo,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: crate::utils::time::current_time(),
             nonce,
         })
     }
@@ -280,7 +280,7 @@ mod tests {
             123,
             dummy_sig(),
             Some("gift".to_string()),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            crate::utils::time::current_time(),
             0
         ).expect("Should build request");
 

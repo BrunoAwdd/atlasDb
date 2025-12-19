@@ -55,7 +55,7 @@ impl TransferPayload {
             from_id: from.to_string(),
             to_id: to,
             amount,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: crate::utils::time::current_time(),
             nonce,
         }
     }
