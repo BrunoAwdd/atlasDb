@@ -181,7 +181,7 @@ impl Storage {
         }
     }
 
-    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<atlas_ledger::state::entry::LedgerEntry, String> {
+    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<atlas_common::entry::LedgerEntry, String> {
         if let Some(ledger) = &self.ledger {
             ledger.execute_transaction(proposal).await.map_err(|e| e.to_string())
         } else {
