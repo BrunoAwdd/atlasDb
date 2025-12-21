@@ -40,7 +40,7 @@ pub struct Storage {
     /// Map of proposal ID → final consensus result.
     pub results: HashMap<String, ConsensusResult>,
 
-    /// Persistent Ledger (Binlog + RocksDB)
+    /// Persistent Ledger (Binlog + Redb)
     #[serde(skip)]
     pub ledger: Option<Arc<Ledger>>,
 }

@@ -24,7 +24,7 @@ clap = { version = "4.4", features = ["derive"] }
 chrono = "0.4"
 env_logger = "0.10"
 libp2p = { version = "0.53", features = ["full"] }
-rocksdb = { git = "https://github.com/rust-rocksdb/rust-rocksdb", branch="master", default-features = false, features = ["multi-threaded-cf"] }
+redb = "1.4.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 rand = "0.8"
 tonic = "0.10"
