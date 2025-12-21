@@ -227,4 +227,15 @@ impl Ledger {
         
         Ok(())
     }
+
+    /// Returns the balance of a specific asset for a given address.
+    pub async fn get_balance(&self, address: &str, asset: &str) -> Result<u64> {
+        let state = self.state.read().await;
+        if let Some(account) = state.accounts.get(address) {
+            let bal = *account.balances.get(asset).unwrap_or(&0);
+            Ok(bal.try_into().unwrap_or(u64::MAX))
+        } else {
+            Ok(0)
+        }
+    }
 }

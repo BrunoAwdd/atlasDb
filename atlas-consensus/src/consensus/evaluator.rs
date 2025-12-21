@@ -86,7 +86,7 @@ impl ConsensusEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::env::consensus::registry::VoteRegistry;
+    use crate::consensus::registry::VoteRegistry;
     use atlas_common::{
     env::consensus::types::{Vote, ConsensusResult, ConsensusPhase},
     utils::NodeId
