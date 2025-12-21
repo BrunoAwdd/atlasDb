@@ -15,6 +15,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+hex = "0.4.3"
 sha2 = "0.10"
 thiserror = "1.0"
 clap = { version = "4.4", features = ["derive"] }
@@ -30,6 +31,9 @@ tonic = "0.10"
 prost = "0.12"
 tonic-web = "0.10"
 tower-http = { version = "0.4", features = ["cors"] }
+tower-http-axum = { package = "tower-http", version = "0.6.2", features = ["cors"] }
+axum = "0.8.7"
+
 
 [build-dependencies]
 tonic-build = "0.10"
