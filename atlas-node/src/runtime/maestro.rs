@@ -211,8 +211,41 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                             info!("🎉 Proposta FINALIZADA (BFT): {}", result.proposal_id);
                                                             tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
                                                             
-                                                            if let Err(e) = self.cluster.commit_proposal(result).await {
+                                                            if let Err(e) = self.cluster.commit_proposal(result.clone()).await {
                                                                 eprintln!("Erro ao commitar proposta: {}", e);
+                                                            }
+
+                                                            // Clean Mempool
+                                                            {
+                                                                let storage = self.cluster.local_env.storage.read().await;
+                                                                if let Some(prop) = storage.proposals.iter().find(|p| p.id == result.proposal_id) {
+                                                                    
+                                                                    let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&prop.content) {
+                                                                         use sha2::{Sha256, Digest};
+                                                                         use atlas_common::transaction::signing_bytes;
+                                                                         batch.iter().map(|tx| {
+                                                                             let mut hasher = Sha256::new();
+                                                                             hasher.update(signing_bytes(&tx.transaction));
+                                                                             hasher.update(&tx.signature);
+                                                                             hex::encode(hasher.finalize())
+                                                                         }).collect()
+                                                                    } else if let Ok(tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&prop.content) {
+                                                                          // Re-calculate hash (same logic as Mempool)
+                                                                          use sha2::{Sha256, Digest};
+                                                                          use atlas_common::transaction::signing_bytes;
+                                                                          let mut hasher = Sha256::new();
+                                                                          hasher.update(signing_bytes(&tx.transaction));
+                                                                          hasher.update(&tx.signature);
+                                                                          vec![hex::encode(hasher.finalize())]
+                                                                    } else {
+                                                                        vec![]
+                                                                    };
+
+                                                                    if !tx_hashes.is_empty() {
+                                                                        self.mempool.remove_batch(&tx_hashes);
+                                                                        tracing::info!("🧹 Removed {} committed txs from mempool", tx_hashes.len());
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -276,7 +309,7 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                                 .is_ok();
 
                                             if ok {
-                                                self.cluster.local_env.storage.write().await.log_proposal(p);
+                                                self.cluster.local_env.storage.write().await.log_proposal(p).await;
                                             } else {
                                                 tracing::warn!("❌ Assinatura inválida no State Transfer para proposta {}", p.id);
                                             }
@@ -288,6 +321,38 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
 
                             AdapterEvent::Gossip { topic, data, from } if topic == "atlas/heartbeat/v1" => {
                                 tracing::info!("❤️ hb (fallback) de {from} ({} bytes)", data.len());
+                            }
+
+                            AdapterEvent::Gossip { topic, data, from: _ } if topic == "atlas/tx/v1" => {
+                                if let Ok(tx) = serde_json::from_slice::<atlas_common::transaction::SignedTransaction>(&data) {
+                                    use sha2::{Sha256, Digest};
+                                    use atlas_common::transaction::signing_bytes;
+                                    let mut hasher = Sha256::new();
+                                    hasher.update(signing_bytes(&tx.transaction));
+                                    hasher.update(&tx.signature);
+                                    let hash = hex::encode(hasher.finalize());
+
+                                    // Check Ledger for Idempotency
+                                    let exists_in_ledger = {
+                                        let storage = self.cluster.local_env.storage.read().await;
+                                        if let Some(ledger) = &storage.ledger {
+                                            ledger.exists_transaction(&hash).await.unwrap_or(false)
+                                        } else {
+                                            false
+                                        }
+                                    };
+
+                                    if exists_in_ledger {
+                                        tracing::debug!("♻️ Transação já existe no Ledger. Ignorando gossip. Hash: {}", hash);
+                                    } else {
+                                        tracing::info!("📨 Recebida transação via Gossip! Hash: {} (Adicionando ao Mempool)", hash);
+                                        match self.mempool.add(tx) {
+                                            Ok(true) => info!("✅ Transação adicionada ao Mempool (Gossip)"),
+                                            Ok(false) => tracing::debug!("Transação duplicada no Mempool (ignorado)"),
+                                            Err(e) => tracing::warn!("❌ Transação inválida via Gossip: {}", e),
+                                        }
+                                    }
+                                }
                             }
                             
     
@@ -316,20 +381,21 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
 
                     info!("[MAESTRO DEBUG] Am I leader? {} | Server running? {}", am_i_leader, server_running);
 
-                    if am_i_leader && !server_running {
-                        info!("Este nó é o líder. Iniciando servidor gRPC...");
+                    if !server_running {
+                        info!("Servidor gRPC não está rodando. Iniciando...");
                         let maestro_clone = Arc::clone(&self);
+                        
+                        // Extract Ledger and Mempool
+                        let ledger = self.cluster.local_env.storage.read().await.ledger.clone()
+                            .expect("Ledger must be initialized");
+                        let mempool = Arc::clone(&self.mempool);
+
                         let server_task = tokio::spawn(async move {
-                            if let Err(e) = rpc::server::run_server(maestro_clone, grpc_addr_copy).await {
+                            if let Err(e) = rpc::server::run_server(maestro_clone, ledger, mempool, grpc_addr_copy).await {
                                 eprintln!("Erro no servidor gRPC: {}", e);
                             }
                         });
                         *handle_guard = Some(server_task);
-                    } else if !am_i_leader && server_running {
-                        info!("Este nó não é mais o líder. Parando servidor gRPC...");
-                        if let Some(task) = handle_guard.take() {
-                            task.abort();
-                        }
                     }
                 }
 
@@ -348,6 +414,17 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                 }
 
                 _ = block_timer.tick() => {
+                    // Gossip Pending Transactions (Every 2s with block timer for simplicity, or separate)
+                    // We simply broadcast everything in mempool to ensure leader gets it.
+                    // Ideal: Diff mechanism. For now: Flood.
+                    let txs = self.mempool.get_candidates(50); // Get up to 50 pending
+                    for (_, tx) in txs {
+                        // Serialize SignedTransaction
+                         if let Ok(bytes) = serde_json::to_vec(&tx) {
+                             self.p2p.publish("atlas/tx/v1", bytes).await.ok();
+                         }
+                    }
+
                     // Block Production Logic
                     // 1. Check if I am leader
                     let leader_guard = self.cluster.current_leader.read().await;
@@ -357,16 +434,20 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
 
                     if am_i_leader {
                         // 2. Check Mempool
-                        let candidates = self.mempool.get_candidates(1); // Get 1 for now (Ledger expects 1)
-                        if let Some((hash, tx)) = candidates.first() {
-                            info!("⛏️ Producing block with transaction: {}", hash);
+                        if self.mempool.len() > 0 {
+                             tracing::info!("🔍 [Maestro] Leader checking mempool. Size: {}", self.mempool.len());
+                        }
+                        let candidates = self.mempool.get_candidates(50); // BATCH_SIZE = 50
+                        if !candidates.is_empty() {
+
+                            info!("⛏️ Producing block with {} transactions", candidates.len());
                             
-                            // 3. Serialize content
-                            // We serialization must match Ledger expectation: SignedTransaction JSON
-                             let content = match serde_json::to_string(tx) {
+                            // 3. Serialize content as Vec<SignedTransaction>
+                            let txs: Vec<atlas_common::transaction::SignedTransaction> = candidates.iter().map(|(_, tx)| tx.clone()).collect();
+                             let content = match serde_json::to_string(&txs) {
                                 Ok(s) => s,
                                 Err(e) => {
-                                    tracing::error!("Failed to serialize transaction: {}", e);
+                                    tracing::error!("Failed to serialize transaction batch: {}", e);
                                     continue;
                                 }
                             };
@@ -375,8 +456,9 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                             match self.submit_external_proposal(content).await {
                                 Ok(pid) => {
                                     info!("✅ Block Produced! Proposal ID: {}", pid);
-                                    // 5. Remove from Mempool (Optimistic)
-                                    self.mempool.remove_batch(&[hash.clone()]);
+                                    // 5. Mark as Pending (In-Flight)
+                                    let hashes: Vec<String> = candidates.iter().map(|(h, _)| h.clone()).collect();
+                                    self.mempool.mark_pending(&hashes);
                                 },
                                 Err(e) => {
                                     tracing::error!("❌ Failed to produce block: {}", e);
