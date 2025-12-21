@@ -10,6 +10,7 @@ members = [
     "atlas-kyc",
     "atlas-bank", 
     "atlas-mempool",
+    "atlas-keygen",
 ]
 resolver = "2"
 
