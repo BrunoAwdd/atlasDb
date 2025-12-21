@@ -58,6 +58,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = get_arg_value(&args, "--config").unwrap_or("config.json");
     let keypair_path = get_arg_value(&args, "--keypair").unwrap_or("keys/keypair");
 
+    // Try to find genesis.json (same dir as config or root "genesis.json")
+    let config_dir = std::path::Path::new(config_path).parent().unwrap_or(std::path::Path::new("."));
+    let genesis_path = config_dir.join("genesis.json");
+    // Fallback to local root example/genesis.json for dev
+    let dev_genesis_path = Path::new("example/genesis.json");
+
+    let genesis_file = if genesis_path.exists() {
+        Some(genesis_path)
+    } else if dev_genesis_path.exists() {
+        Some(dev_genesis_path.to_path_buf())
+    } else {
+        None
+    };
+
     // Extract node name from config path (e.g., "node1/config.json" -> "node1")
     let node_name = std::path::Path::new(config_path)
         .parent()
@@ -146,6 +160,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Construir e iniciar o runtime
     let runtime = match build_runtime(config_path, auth, p2p_config, grpc_addr).await {
         Ok(rt) => {
+            // Apply Genesis if available
+            if let Some(path) = genesis_file {
+                 info!("🏛️ Loading Genesis from {:?}", path);
+                 match std::fs::read_to_string(&path) {
+                     Ok(content) => {
+                         match serde_json::from_str::<atlas_common::genesis::GenesisState>(&content) {
+                             Ok(genesis) => {
+                                 if let Err(e) = rt.ledger.apply_genesis_state(&genesis).await {
+                                     error!("❌ Failed to apply genesis: {}", e);
+                                 } else {
+                                     info!("✅ Genesis applied successfully!");
+                                 }
+                             },
+                             Err(e) => error!("❌ Failed to parse genesis json: {}", e),
+                         }
+                     },
+                     Err(e) => error!("❌ Failed to read genesis file: {}", e),
+                 }
+            } else {
+                 info!("⚠️ No genesis.json found. Starting with existing state or empty state.");
+            }
+
             info!("Nó iniciado com sucesso. Pressione Ctrl+C para parar.");
             rt
         }

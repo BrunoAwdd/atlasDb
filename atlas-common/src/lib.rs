@@ -5,5 +5,6 @@ pub mod address;
 pub mod transactions;
 pub mod crypto;
 pub mod transaction;
+pub mod genesis;
 pub mod entry;
 pub mod error;

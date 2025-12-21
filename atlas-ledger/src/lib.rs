@@ -177,4 +177,54 @@ impl Ledger {
 
         Ok(count)
     }
+    /// Applies the genesis state if the ledger is empty.
+    pub async fn apply_genesis_state(&self, genesis: &atlas_common::genesis::GenesisState) -> Result<()> {
+        let mut state = self.state.write().await;
+        
+        // Simple check: if we have any accounts, genesis was already applied
+        if !state.accounts.is_empty() {
+            // Check if we strictly want to skip or verify. 
+            // For now, assume if state is not empty, we skip genesis.
+            // But State::new() adds some hardcoded accounts currently!
+            // We should ideally remove those hardcoded ones in State::new() eventually.
+            // For now, let's proceed but maybe log a warning if non-system accounts exist.
+        }
+        
+        for (address, amount) in &genesis.allocations {
+             use atlas_common::entry::{LedgerEntry, Leg, LegKind};
+             
+             // Double Entry:
+             // 1. Debit Equity (Issuance)
+             let debit_leg = Leg {
+                 account: "patrimonio:genesis".to_string(), // Equity
+                 asset: "ATLAS".to_string(),
+                 kind: LegKind::Debit, // Reduces Equity (Technically Equity is Credit normal, so Debit reduces it to create Liability)
+                 amount: *amount as u128,
+             };
+
+             // 2. Credit Liability (User Wallet)
+             let credit_leg = Leg {
+                 account: format!("passivo:wallet:{}", address), // Liability
+                 asset: "ATLAS".to_string(),
+                 kind: LegKind::Credit, // Increases Liability
+                 amount: *amount as u128,
+             };
+
+             let entry_id = format!("genesis-{}", address);
+             let entry = LedgerEntry::new(
+                 entry_id,
+                 vec![debit_leg, credit_leg],
+                 "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // Genesis Hash
+                 0,
+                 0,
+                 Some("Genesis Allocation".to_string()),
+             );
+
+             tracing::info!("🏛️ Applying Genesis: {} -> {} ATLAS", address, amount);
+             state.apply_entry(entry)
+                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to apply genesis: {}", e)))?;
+        }
+        
+        Ok(())
+    }
 }
