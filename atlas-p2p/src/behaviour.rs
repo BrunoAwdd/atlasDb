@@ -35,6 +35,7 @@ impl P2pBehaviour {
             IdentTopic::new("atlas/heartbeat/v1"),
             IdentTopic::new("atlas/proposal/v1"),
             IdentTopic::new("atlas/vote/v1"),
+            IdentTopic::new("atlas/tx/v1"),
         ];
 
         for t in topics {

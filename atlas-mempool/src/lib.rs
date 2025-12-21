@@ -9,12 +9,14 @@ pub struct Mempool {
     // Using RwLock for thread-safe access
     // Key is TxHash, Value is SignedTransaction
     transactions: Arc<RwLock<HashMap<String, SignedTransaction>>>,
+    pending: Arc<RwLock<std::collections::HashSet<String>>>,
 }
 
 impl Mempool {
     pub fn new() -> Self {
         Self {
             transactions: Arc::new(RwLock::new(HashMap::new())),
+            pending: Arc::new(RwLock::new(std::collections::HashSet::new())),
         }
     }
 
@@ -51,11 +53,29 @@ impl Mempool {
         Ok(true)
     }
 
+    /// Marks transactions as "pending" (included in a block but not committed).
+    /// They remain in the pool (to prevent duplicates) but are ignored by get_candidates.
+    pub fn mark_pending(&self, tx_hashes: &[String]) {
+        let mut pending = self.pending.write().unwrap();
+        for hash in tx_hashes {
+            pending.insert(hash.clone());
+        }
+    }
+
+    pub fn unmark_pending(&self, tx_hashes: &[String]) {
+        let mut pending = self.pending.write().unwrap();
+        for hash in tx_hashes {
+            pending.remove(hash);
+        }
+    }
+
     /// Removes a list of transactions (e.g., after they are included in a block).
     pub fn remove_batch(&self, tx_hashes: &[String]) {
         let mut pool = self.transactions.write().unwrap();
+        let mut pending = self.pending.write().unwrap();
         for hash in tx_hashes {
             pool.remove(hash);
+            pending.remove(hash);
         }
     }
 
@@ -63,7 +83,17 @@ impl Mempool {
     /// Simple FIFO/random selection for now.
     pub fn get_candidates(&self, n: usize) -> Vec<(String, SignedTransaction)> {
         let pool = self.transactions.read().unwrap();
-        pool.iter().take(n).map(|(k, v)| (k.clone(), v.clone())).collect()
+        let pending = self.pending.read().unwrap();
+        pool.iter()
+            .filter(|(k, _)| !pending.contains(*k))
+            .take(n)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    pub fn get_all(&self) -> Vec<String> {
+        let pool = self.transactions.read().unwrap();
+        pool.keys().cloned().collect()
     }
 
     pub fn len(&self) -> usize {
