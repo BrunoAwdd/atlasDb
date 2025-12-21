@@ -38,7 +38,7 @@ pub struct Storage {
     /// Map of proposal ID → final consensus result.
     pub results: HashMap<String, ConsensusResult>,
 
-    /// Persistent Ledger (Binlog + RocksDB)
+    /// Persistent Ledger (Binlog + Redb)
     #[serde(skip)]
     pub ledger: Option<Arc<Ledger>>,
 }
@@ -80,19 +80,16 @@ impl Storage {
     /// Logs a newly submitted proposal.
     ///
     /// This allows the system to retain proposal metadata for future auditing.
-    pub fn log_proposal(&mut self, proposal: Proposal) {
+    pub async fn log_proposal(&mut self, proposal: Proposal) {
         println!("📝 Storing proposal [{}]", proposal.id);
         self.proposals.push(proposal.clone());
         
         // Persist to Ledger
         if let Some(ledger) = &self.ledger {
-            let ledger = ledger.clone();
-            let prop = proposal.clone();
-            tokio::spawn(async move {
-                if let Err(e) = ledger.append_proposal(&prop).await {
-                    eprintln!("❌ Failed to append proposal to ledger: {}", e);
-                }
-            });
+            // No spawn, wait for result
+            if let Err(e) = ledger.append_proposal(&proposal).await {
+                eprintln!("❌ Failed to append proposal to ledger: {}", e);
+            }
         } else {
             eprintln!("⚠️ Ledger not initialized, proposal not persisted to disk!");
         }
@@ -217,7 +214,7 @@ mod tests {
         let mut store = Storage::new("/tmp/atlas_test_ledger_prop");
         let proposal = sample_proposal("p1", "n1", "create edge");
 
-        store.log_proposal(proposal.clone());
+        store.log_proposal(proposal.clone()).await;
 
         assert_eq!(store.proposals.len(), 1);
         assert_eq!(store.proposals[0].id, "p1");
@@ -270,9 +267,9 @@ mod tests {
         let p2 = sample_proposal("p2", "n2", "B → C");
         let p3 = sample_proposal("p3", "n3", "X → Y");
 
-        store.log_proposal(p1.clone());
-        store.log_proposal(p2.clone());
-        store.log_proposal(p3.clone());
+        store.log_proposal(p1.clone()).await;
+        store.log_proposal(p2.clone()).await;
+        store.log_proposal(p3.clone()).await;
 
         store.log_result("p1", sample_result(true, 3, "p1"));
         store.log_result("p2", sample_result(false, 1, "p2"));

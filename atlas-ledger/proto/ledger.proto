@@ -6,6 +6,7 @@ service LedgerService {
   rpc SubmitTransaction (SubmitTransactionRequest) returns (SubmitTransactionResponse);
   rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
   rpc GetStatement (GetStatementRequest) returns (GetStatementResponse);
+  rpc ListTransactions (ListTransactionsRequest) returns (ListTransactionsResponse);
 }
 
 message SubmitTransactionRequest {
@@ -51,4 +52,14 @@ message TransactionRecord {
 
 message GetStatementResponse {
     repeated TransactionRecord transactions = 1;
+}
+
+message ListTransactionsRequest {
+    uint64 limit = 1;
+    uint64 offset = 2;
+}
+
+message ListTransactionsResponse {
+    repeated TransactionRecord transactions = 1;
+    uint64 total_count = 2;
 }

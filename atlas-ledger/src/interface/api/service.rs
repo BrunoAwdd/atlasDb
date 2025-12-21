@@ -11,7 +11,8 @@ use ledger_proto::ledger_service_server::LedgerService;
 use ledger_proto::{
     SubmitTransactionRequest, SubmitTransactionResponse,
     GetBalanceRequest, GetBalanceResponse,
-    GetStatementRequest, GetStatementResponse
+    GetStatementRequest, GetStatementResponse,
+    ListTransactionsRequest, ListTransactionsResponse
 };
 use std::sync::Arc;
 use crate::Ledger;
@@ -29,9 +30,11 @@ impl LedgerService for LedgerServiceImpl {
         request: Request<SubmitTransactionRequest>,
     ) -> Result<Response<SubmitTransactionResponse>, Status> {
         let req = request.into_inner();
+        println!("📝 [LedgerService] SubmitTransaction Request received from: {}", req.from);
         
         // validate inputs (basic)
         if req.amount.is_empty() {
+            println!("❌ [LedgerService] Amount empty");
             return Ok(Response::new(SubmitTransactionResponse {
                 success: false,
                 tx_hash: "".to_string(),
@@ -82,6 +85,22 @@ impl LedgerService for LedgerServiceImpl {
             signature: signature_bytes,
             public_key: pk_bytes,
         };
+
+        // --- Idempotency Check ---
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(atlas_common::transaction::signing_bytes(&signed_tx.transaction));
+        hasher.update(&signed_tx.signature);
+        let hash = hex::encode(hasher.finalize());
+
+        if self.ledger.exists_transaction(&hash).await.unwrap_or(false) {
+            println!("♻️ [LedgerService] Transaction already exists in Ledger: {}", hash);
+            return Ok(Response::new(SubmitTransactionResponse {
+                success: true, // It is successful in the sense that it's processed (idempotent success)
+                tx_hash: hash,
+                error_message: "Transaction already confirmed (Idempotent)".to_string(),
+            }));
+        }
 
         // Add to Mempool
         let new = match self.mempool.add(signed_tx) {
@@ -180,6 +199,54 @@ impl LedgerService for LedgerServiceImpl {
 
        Ok(Response::new(GetStatementResponse {
            transactions: records
+       }))
+    }
+
+    async fn list_transactions(
+        &self,
+        request: Request<ListTransactionsRequest>,
+    ) -> Result<Response<ListTransactionsResponse>, Status> {
+       let req = request.into_inner();
+       let proposals = self.ledger.get_all_proposals().await.map_err(|e| Status::internal(e.to_string()))?;
+
+       let mut records = Vec::new();
+       
+       for p in proposals {
+            let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&p.content) {
+                Some(signed_tx.transaction)
+            } else if let Ok(tx) = serde_json::from_str::<atlas_common::transaction::Transaction>(&p.content) {
+                Some(tx)
+            } else {
+                None
+            };
+
+            if let Some(tx) = tx_res {
+               records.push(ledger_proto::TransactionRecord {
+                       tx_hash: p.hash,
+                       from: tx.from,
+                       to: tx.to,
+                       amount: tx.amount.to_string(),
+                       asset: tx.asset,
+                       timestamp: p.time as u64,
+                       memo: tx.memo.unwrap_or_default(),
+               });
+            }
+       }
+       
+       // Sort by timestamp desc
+       records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+       let total_count = records.len() as u64;
+       
+       // Pagination
+       let skip = req.offset as usize;
+       let take = if req.limit == 0 { 50 } else { req.limit as usize };
+       
+       let paged = records.into_iter().skip(skip).take(take).collect();
+
+       Ok(Response::new(ListTransactionsResponse {
+           transactions: paged,
+           total_count,
        }))
     }
 }

@@ -6,7 +6,7 @@ use atlas_common::error::Result;
 
 #[derive(Debug)]
 pub struct Binlog {
-    current_file: File,
+    // current_file: File, // Removed to avoid locking issues on Windows
     current_file_id: u64,
     current_offset: u64,
     data_dir: PathBuf,
@@ -16,22 +16,20 @@ impl Binlog {
     pub async fn new(data_dir: &str) -> Result<Self> {
         let path = Path::new(data_dir).join("binlog");
         fs::create_dir_all(&path).await?;
-
-        // Simple implementation: always use 0.log for now
-        let file_path = path.join("00000.log");
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(&file_path)
-            .await?;
-            
-        let metadata = file.metadata().await?;
         
+        let file_path = path.join("00000.log");
+        
+        // Initialize offset checking file size
+        let len = if file_path.exists() {
+             let metadata = fs::metadata(&file_path).await?;
+             metadata.len()
+        } else {
+             0
+        };
+
         Ok(Self {
-            current_file: file,
             current_file_id: 0,
-            current_offset: metadata.len(),
+            current_offset: len,
             data_dir: path,
         })
     }
@@ -40,9 +38,17 @@ impl Binlog {
         let data = serde_json::to_vec(proposal)?;
         let len = data.len() as u64;
         let offset = self.current_offset;
+        
+        // Open file on demand to avoid holding a lock that prevents reading
+        let file_path = self.data_dir.join(format!("{:05}.log", self.current_file_id));
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+            .await?;
 
-        self.current_file.write_all(&data).await?;
-        self.current_file.flush().await?;
+        file.write_all(&data).await?;
+        file.flush().await?;
         
         self.current_offset += len;
 

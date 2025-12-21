@@ -49,7 +49,32 @@ impl Ledger {
         let mut index = self.index.write().await;
 
         let (file_id, offset, len) = binlog.append(proposal).await?;
-        index.index_proposal(&proposal.id, file_id, offset, len)?;
+        
+        // Extract inner transaction hash(es) for idempotency index
+        let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+             use sha2::{Sha256, Digest};
+             use atlas_common::transaction::signing_bytes;
+             batch.iter().map(|signed_tx| {
+                 let mut hasher = Sha256::new();
+                 hasher.update(signing_bytes(&signed_tx.transaction));
+                 hasher.update(&signed_tx.signature);
+                 hex::encode(hasher.finalize())
+             }).collect()
+        } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+            use sha2::{Sha256, Digest};
+            use atlas_common::transaction::signing_bytes;
+            let mut hasher = Sha256::new();
+            hasher.update(signing_bytes(&signed_tx.transaction));
+            hasher.update(&signed_tx.signature);
+            vec![hex::encode(hasher.finalize())]
+        } else {
+             // Fallback: use proposal hash if parsing fails (legacy)
+             vec![proposal.hash.clone()]
+        };
+
+        for hash in tx_hashes {
+            index.index_proposal(&proposal.id, &hash, file_id, offset, len)?;
+        }
         
         // CRITICAL FIX: Update State immediately!
         // Drop locks before executing to avoid potential deadlock issues (though execute takes its own locks)
@@ -63,7 +88,12 @@ impl Ledger {
         
         Ok(())
     }
-    
+
+    pub async fn exists_transaction(&self, hash: &str) -> Result<bool> {
+        let index = self.index.read().await;
+        index.exists_tx(hash)
+    }
+
     pub async fn get_proposal(&self, id: &str) -> Result<Option<Proposal>> {
         let index = self.index.read().await;
         if let Some((file_id, offset, len)) = index.get_proposal_location(id)? {
@@ -84,62 +114,67 @@ impl Ledger {
         binlog.read_all().await
     }
 
-    /// Executes a transaction (proposal content) and updates the state.
-    /// Returns the generated LedgerEntry.
-    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<atlas_common::entry::LedgerEntry> {
-        // Attempt to parse as SignedTransaction
-        let (tx, signature, public_key) = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
-            (signed_tx.transaction, Some(signed_tx.signature), Some(signed_tx.public_key))
-        } else {
-            // Fallback for legacy
-            let tx: atlas_common::transaction::Transaction = serde_json::from_str(&proposal.content)
-                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to parse transaction: {}", e)))?;
-            (tx, None, None)
-        };
+    /// Executes a transaction batch (proposal content) and updates the state.
+    /// Returns the number of executed transactions.
+    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize> {
+        // 1. Try Batch Parsing
+        let transactions: Vec<(atlas_common::transaction::Transaction, Option<Vec<u8>>, Option<Vec<u8>>)> = 
+            if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+                batch.into_iter().map(|st| (st.transaction, Some(st.signature), Some(st.public_key))).collect()
+            } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+                // Fallback: Single SignedTransaction
+                vec![(signed_tx.transaction, Some(signed_tx.signature), Some(signed_tx.public_key))]
+            } else {
+                // Fallback: Legacy Single Transaction (Unsigned)
+                let tx: atlas_common::transaction::Transaction = serde_json::from_str(&proposal.content)
+                    .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to parse transaction content: {}", e)))?;
+                vec![(tx, None, None)]
+            };
 
-        // If signed, verify signature
-        if let (Some(sig), Some(pk)) = (signature, public_key) {
-             use ed25519_dalek::{Verifier, VerifyingKey, Signature};
-             use atlas_common::transaction::signing_bytes;
-             
-             let verifying_key = VerifyingKey::from_bytes(pk.as_slice().try_into().unwrap_or(&[0u8; 32]))
-                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid public key: {}", e)))?;
-             let signature = Signature::from_slice(&sig)
-                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid signature format: {}", e)))?;
-             let msg = signing_bytes(&tx);
-
-             if verifying_key.verify(&msg, &signature).is_err() {
-                 return Err(atlas_common::error::AtlasError::Other("Invalid transaction signature".to_string()));
-             }
-        } else {
-             // For now we allow unsigned (legacy) but log warning?
-             // Or maybe we strictly enforce only if it looks like a signed one?
-             // Given we fallback, we proceed.
-             // In future, enforce strictness.
-             println!("⚠️ Executing unsigned transaction (legacy path)");
+        let mut count = 0;
+        for (tx, signature, public_key) in transactions {
+            // If signed, verify signature
+            if let (Some(sig), Some(pk)) = (signature, public_key) {
+                 use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+                 use atlas_common::transaction::signing_bytes;
+                 
+                 let verifying_key = VerifyingKey::from_bytes(pk.as_slice().try_into().unwrap_or(&[0u8; 32]))
+                    .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid public key: {}", e)))?;
+                 let signature = Signature::from_slice(&sig)
+                    .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid signature format: {}", e)))?;
+                 let msg = signing_bytes(&tx);
+    
+                 if verifying_key.verify(&msg, &signature).is_err() {
+                     return Err(atlas_common::error::AtlasError::Other("Invalid transaction signature".to_string()));
+                 }
+            } else {
+                 println!("⚠️ Executing unsigned transaction (legacy path)");
+            }
+    
+            // Use Accounting Engine to process transfer
+            let mut entry = atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
+                &tx.from,
+                &tx.to,
+                tx.amount as u64,
+                &tx.asset,
+                tx.memo,
+            ).map_err(|e| atlas_common::error::AtlasError::Other(format!("Accounting Engine Error: {}", e)))?;
+    
+            // Enrich entry with proposal metadata (and unique index suffix)
+            entry.entry_id = format!("entry-{}-{}", proposal.id, count);
+            entry.tx_hash = proposal.hash.clone(); // Note: This should ideally be the tx hash, not proposal hash.
+            // But for now we keep it compatible. Future: calculate tx hash.
+            entry.block_height = proposal.height;
+            entry.timestamp = proposal.time;
+    
+            // Apply to state
+            let mut state = self.state.write().await;
+            state.apply_entry(entry.clone())
+                .map_err(|e| atlas_common::error::AtlasError::Other(format!("Transaction execution failed: {}", e)))?;
+            
+            count += 1;
         }
 
-        // Use Accounting Engine to process transfer
-        // Updated path: bank::institution_subledger::engine
-        let mut entry = atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
-            &tx.from,
-            &tx.to,
-            tx.amount as u64,
-            &tx.asset,
-            tx.memo,
-        ).map_err(|e| atlas_common::error::AtlasError::Other(format!("Accounting Engine Error: {}", e)))?;
-
-        // Enrich entry with proposal metadata
-        entry.entry_id = format!("entry-{}", proposal.id);
-        entry.tx_hash = proposal.hash.clone();
-        entry.block_height = proposal.height;
-        entry.timestamp = proposal.time;
-
-        // Apply to state
-        let mut state = self.state.write().await;
-        state.apply_entry(entry.clone())
-            .map_err(|e| atlas_common::error::AtlasError::Other(format!("Transaction execution failed: {}", e)))?;
-
-        Ok(entry)
+        Ok(count)
     }
 }
