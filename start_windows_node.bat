@@ -1,10 +1,11 @@
 @echo off
 title AtlasDB Node (Auto-Connect)
 color 0A
+cd /d "%~dp0"
 
 :: --- CONFIGURACAO DO BOOTSTRAP (SEU PC) ---
 set BOOT_IP=192.168.15.133
-set BOOT_ID=12D3KooWBJ9CPECt4hcJzuMrZJeFXjNGRzaeJ5XfArYRA3hqC8tz
+set BOOT_ID=12D3KooWRKFdYEyJRFmwFMRmucAZyM6CTu9LQu3X1m4rRF5U5vGH
 :: ------------------------------------------
 
 echo ==========================================
@@ -42,7 +43,7 @@ if "%IP%"=="%BOOT_IP%" (
 ) else (
     echo [MODO PEER] Conectando automaticamente ao Mestre...
     echo.
-    "%~dp0atlas-node.exe" --listen /ip4/%IP%/tcp/4001 --grpc-port 50051 --dial /ip4/%BOOT_IP%/tcp/4001/p2p/%BOOT_ID% --config config.json --keypair node-key
+    "%~dp0atlas-node.exe" --listen /ip4/%IP%/tcp/0 --grpc-port 50051 --dial /ip4/%BOOT_IP%/tcp/4001/p2p/%BOOT_ID% --config config.json --keypair node-key
 )
 
 echo.
