@@ -23,25 +23,10 @@ impl Mempool {
     /// Adds a transaction to the mempool.
     /// Returns Ok(true) if added, Ok(false) if duplicate, Err if invalid signature.
     pub fn add(&self, tx: SignedTransaction) -> Result<bool, String> {
-        // 1. Verify Signature
-        use atlas_common::transaction::signing_bytes;
-        use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+        // 1. Verify Stateless (Signature, Address Derivation, Formats)
+        // This ensures no garbage or spoofed addresses enter the mempool.
+        tx.validate_stateless()?;
 
-        let verifying_key = VerifyingKey::from_bytes(tx.public_key.as_slice().try_into().unwrap_or(&[0u8; 32]))
-            .map_err(|e| format!("Invalid public key: {}", e))?;
-        
-        // Note: signature has to be 64 bytes
-        let signature_bytes: [u8; 64] = tx.signature.as_slice().try_into()
-            .map_err(|_| "Invalid signature length".to_string())?;
-
-        let signature = Signature::from_slice(&signature_bytes)
-            .map_err(|e| format!("Invalid signature format: {}", e))?;
-
-        let msg = signing_bytes(&tx.transaction);
-
-        if verifying_key.verify(&msg, &signature).is_err() {
-            return Err("Invalid transaction signature".to_string());
-        }
 
         // 2. Add to Pool
         let tx_hash = self.hash_signed_tx(&tx);

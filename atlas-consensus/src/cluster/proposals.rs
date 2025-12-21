@@ -115,18 +115,10 @@ impl Cluster {
                 };
 
             for (i, tx) in transactions.iter().enumerate() {
-                use ed25519_dalek::{Verifier, VerifyingKey, Signature};
-                use atlas_common::transaction::signing_bytes;
-
-                let verifying_key = VerifyingKey::from_bytes(tx.public_key.as_slice().try_into().unwrap_or(&[0u8; 32]))
-                    .map_err(|e| AtlasError::Other(format!("Invalid public key in tx #{}: {}", i, e)))?;
-                let signature = Signature::from_slice(&tx.signature)
-                    .map_err(|e| AtlasError::Other(format!("Invalid signature format in tx #{}: {}", i, e)))?;
-                let msg = signing_bytes(&tx.transaction);
-
-                if verifying_key.verify(&msg, &signature).is_err() {
-                    warn!("❌ Assinatura de Transação INVÁLIDA na proposta {} (Tx #{})", proposal.id, i);
-                    return Err(AtlasError::Auth(format!("Invalid transaction signature in proposal {}", proposal.id)));
+                // Use the centralized validation logic from atlas-common
+                if let Err(e) = tx.validate_stateless() {
+                     warn!("❌ Transação INVÁLIDA na proposta {} (Tx #{}): {}", proposal.id, i, e);
+                     return Err(AtlasError::Auth(format!("Invalid transaction in proposal {}: {}", proposal.id, e)));
                 }
             }
             if !transactions.is_empty() {
