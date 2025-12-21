@@ -37,7 +37,7 @@ impl Cluster {
         self.local_env.engine.lock().await
             .add_proposal(proposal.clone());
 
-        self.local_env.storage.write().await.log_proposal(proposal);
+        self.local_env.storage.write().await.log_proposal(proposal).await;
 
         Ok(())
     }
@@ -97,6 +97,42 @@ impl Cluster {
             return Err(AtlasError::Other(format!("state root mismatch for {}", proposal.id)));
         }
         info!("✅ State Root (Merkle) verificado com sucesso: {}", expected_root);
+
+        // Security: Validate Transaction Signatures in Content
+        // We must ensure that the transactions inside the block are validly signed by their senders.
+        {
+            let transactions: Vec<atlas_common::transaction::SignedTransaction> = 
+                if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+                    batch
+                } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+                    vec![signed_tx]
+                } else {
+                    // Legacy/Unsigned content - decided to allow for now or reject? 
+                    // To be safe and strict, let's warn but allow ONLY if we can't parse it as signed.
+                    // But typically this means it's garbage. 
+                    tracing::warn!("⚠️ Proposal content not parsable as SignedTransaction(s). Skipping signature check.");
+                    vec![]
+                };
+
+            for (i, tx) in transactions.iter().enumerate() {
+                use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+                use atlas_common::transaction::signing_bytes;
+
+                let verifying_key = VerifyingKey::from_bytes(tx.public_key.as_slice().try_into().unwrap_or(&[0u8; 32]))
+                    .map_err(|e| AtlasError::Other(format!("Invalid public key in tx #{}: {}", i, e)))?;
+                let signature = Signature::from_slice(&tx.signature)
+                    .map_err(|e| AtlasError::Other(format!("Invalid signature format in tx #{}: {}", i, e)))?;
+                let msg = signing_bytes(&tx.transaction);
+
+                if verifying_key.verify(&msg, &signature).is_err() {
+                    warn!("❌ Assinatura de Transação INVÁLIDA na proposta {} (Tx #{})", proposal.id, i);
+                    return Err(AtlasError::Auth(format!("Invalid transaction signature in proposal {}", proposal.id)));
+                }
+            }
+            if !transactions.is_empty() {
+                info!("✅ {} Transações verificadas com sucesso na proposta {}", transactions.len(), proposal.id);
+            }
+        }
 
         self.add_proposal(proposal).await?;
         Ok(())

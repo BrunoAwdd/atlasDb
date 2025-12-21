@@ -44,7 +44,8 @@ impl ConsensusEvaluator {
         let n = active_nodes.len();
         // BFT Quorum: f = (n-1)/3, quorum = 2f + 1
         let f = (n.saturating_sub(1)) / 3;
-        let quorum_count = 2 * f + 1;
+        let bft_quorum = 2 * f + 1;
+        let quorum_count = std::cmp::max(bft_quorum, self.policy.min_voters);
 
         info!(
             "🗳️ Avaliando consenso BFT (nós: {}, f: {}, quorum: {})",
