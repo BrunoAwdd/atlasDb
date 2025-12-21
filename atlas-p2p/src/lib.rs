@@ -11,6 +11,7 @@ pub mod peer_manager;
 pub mod ports;
 pub mod protocol;
 pub mod traits;
+pub mod utils;
 
 // Re-export common types if needed
 pub use peer_manager::PeerManager;

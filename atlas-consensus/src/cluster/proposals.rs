@@ -132,8 +132,14 @@ impl Cluster {
 
     pub async fn evaluate_proposals(&self) -> Result<Vec<atlas_common::env::consensus::types::ConsensusResult>> {
         info!("🗳️ Avaliando consenso");
-        let results = self.local_env.engine.lock().await.evaluate_proposals().await;
-        Ok(results)
+        let storage = self.local_env.storage.read().await;
+        if let Some(ledger) = &storage.ledger {
+            let results = self.local_env.engine.lock().await.evaluate_proposals(ledger).await;
+            Ok(results)
+        } else {
+             warn!("⚠️ Ledger not initialized. Cannot evaluate weighted consensus.");
+             Ok(vec![])
+        }
     }
     
     pub async fn commit_proposal(&self, result: atlas_common::env::consensus::types::ConsensusResult) -> Result<()> {

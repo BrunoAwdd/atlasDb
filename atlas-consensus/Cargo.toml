@@ -16,5 +16,5 @@ thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4"] }
 sha2 = "0.10"
 ed25519-dalek = "2.1"
-libp2p = { version = "0.52", features = ["ed25519", "macros"] }
+libp2p = { version = "0.53", features = ["macros", "tokio", "tcp", "dns", "quic", "noise", "yamux", "kad", "identify", "ping", "gossipsub", "mdns", "request-response", "ed25519"] }
 bs58 = "0.5"

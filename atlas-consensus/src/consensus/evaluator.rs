@@ -3,7 +3,7 @@ use tracing::info;
 
 use atlas_common::{
     utils::NodeId,
-    env::consensus::types::ConsensusResult,
+    env::consensus::types::{ConsensusResult, Vote},
 };
 
 use super::{
@@ -74,6 +74,87 @@ impl ConsensusEvaluator {
                     info!(
                         "🗳️ Proposta [{}] Fase {:?}: {}/{} votos 'Yes' — ✅ APROVADA",
                         proposal_id, phase, yes_votes, quorum_count
+                    );
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Avalia consenso ponderado por Stake (Weighted Quorum).
+    /// Requer acesso ao Ledger para consultar saldos.
+    pub async fn evaluate_weighted(
+        &self,
+        registry: &VoteRegistry,
+        active_nodes: &HashSet<NodeId>,
+        ledger: &atlas_ledger::Ledger,
+    ) -> Vec<ConsensusResult> {
+        // 1. Calculate Total Active Stake and Map NodeId -> Stake
+        let mut total_active_stake: u64 = 0;
+        let mut node_stakes: std::collections::HashMap<NodeId, u64> = std::collections::HashMap::new();
+
+        use atlas_p2p::utils::node_id_to_address;
+
+        for node_id in active_nodes {
+            let stake = if let Some(addr) = node_id_to_address(&node_id.0) {
+                 ledger.get_balance(&addr, "ATLAS").await.unwrap_or(0)
+            } else {
+                0
+            };
+            
+            if stake > 0 {
+                node_stakes.insert(node_id.clone(), stake);
+                total_active_stake += stake;
+            }
+        }
+
+        // Safety Fallback: If 0 stake found (Genesis not applied?), revert to Count-based Quorum?
+        // Or fail safe (no consensus). Fail safe is better for security.
+        if total_active_stake == 0 {
+            info!("⚠️ Total Active Stake is 0. Cannot reach weighted consensus.");
+            return Vec::new(); // Stalemate
+        }
+
+        // 2. Calculate Quorum Threshold: > 2/3 of Total Active Stake
+        // Q = floor(Total * 2 / 3) + 1
+        let quorum_stake = (total_active_stake * 2) / 3 + 1;
+
+        info!(
+            "🗳️ Avaliando consenso PONDERADO (nós: {}, Total Stake: {}, Quorum Stake: {})",
+            active_nodes.len(), total_active_stake, quorum_stake
+        );
+
+        let mut results = Vec::new();
+        use atlas_common::env::consensus::types::ConsensusPhase;
+        let phases = [ConsensusPhase::Prepare, ConsensusPhase::PreCommit, ConsensusPhase::Commit];
+
+        for (proposal_id, _) in registry.all() {
+            for phase in &phases {
+                // Sum 'Yes' votes stake
+                let mut yes_stake: u64 = 0;
+                
+                if let Some(votes) = registry.get_votes(proposal_id, phase) {
+                    for (voter, vote) in votes {
+                        if matches!(vote, Vote::Yes) {
+                            yes_stake += node_stakes.get(voter).unwrap_or(&0);
+                        }
+                    }
+                }
+
+                let approved = yes_stake >= quorum_stake;
+
+                if approved {
+                    results.push(ConsensusResult {
+                        approved,
+                        votes_received: 0, // Legacy field, maybe put yes_stake? or just 0
+                        proposal_id: proposal_id.clone(),
+                        phase: phase.clone(),
+                    });
+
+                    info!(
+                        "🗳️ Proposta [{}] Fase {:?}: {}/{} Stake — ✅ APROVADA (Weighted)",
+                        proposal_id, phase, yes_stake, quorum_stake
                     );
                 }
             }

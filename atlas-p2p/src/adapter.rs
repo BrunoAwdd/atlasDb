@@ -36,7 +36,7 @@ use libp2p::{
         Config as RequestResponseConfig, 
         Event as RequestResponseEvent, 
         Message,
-        OutboundRequestId as RequestId, 
+        OutboundRequestId, 
         ProtocolSupport
     }, 
     swarm::{
@@ -51,6 +51,8 @@ use libp2p::{
     Transport,
     StreamProtocol,
 };
+
+type RequestId = OutboundRequestId;
 
 use tokio::sync::{mpsc, RwLock};
 

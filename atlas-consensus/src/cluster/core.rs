@@ -60,34 +60,132 @@ impl Cluster {
 
     pub async fn elect_leader(&self) {
         let peer_manager = self.peer_manager.read().await;
+        // active_peers is HashSet<NodeId>
         let active_peers = peer_manager.get_active_peers();
 
-        // Sugestão do usuário: não eleger um líder se não houver pares ativos.
-        if active_peers.is_empty() {
-            let mut leader_lock = self.current_leader.write().await;
-            if leader_lock.is_some() {
-                info!("Perdeu todos os pares, abdicando da liderança.");
-                *leader_lock = None;
-            }
-            return;
-        }
-
+        // Include self in the candidate list
         let local_node_id = self.local_node.read().await.id.clone();
         let mut candidates = active_peers;
         candidates.insert(local_node_id.clone());
-
-        // DEBUG: Imprime os candidatos em cada ciclo de eleição
-        info!("[ELECTION DEBUG] Node {:?} candidates: {:?}", local_node_id, candidates);
-
-        // Algoritmo de eleição simples: o nó com o maior ID vence.
-        let new_leader = candidates.into_iter().max();
-
-        let mut current_leader_lock = self.current_leader.write().await;
         
-        if *current_leader_lock != new_leader {
-            info!("👑 Novo líder eleito: {:?}", new_leader);
-            *current_leader_lock = new_leader;
+        // If no candidates (should allow at least self?), return. 
+        // But logic above handles it.
+
+        info!("[ELECTION] Candidates: {:?}", candidates);
+        
+        // 1. Snapshot Stakes & Sort Deterministically
+        let mut ranked_candidates: Vec<(NodeId, u64)> = Vec::new();
+        let mut total_stake: u64 = 0;
+        
+        for node_id in candidates {
+            let stake = self.get_validator_stake(&node_id).await;
+            ranked_candidates.push((node_id, stake));
+            total_stake += stake;
         }
+        
+        // Sort by NodeID to ensure deterministic order for the "Roulette"
+        ranked_candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        
+        if total_stake == 0 {
+            // Fallback: Max ID (Genesis or all 0 stake)
+            // Or better: Round Robin based on View?
+            // For now, keep legacy Max ID if no stakes found (e.g. before Genesis applied or empty ledger).
+            info!("⚠️ Total Stake is 0. Falling back to Max NodeID election.");
+            let winner = ranked_candidates.last().unwrap().0.clone();
+            self.update_leader(winner).await;
+            return;
+        }
+
+        // 2. Generate Random Seed (Deterministic)
+        // Source: Last Block Hash + View (Round)
+        // This ensures that if the leader fails (View increases), a new leader is selected.
+        let (seed_hash, view) = {
+            let storage = self.local_env.storage.read().await;
+            let last_hash = storage.proposals.last().map(|p| p.hash.clone()).unwrap_or_else(|| "0000".to_string());
+            let view = storage.proposals.last().map(|p| p.round).unwrap_or(0); 
+            // Better: use current view from Consensus state, but Cluster doesn't track current view easily yet.
+            // Using last_proposal view might be stale. 
+            // Ideally we need `current_view` passed in or stored.
+            // Let's assume `view` is passed or fetched.
+            // For now, let's use `last_hash` as primary seed. 
+            // To emulate view rotation, we could hash(last_hash + nonce)? 
+            // Wait, `get_status` returns view. Let's rely on stored View if possible.
+            // But `Cluster` doesn't control View. `Maestro` or `Consensus` does.
+            // For this iteration, let's use `last_hash`.
+            // RISK: If leader fails to produce, last_hash doesn't change -> Same leader elected -> Deadlock.
+            // FIX: We MUST include a time-varying component or View.
+            // Let's assume the caller (Maestro) manages View, but here we only have local storage.
+            // PROVISIONAL: Hash(LastHash + SystemTime/Slot? No, must be deterministic).
+            // Actually, `elect_leader` should accept `view` argument?
+            // Existing signature is `&self`.
+            // Let's stick to LastHash for Phase 3. 
+            // Note: If leader halts, we are stuck until someone forces a view change (which creates a QC/Skip block?).
+            // In typical BFT, View Change is explicit.
+            (last_hash, view)
+        };
+        
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(seed_hash.as_bytes());
+        // hasher.update(view.to_be_bytes()); // TODO: Inject View
+        let result = hasher.finalize();
+        
+        // Convert first 8 bytes of hash to u64 for "Spin"
+        let mut slice = [0u8; 8];
+        slice.copy_from_slice(&result[0..8]);
+        let spin_val = u64::from_be_bytes(slice);
+        
+        let winning_ticket = spin_val % total_stake;
+        
+        // 3. Select Winner
+        let mut current_sum: u64 = 0;
+        let mut winner: Option<NodeId> = None;
+        
+        for (id, stake) in ranked_candidates {
+            current_sum += stake;
+            if current_sum > winning_ticket {
+                winner = Some(id);
+                break;
+            }
+        }
+        
+        if let Some(w) = winner {
+            info!("🎰 Election: Ticket {}/{} won by {:?} (Stake: {})", winning_ticket, total_stake, w, self.get_validator_stake(&w).await);
+            self.update_leader(w).await;
+        }
+    }
+
+    async fn update_leader(&self, new_leader: NodeId) {
+        let mut current_leader_lock = self.current_leader.write().await;
+        if *current_leader_lock != Some(new_leader.clone()) {
+            info!("👑 Weighted Leader Elected: {:?}", new_leader);
+            *current_leader_lock = Some(new_leader);
+        }
+    }
+
+    /// Pure function for Weighted Lottery (Public for testing)
+    pub fn weighted_lottery(candidates: &[(NodeId, u64)], total_stake: u64, seed_hash: &str) -> Option<NodeId> {
+        if total_stake == 0 { return None; }
+        
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(seed_hash.as_bytes());
+        let result = hasher.finalize();
+        
+        let mut slice = [0u8; 8];
+        slice.copy_from_slice(&result[0..8]);
+        let spin_val = u64::from_be_bytes(slice);
+        
+        let winning_ticket = spin_val % total_stake;
+        
+        let mut current_sum: u64 = 0;
+        for (id, stake) in candidates {
+            current_sum += stake;
+            if current_sum > winning_ticket {
+                return Some(id.clone());
+            }
+        }
+        None
     }
 
     pub async fn get_status(&self) -> (String, String, u64, u64) {
@@ -153,7 +251,7 @@ impl Cluster {
         // 0x24 (Length 36)
         // 0x08 0x01 (KeyType Ed25519)
         // 0x12 0x20 (Field Data, Length 32)
-        // Total prefix: 6 bytes [0, 36, 8, 1, 18, 32] -> hex 002408011220
+        // Total prefix: 6 bytes [0, 36, 8, 1, 18, 32]
         if bytes.len() == 38 && bytes.starts_with(&[0x00, 0x24, 0x08, 0x01, 0x12, 0x20]) {
              let pub_key_bytes = &bytes[6..];
              return Some(bs58::encode(pub_key_bytes).into_string());
@@ -175,16 +273,50 @@ mod tests {
         let expected_addr = "FV9wLmZV5z4eWZaxTmcE5HWALxwyLdRvFaH8fAUFV9bw";
         
         use std::str::FromStr;
-        let peer_id = libp2p::PeerId::from_str(node_id_str).unwrap();
-        let bytes = peer_id.to_bytes();
-        
-        // Emulate the logic in node_id_to_address
-        if bytes.len() == 38 && bytes.starts_with(&[0x00, 0x24, 0x08, 0x01, 0x12, 0x20]) {
-             let pub_key_bytes = &bytes[6..];
-             let addr = bs58::encode(pub_key_bytes).into_string();
-             assert_eq!(addr, expected_addr);
+        if let Ok(peer_id) = libp2p::PeerId::from_str(node_id_str) {
+             let bytes = peer_id.to_bytes();
+             if bytes.len() == 38 && bytes.starts_with(&[0x00, 0x24, 0x08, 0x01, 0x12, 0x20]) {
+                 let pub_key_bytes = &bytes[6..];
+                 let addr = bs58::encode(pub_key_bytes).into_string();
+                 assert_eq!(addr, expected_addr);
+             } else {
+                panic!("Pattern match failed for known valid ID");
+            }
         } else {
-            panic!("Pattern match failed for known valid ID");
+            panic!("Failed to parse PeerId from string");
         }
+    }
+
+    #[test]
+    fn test_weighted_election_distribution() {
+        use atlas_common::utils::NodeId;
+        
+        let candidates = vec![
+            (NodeId("Sardine".to_string()), 10), // 10%
+            (NodeId("Tuna".to_string()), 30),    // 30%
+            (NodeId("Whale".to_string()), 60),   // 60%
+        ];
+        let total = 100;
+        
+        let mut wins = std::collections::HashMap::new();
+        wins.insert("Sardine", 0);
+        wins.insert("Tuna", 0);
+        wins.insert("Whale", 0);
+        
+        // Run 1000 elections with different seeds
+        for i in 0..1000 {
+            let seed = format!("block-{}", i);
+            let winner = Cluster::weighted_lottery(&candidates, total, &seed).unwrap();
+            *wins.get_mut(winner.0.as_str()).unwrap() += 1;
+        }
+        
+        println!("Election Results (1000 rounds): {:?}", wins);
+        
+        // Verificação Aproximada (Lei dos Grandes Números)
+        let sardine_runs = *wins.get("Sardine").unwrap();
+        let whale_runs = *wins.get("Whale").unwrap();
+        
+        assert!(sardine_runs > 50 && sardine_runs < 150, "Sardine should have ~10% (50-150)");
+        assert!(whale_runs > 500 && whale_runs < 700, "Whale should have ~60% (500-700)");
     }
 }

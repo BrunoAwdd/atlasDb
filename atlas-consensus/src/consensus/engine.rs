@@ -71,9 +71,9 @@ impl ConsensusEngine {
     }
 
     /// Avalia todas as propostas e retorna os resultados.
-    pub(crate) async fn evaluate_proposals(&self) -> Vec<ConsensusResult> {
+    pub(crate) async fn evaluate_proposals(&self, ledger: &atlas_ledger::Ledger) -> Vec<ConsensusResult> {
         self.evaluator
-            .evaluate(&self.registry, &self.get_active_nodes().await)
+            .evaluate_weighted(&self.registry, &self.get_active_nodes().await, ledger).await
     }
 
     /// Expõe os votos internamente (por exemplo, para salvar ou auditar).

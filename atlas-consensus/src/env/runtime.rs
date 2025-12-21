@@ -56,16 +56,23 @@ impl AtlasEnv {
     }
     
     pub async fn evaluate_all(&mut self) -> Result<Vec<(String, ConsensusResult)>, String> {
-        let result = self.engine
-            .lock()
-            .await
-            .evaluate_proposals()
-            .await
-            .into_iter()
-            .map(|res| {
-                res
-            })
-            .collect::<Vec<_>>();
+        let storage = self.storage.read().await;
+        
+        let result = if let Some(ledger) = &storage.ledger {
+            self.engine
+                .lock()
+                .await
+                .evaluate_proposals(ledger)
+                .await
+        } else {
+            warn!("⚠️ Ledger not initialized in Storage. Skipping weighted consensus evaluation.");
+            Vec::new()
+        }
+        .into_iter()
+        .map(|res| {
+            res
+        })
+        .collect::<Vec<_>>();
 
         for res in &result {
              self.storage.write().await.log_result(&res.proposal_id, res.clone());

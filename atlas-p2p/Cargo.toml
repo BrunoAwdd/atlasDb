@@ -6,10 +6,11 @@ edition = "2021"
 [dependencies]
 atlas-common = { path = "../atlas-common" }
 tokio = { version = "1.0", features = ["full"] }
-libp2p = { version = "0.53", features = ["full"] }
-tracing = "0.1"
+libp2p = { version = "0.53", features = ["macros", "tokio", "tcp", "dns", "quic", "noise", "yamux", "kad", "identify", "ping", "gossipsub", "mdns", "request-response", "ed25519"] }
 serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
 thiserror = "1.0"
+bs58 = "0.5"
 async-trait = "0.1"
 bincode = "1.3"
 
