@@ -12,7 +12,7 @@ use atlas_p2p::{
     adapter::{AdapterCmd, Libp2pAdapter},
     config::P2pConfig,
     events::AdapterEvent,
-    ports::{AdapterHandle, P2pPublisher},
+    ports::AdapterHandle,
 };
 
 
@@ -22,26 +22,12 @@ use crate::config::Config;
 pub struct AtlasRuntime {
     pub cluster: Arc<Cluster>,
     pub publisher: AdapterHandle,
-    // se quiser poder encerrar depois, guarde os JoinHandles:
-    // pub adapter_task: tokio::task::JoinHandle<()>,
-    // pub maestro_task: tokio::task::JoinHandle<()>,
+    pub ledger: Arc<atlas_ledger::Ledger>,
+    pub mempool: Arc<atlas_mempool::Mempool>,
 }
 
 impl AtlasRuntime {
-    pub async fn send_proposals(&self) -> Result<()> {
-        let proposals = self.cluster.get_proposals()
-            .await.map_err(|e| AtlasError::Other(e.to_string()))?;
-        for p in proposals {
-            self.publisher.publish(&p.id, p.bytes())
-                .await.map_err(|e| AtlasError::Other(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-
-
-
+// ...
 }
 
 pub async fn build_runtime(
@@ -55,6 +41,10 @@ pub async fn build_runtime(
     
     let cluster = Arc::new(config.build_cluster_env(auth).await);
     tracing::info!("✅ [DEBUG] Cluster env built (Ledger init success).");
+
+    // Extract Ledger reference here
+    let ledger = cluster.local_env.storage.read().await.ledger.clone()
+        .ok_or_else(|| AtlasError::Other("Ledger not initialized in Cluster".to_string()))?;
 
     // 2) Canais P2P
     let (adapter_evt_tx, maestro_evt_rx) = mpsc::channel::<AdapterEvent>(64);
@@ -80,7 +70,7 @@ pub async fn build_runtime(
 
     let maestro = Maestro {
         cluster: Arc::clone(&cluster),
-        p2p: publisher.clone(), // AdapterHandle implementa P2pPublisher
+        p2p: publisher.clone(), 
         mempool: Arc::clone(&mempool),
         evt_rx: Mutex::new(maestro_evt_rx),
         grpc_addr,
@@ -90,7 +80,7 @@ pub async fn build_runtime(
     let m = Arc::clone(&maestro);
     tokio::spawn(async move { m.run().await });
 
-    Ok(AtlasRuntime { cluster, publisher })
+    Ok(AtlasRuntime { cluster, publisher, ledger, mempool })
 }
 
 pub async fn run_cli() -> Result<()> {
