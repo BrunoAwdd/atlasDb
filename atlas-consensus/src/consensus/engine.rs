@@ -28,6 +28,7 @@ pub struct ConsensusEngine {
     pub pool: ProposalPool,
     pub registry: VoteRegistry,
     pub evaluator: ConsensusEvaluator,
+    pub pending_evidence: Vec<atlas_common::env::consensus::evidence::EquivocationEvidence>,
 }
 
 impl ConsensusEngine {
@@ -37,6 +38,7 @@ impl ConsensusEngine {
             pool: ProposalPool::new(),
             registry: VoteRegistry::new(),
             evaluator: ConsensusEvaluator::new(policy),
+            pending_evidence: Vec::new(),
         }
     }
 
@@ -61,9 +63,13 @@ impl ConsensusEngine {
 
         match Vote::try_from(vote_msg.vote.clone()) {
             Ok(vote) => {
-                match self.registry.register_vote(&vote_msg.proposal_id, vote_msg.phase.clone(), voter.clone(), vote.clone()) {
-                    Ok(_) => info!("📥 [{}] votou {:?} na proposta [{}] (Fase: {:?})", voter, vote, vote_msg.proposal_id, vote_msg.phase),
-                    Err(e) => warn!("🚨 EQUIVOCATION DETECTED: {}", e),
+                match self.registry.register_vote(&vote_msg.proposal_id, vote_msg.view, vote_msg.phase.clone(), voter.clone(), vote.clone()) {
+                    Ok(Some(evidence)) => {
+                        warn!("🚨 MALICIOUS BEHAVIOR DETECTED: Node {} committed equivocation!", voter);
+                        self.pending_evidence.push(evidence);
+                    },
+                    Ok(None) => info!("📥 [{}] votou {:?} na proposta [{}] (Fase: {:?})", voter, vote, vote_msg.proposal_id, vote_msg.phase),
+                    Err(e) => warn!("⚠️ Erro ao registrar voto: {}", e),
                 }
             }
             Err(_) => warn!("⚠️ Voto inválido ignorado: {}", vote_msg.vote.to_string()),
@@ -71,7 +77,30 @@ impl ConsensusEngine {
     }
 
     /// Avalia todas as propostas e retorna os resultados.
-    pub(crate) async fn evaluate_proposals(&self, ledger: &atlas_ledger::Ledger) -> Vec<ConsensusResult> {
+    pub(crate) async fn evaluate_proposals(&mut self, ledger: &atlas_ledger::Ledger) -> Vec<ConsensusResult> {
+        // 1. Process Pending Evidence (Slashing)
+        if !self.pending_evidence.is_empty() {
+            info!("⚖️ Processing {} pending evidences for slashing...", self.pending_evidence.len());
+            
+            // Clone to iterate and clear original
+            let evidences: Vec<_> = self.pending_evidence.drain(..).collect();
+            
+            for evidence in evidences {
+                // Convert NodeId to Address
+                if let Some(address) = atlas_p2p::utils::node_id_to_address(&evidence.offender.0) {
+                     info!("⚔️ SLASHING VALIDATOR {} for Double Voting (View {})", address, evidence.view);
+                     // 100% Slashing for Equivocation (Severe)
+                     // Or just a fixed penalty? Let's do 1,000,000 ATLAS or All.
+                     // Typically huge.
+                     if let Err(e) = ledger.slash_validator(&address, 1_000_000).await {
+                         warn!("❌ Failed to slash validator {}: {}", address, e);
+                     }
+                } else {
+                    warn!("⚠️ Cannot slash node {}: Address conversion failed.", evidence.offender.0);
+                }
+            }
+        }
+
         self.evaluator
             .evaluate_weighted(&self.registry, &self.get_active_nodes().await, ledger).await
     }

@@ -187,17 +187,17 @@ use atlas_p2p::PeerManager;
         registry.register_proposal(&proposal_id);
         
         // Vote 1: Not enough
-        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node0".into()), Vote::Yes);
+        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node0".into()), Vote::Yes).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         assert!(results.is_empty());
 
         // Vote 2: Not enough
-        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node1".into()), Vote::Yes);
+        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node1".into()), Vote::Yes).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         assert!(results.is_empty());
 
         // Vote 3: Quorum reached!
-        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node2".into()), Vote::Yes);
+        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node2".into()), Vote::Yes).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         
         assert_eq!(results.len(), 1);

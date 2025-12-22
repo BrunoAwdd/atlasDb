@@ -238,4 +238,52 @@ impl Ledger {
             Ok(0)
         }
     }
+
+    /// Puni um validador queimando (confiscando) seus fundos.
+    /// Remove o valor do saldo do endereço e creditar em 'patrimonio:slashing' (balanço contábil).
+    pub async fn slash_validator(&self, address: &str, amount: u64) -> Result<()> {
+        let current_balance = self.get_balance(address, "ATLAS").await?;
+        if current_balance == 0 {
+            tracing::warn!("⚔️ Slashing falhou: Validador {} já está zerado.", address);
+            return Ok(());
+        }
+
+        let slash_amt = std::cmp::min(current_balance, amount);
+        tracing::info!("⚔️ SLASHING: Punindo {} em {} ATLAS (Saldo: {})", address, slash_amt, current_balance);
+
+        use atlas_common::entry::{LedgerEntry, Leg, LegKind};
+
+        // 1. Debit User Liability (Reduzir passivo = Reduzir grana do user)
+        let debit_leg = Leg {
+            account: format!("passivo:wallet:{}", address),
+            asset: "ATLAS".to_string(),
+            kind: LegKind::Debit, // Debit em Liability REDUZ o saldo
+            amount: slash_amt as u128,
+        };
+
+        // 2. Credit Equity (Slashing Revenue / Burnt)
+        let credit_leg = Leg {
+            account: "patrimonio:slashing".to_string(),
+            asset: "ATLAS".to_string(),
+            kind: LegKind::Credit, // Credit em Equity AUMENTA (ganho para a rede/queima)
+            amount: slash_amt as u128,
+        };
+
+        let entry_id = format!("slash-{}-{}", address, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+        
+        let entry = LedgerEntry::new(
+            entry_id,
+            vec![debit_leg, credit_leg],
+            "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // No block hash associated yet
+            0,
+            0,
+            Some(format!("SLASHING PENALTY: Disrespectful Behavior")),
+        );
+
+        let mut state = self.state.write().await;
+        state.apply_entry(entry)
+             .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to apply slashing: {}", e)))?;
+
+        Ok(())
+    }
 }
