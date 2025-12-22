@@ -260,6 +260,66 @@ impl Cluster {
         tracing::warn!("NodeId {} does not match expected Ed25519 Identity pattern.", node_id_str);
         None
     }
+
+    /// Handles external evidence received via Gossip.
+    /// Verifies signatures and slashes the offender if valid.
+    pub async fn handle_evidence(&self, evidence: atlas_common::env::consensus::evidence::EquivocationEvidence) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use atlas_common::env::vote_data::vote_signing_bytes;
+        
+        let offender = evidence.vote_a.voter.clone();
+        
+        // 1. Verify Offender Identity (Votes must be from same offender)
+        if evidence.vote_b.voter != offender {
+             tracing::warn!("❌ Invalid Evidence: Voters differ ({} vs {})", offender, evidence.vote_b.voter);
+             return Ok(());
+        }
+
+        // 2. Verify Signatures of both votes
+        let auth = self.auth.read().await;
+        
+        let sign_a = vote_signing_bytes(&evidence.vote_a);
+        if let Err(e) = auth.verify_with_key(sign_a, &evidence.vote_a.signature, &evidence.vote_a.public_key) {
+             tracing::warn!("❌ Invalid Evidence: Vote A signature invalid: {}", e);
+             return Ok(());
+        }
+
+        let sign_b = vote_signing_bytes(&evidence.vote_b);
+        if let Err(e) = auth.verify_with_key(sign_b, &evidence.vote_b.signature, &evidence.vote_b.public_key) {
+             tracing::warn!("❌ Invalid Evidence: Vote B signature invalid: {}", e);
+             return Ok(());
+        }
+        
+        // 3. Verify Equivocation Logic (Same View, Same Phase, Conflict)
+        if evidence.vote_a.view != evidence.vote_b.view || evidence.vote_a.phase != evidence.vote_b.phase {
+             tracing::warn!("❌ Invalid Evidence: View/Phase mismatch");
+             return Ok(());
+        }
+        
+        let conflict = evidence.vote_a.proposal_id != evidence.vote_b.proposal_id || evidence.vote_a.vote != evidence.vote_b.vote;
+        if !conflict {
+             tracing::warn!("❌ Invalid Evidence: Votes are identical (No conflict)");
+             return Ok(());
+        }
+
+        // 4. SLASHING
+        tracing::info!("⚔️ VALID EVIDENCE RECEIVED! Slashing validator {}...", offender);
+        
+        // Convert NodeId to Address
+        if let Some(address) = self.node_id_to_address(&offender.0) {
+             let storage = self.local_env.storage.read().await;
+             if let Some(ledger) = &storage.ledger {
+                 if let Err(e) = ledger.slash_validator(&address, 1_000_000).await {
+                      tracing::warn!("❌ Failed to slash validator {}: {}", address, e);
+                 } else {
+                      tracing::info!("💀 Validator {} successfully slashed via Evidence!", address);
+                 }
+             }
+        } else {
+             tracing::warn!("⚠️ Cannot slash node {}: Address conversion failed.", offender.0);
+        }
+
+        Ok(()) 
+    }
 }
 
 #[cfg(test)]

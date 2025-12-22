@@ -63,7 +63,7 @@ impl Cluster {
         Ok(Some(vote_data))
     }
         
-    pub async fn handle_vote(&self, bytes: Vec<u8>) -> Result<()> {
+    pub async fn handle_vote(&self, bytes: Vec<u8>) -> Result<Option<atlas_common::env::consensus::evidence::EquivocationEvidence>> {
         let vote_data: VoteData = bincode::deserialize(&bytes)
             .map_err(|e| AtlasError::Other(format!("decode vote: {e}")))?;
 
@@ -80,18 +80,16 @@ impl Cluster {
             Ok(valid) => valid,
             Err(e) => {
                 warn!("Erro ao verificar assinatura do voto: {}", e);
-                return Ok(());
+                return Ok(None);
             }
         };
         drop(auth);
 
         let engine = self.local_env.engine.lock().await;
-        let votes = engine.get_all_votes().clone(); // clona os dados para sair do guard
-        drop(engine); // opcional: solta o lock antes de usar votes
+        // let votes = engine.get_all_votes().clone(); // removed verbose clone
+        drop(engine); 
 
-        info!("Votes {} {:?}", self.local_node.read().await.id, &votes);
         tracing::info!(target: "consensus", "EVENT:RECEIVE_VOTE proposal_id={} voter={} vote={:?}", vote_data.proposal_id, vote_data.voter, vote_data.vote);
-
 
         if is_valid {
             self.local_env.storage.write().await.log_vote(
@@ -101,11 +99,15 @@ impl Cluster {
                 vote_data.vote.clone()
             );
 
-            self.local_env.engine.lock().await.receive_vote(vote_data.clone()).await;
+            // Return evidence if found by engine
+            let evidence = self.local_env.engine.lock().await.receive_vote(vote_data.clone()).await;
+            if evidence.is_some() {
+                 return Ok(evidence);
+            }
     
-            Ok(())
+            Ok(None)
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 }

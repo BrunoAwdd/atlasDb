@@ -48,4 +48,5 @@ pub enum AdapterEvent {
     Vote(Vec<u8>),
     TxRequest { from: NodeId, req: TxRequest, req_id: u64 },
     TxBundle  { from: NodeId, bundle: TxBundle },
+    Evidence(Vec<u8>),
 }

@@ -164,8 +164,16 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                             if let Err(e) = self.p2p.publish("atlas/vote/v1", bytes.clone()).await {
                                                 eprintln!("Erro ao publicar voto Prepare: {}", e);
                                             }
-                                            if let Err(e) = self.cluster.handle_vote(bytes).await {
-                                                eprintln!("Erro ao processar voto próprio (Prepare): {}", e);
+                                            // BROADCAST EVIDENCE if detected
+                                            match self.cluster.handle_vote(bytes).await {
+                                                Ok(Some(evidence)) => {
+                                                    warn!("🚨 Evidence DETECTED! Broadcasting to network...");
+                                                    if let Ok(ev_bytes) = bincode::serialize(&evidence) {
+                                                        self.p2p.publish("atlas/evidence/v1", ev_bytes).await.ok();
+                                                    }
+                                                },
+                                                Ok(None) => {},
+                                                Err(e) => eprintln!("Erro ao processar voto próprio (Prepare): {}", e),
                                             }
                                         },
                                         Ok(None) => {},
@@ -175,38 +183,47 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                             }
     
                             AdapterEvent::Vote(bytes) => {
-                                if let Err(e) = self.cluster.handle_vote(bytes).await {
-                                    eprintln!("handle_vote_bytes erro: {e}");
-                                } else {
-                                    // Check for consensus progress
-                                    match self.cluster.evaluate_proposals().await {
-                                        Ok(results) => {
-                                            for result in results {
-                                                if result.approved {
-                                                    match result.phase {
-                                                        atlas_common::env::consensus::types::ConsensusPhase::Prepare => {
-                                                            // Quorum(Prepare) -> Broadcast PreCommit
-                                                            match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::PreCommit).await {
-                                                                Ok(Some(vote)) => {
-                                                                    let bytes = bincode::serialize(&vote).unwrap();
-                                                                    self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
-                                                                    self.cluster.handle_vote(bytes).await.ok();
-                                                                },
-                                                                _ => {}
-                                                            }
-                                                        },
-                                                        atlas_common::env::consensus::types::ConsensusPhase::PreCommit => {
-                                                            // Quorum(PreCommit) -> Broadcast Commit
-                                                            match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::Commit).await {
-                                                                Ok(Some(vote)) => {
-                                                                    let bytes = bincode::serialize(&vote).unwrap();
-                                                                    self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
-                                                                    self.cluster.handle_vote(bytes).await.ok();
-                                                                },
-                                                                _ => {}
-                                                            }
-                                                        },
-                                                        atlas_common::env::consensus::types::ConsensusPhase::Commit => {
+                                let res = self.cluster.handle_vote(bytes).await;
+                                match res {
+                                    Err(e) => eprintln!("handle_vote_bytes erro: {e}"),
+                                    Ok(Some(evidence)) => {
+                                         warn!("🚨 Equivocation Detected via P2P Vote! Broadcasting Evidence...");
+                                         if let Ok(ev_bytes) = bincode::serialize(&evidence) {
+                                             self.p2p.publish("atlas/evidence/v1", ev_bytes).await.ok();
+                                         }
+                                         // Still proceed to evaluate proposals? Yes, but offender slashed.
+                                    },
+                                    Ok(None) => {
+                                        // Check for consensus progress
+                                        match self.cluster.evaluate_proposals().await {
+                                            Ok(results) => {
+                                                for result in results {
+                                                    if result.approved {
+                                                        match result.phase {
+                                                            atlas_common::env::consensus::types::ConsensusPhase::Prepare => {
+                                                                // Quorum(Prepare) -> Broadcast PreCommit
+                                                                match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::PreCommit).await {
+                                                                    Ok(Some(vote)) => {
+                                                                        let bytes = bincode::serialize(&vote).unwrap();
+                                                                        self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
+                                                                        self.cluster.handle_vote(bytes).await.ok();
+                                                                    },
+                                                                    _ => {}
+                                                                }
+                                                            },
+                                                            atlas_common::env::consensus::types::ConsensusPhase::PreCommit => {
+                                                                // Quorum(PreCommit) -> Broadcast Commit
+                                                                match self.cluster.create_vote(&result.proposal_id, atlas_common::env::consensus::types::ConsensusPhase::Commit).await {
+                                                                    Ok(Some(vote)) => {
+                                                                        let bytes = bincode::serialize(&vote).unwrap();
+                                                                        self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
+                                                                        self.cluster.handle_vote(bytes).await.ok();
+                                                                    },
+                                                                    _ => {}
+                                                                }
+                                                            },
+                                                            atlas_common::env::consensus::types::ConsensusPhase::Commit => {
+
                                                             // Quorum(Commit) -> Finalize
                                                             info!("🎉 Proposta FINALIZADA (BFT): {}", result.proposal_id);
                                                             tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
@@ -355,6 +372,16 @@ impl<P: P2pPublisher + 'static> Maestro<P> {
                                 }
                             }
                             
+
+                            AdapterEvent::Evidence(bytes) => {
+                                if let Ok(evidence) = bincode::deserialize::<atlas_common::env::consensus::evidence::EquivocationEvidence>(&bytes) {
+                                     tracing::info!("⚖️ Recebida evidência de equivocação via P2P. Verificando...");
+                                     match self.cluster.handle_evidence(evidence).await {
+                                         Ok(_) => {}, 
+                                         Err(e) => tracing::warn!("Erro ao processar evidência: {}", e),
+                                     }
+                                }
+                            }
     
                             _ => {}
                         }

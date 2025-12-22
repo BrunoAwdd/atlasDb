@@ -54,25 +54,28 @@ impl ConsensusEngine {
     }
     
     /// Registra voto recebido de um peer.
-    pub(crate) async fn receive_vote(&mut self, vote_msg: VoteData) {
+    /// Retorna Evidence se detectar comportamento malicioso.
+    pub(crate) async fn receive_vote(&mut self, vote_msg: VoteData) -> Option<atlas_common::env::consensus::evidence::EquivocationEvidence> {
         let voter = vote_msg.voter.clone();
         if !self.get_active_nodes().await.contains(&voter) {
             warn!("⚠️ Ignorado voto de nó inativo: [{}]", vote_msg.voter.clone());
-            return;
+            return None;
         }
 
-        match Vote::try_from(vote_msg.vote.clone()) {
-            Ok(vote) => {
-                match self.registry.register_vote(&vote_msg.proposal_id, vote_msg.view, vote_msg.phase.clone(), voter.clone(), vote.clone()) {
-                    Ok(Some(evidence)) => {
-                        warn!("🚨 MALICIOUS BEHAVIOR DETECTED: Node {} committed equivocation!", voter);
-                        self.pending_evidence.push(evidence);
-                    },
-                    Ok(None) => info!("📥 [{}] votou {:?} na proposta [{}] (Fase: {:?})", voter, vote, vote_msg.proposal_id, vote_msg.phase),
-                    Err(e) => warn!("⚠️ Erro ao registrar voto: {}", e),
-                }
-            }
-            Err(_) => warn!("⚠️ Voto inválido ignorado: {}", vote_msg.vote.to_string()),
+        match self.registry.register_vote(vote_msg.clone()) {
+            Ok(Some(evidence)) => {
+                warn!("🚨 MALICIOUS BEHAVIOR DETECTED: Node {} committed equivocation!", voter);
+                self.pending_evidence.push(evidence.clone());
+                Some(evidence)
+            },
+            Ok(None) => {
+                info!("📥 [{}] votou {:?} na proposta [{}] (Fase: {:?})", voter, vote_msg.vote, vote_msg.proposal_id, vote_msg.phase);
+                None
+            },
+            Err(e) => {
+                warn!("⚠️ Erro ao registrar voto: {}", e);
+                None
+            },
         }
     }
 
@@ -87,8 +90,8 @@ impl ConsensusEngine {
             
             for evidence in evidences {
                 // Convert NodeId to Address
-                if let Some(address) = atlas_p2p::utils::node_id_to_address(&evidence.offender.0) {
-                     info!("⚔️ SLASHING VALIDATOR {} for Double Voting (View {})", address, evidence.view);
+                if let Some(address) = atlas_p2p::utils::node_id_to_address(&evidence.offender().0) {
+                     info!("⚔️ SLASHING VALIDATOR {} for Double Voting (View {})", address, evidence.vote_a.view);
                      // 100% Slashing for Equivocation (Severe)
                      // Or just a fixed penalty? Let's do 1,000,000 ATLAS or All.
                      // Typically huge.
@@ -96,7 +99,7 @@ impl ConsensusEngine {
                          warn!("❌ Failed to slash validator {}: {}", address, e);
                      }
                 } else {
-                    warn!("⚠️ Cannot slash node {}: Address conversion failed.", evidence.offender.0);
+                    warn!("⚠️ Cannot slash node {}: Address conversion failed.", evidence.offender().0);
                 }
             }
         }

@@ -290,6 +290,7 @@ impl Libp2pAdapter {
                                         },
                                         "atlas/proposal/v1" => AdapterEvent::Proposal(data),
                                         "atlas/vote/v1" => AdapterEvent::Vote(data),
+                                        "atlas/evidence/v1" => AdapterEvent::Evidence(data),
                                         _ => AdapterEvent::Gossip {
                                             topic: topic.to_string(),
                                             from: from.to_string().into(),

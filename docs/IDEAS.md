@@ -6,3 +6,11 @@ Modelo dual
 - Redis no menpool
 - ERC20 e ERC721 like
 - Rotação de lider
+- Match de Fx (cambio)
+
+Projeto
+
+- POS
+- Match de Cambio
+- Contabilidade on-chain
+- KYC portavel

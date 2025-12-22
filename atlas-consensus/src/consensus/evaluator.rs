@@ -60,7 +60,7 @@ impl ConsensusEvaluator {
 
         for (proposal_id, _) in registry.all() {
             for phase in &phases {
-                let yes_votes = registry.count_yes(proposal_id, phase);
+                let yes_votes = registry.count_yes(&proposal_id, phase);
                 let approved = yes_votes >= quorum_count;
 
                 if approved {
@@ -134,10 +134,10 @@ impl ConsensusEvaluator {
                 // Sum 'Yes' votes stake
                 let mut yes_stake: u64 = 0;
                 
-                if let Some(votes) = registry.get_votes(proposal_id, phase) {
+                if let Some(votes) = registry.get_votes(&proposal_id, phase) {
                     for (voter, vote) in votes {
                         if matches!(vote, Vote::Yes) {
-                            yes_stake += node_stakes.get(voter).unwrap_or(&0);
+                            yes_stake += node_stakes.get(&voter).unwrap_or(&0);
                         }
                     }
                 }
@@ -174,6 +174,20 @@ mod tests {
 };
 
 use atlas_p2p::PeerManager;
+    use atlas_common::env::vote_data::VoteData;
+
+    fn mock_vote(prop: &str, view: u64, phase: ConsensusPhase, node: NodeId, vote: Vote) -> VoteData {
+        VoteData {
+            proposal_id: prop.to_string(),
+            vote,
+            voter: node,
+            phase,
+            view,
+            signature: [0u8; 64],
+            public_key: vec![]
+        }
+    }
+
     #[test]
     fn test_bft_quorum_calculation() {
         let policy = QuorumPolicy::default();
@@ -187,17 +201,20 @@ use atlas_p2p::PeerManager;
         registry.register_proposal(&proposal_id);
         
         // Vote 1: Not enough
-        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node0".into()), Vote::Yes).unwrap();
+        let v1 = mock_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node0".into()), Vote::Yes);
+        registry.register_vote(v1).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         assert!(results.is_empty());
 
         // Vote 2: Not enough
-        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node1".into()), Vote::Yes).unwrap();
+        let v2 = mock_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node1".into()), Vote::Yes);
+        registry.register_vote(v2).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         assert!(results.is_empty());
 
         // Vote 3: Quorum reached!
-        registry.register_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node2".into()), Vote::Yes).unwrap();
+        let v3 = mock_vote(&proposal_id, 0, ConsensusPhase::Prepare, NodeId("node2".into()), Vote::Yes);
+        registry.register_vote(v3).unwrap();
         let results = evaluator.evaluate(&registry, &active_nodes);
         
         assert_eq!(results.len(), 1);
