@@ -98,7 +98,7 @@ impl ConsensusEvaluator {
 
         for node_id in active_nodes {
             let stake = if let Some(addr) = node_id_to_address(&node_id.0) {
-                 ledger.get_balance(&addr, "ATLAS").await.unwrap_or(0)
+                 ledger.get_validator_total_power(&addr).await.unwrap_or(0)
             } else {
                 0
             };

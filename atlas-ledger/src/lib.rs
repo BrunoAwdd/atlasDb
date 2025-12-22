@@ -114,6 +114,16 @@ impl Ledger {
         binlog.read_all().await
     }
 
+
+
+    /// Returns the total voting power of a validator (Own Stake + Delegations).
+    pub async fn get_validator_total_power(&self, address: &str) -> Result<u64> {
+        let own_balance = self.get_balance(address, "ATLAS").await?;
+        let state = self.state.read().await;
+        let delegated_power = state.delegations.get_delegated_power(address);
+        Ok(own_balance + delegated_power)
+    }
+
     /// Executes a transaction batch (proposal content) and updates the state.
     /// Returns the number of executed transactions.
     pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize> {
@@ -157,18 +167,79 @@ impl Ledger {
                 &tx.to,
                 tx.amount as u64,
                 &tx.asset,
-                tx.memo,
+                tx.memo.clone(),
             ).map_err(|e| atlas_common::error::AtlasError::Other(format!("Accounting Engine Error: {}", e)))?;
+            
+            // --- Phase 6: Delegation & Staking Interceptor ---
+            // Use explicitly std::result::Result<(), String> to match closure signature
+            let mut staking_action: Option<Box<dyn FnOnce(&mut state::State) -> std::result::Result<(), String> + Send>> = None;
+
+            if tx.to == "system:staking" {
+                 if let Some(memo) = &tx.memo {
+                     if memo.starts_with("delegate:") {
+                         // Memo: delegate:<VALIDATOR_ADDRESS>
+                         let parts: Vec<&str> = memo.split(':').collect();
+                         if parts.len() >= 2 {
+                             let validator = parts[1].to_string();
+                             let amount = tx.amount as u64;
+                             let delegator = tx.from.clone();
+                             
+                             tracing::info!("🤝 DELEGATE: {} delegating {} to {}", delegator, amount, validator);
+                             staking_action = Some(Box::new(move |state| {
+                                 state.delegations.delegate(delegator, validator, amount);
+                                 Ok(())
+                             }));
+                         }
+                     } else if memo.starts_with("undelegate:") {
+                         // Memo: undelegate:<VALIDATOR_ADDRESS>:<AMOUNT>
+                         let parts: Vec<&str> = memo.split(':').collect();
+                         if parts.len() >= 3 {
+                             let validator = parts[1].to_string();
+                             if let Ok(amount) = parts[2].parse::<u64>() {
+                                 let delegator = tx.from.clone();
+                                 
+                                 tracing::info!("🤝 UNDELEGATE: {} withdrawing {} from {}", delegator, amount, validator);
+                                 
+                                 // 1. Queue State Update (Reduce Delegation)
+                                 staking_action = Some(Box::new(move |state| {
+                                     state.delegations.undelegate(delegator, validator, amount)
+                                 }));
+
+                                 // 2. Add Refund Legs (Pool -> User)
+                                 use atlas_common::entry::{Leg, LegKind};
+                                 entry.legs.push(Leg {
+                                     account: "passivo:wallet:system:staking".to_string(), // Debiting Pool (Corrected)
+                                     asset: "ATLAS".to_string(),
+                                     kind: LegKind::Debit,
+                                     amount: amount as u128,
+                                 });
+                                 entry.legs.push(Leg {
+                                     account: format!("passivo:wallet:{}", tx.from),
+                                     asset: "ATLAS".to_string(),
+                                     kind: LegKind::Credit, // Credit User (Liability Increase = Balance Increase)
+                                     amount: amount as u128,
+                                 });
+                             }
+                         }
+                     }
+                 }
+            }
+            // -------------------------------------------------
     
             // Enrich entry with proposal metadata (and unique index suffix)
             entry.entry_id = format!("entry-{}-{}", proposal.id, count);
-            entry.tx_hash = proposal.hash.clone(); // Note: This should ideally be the tx hash, not proposal hash.
-            // But for now we keep it compatible. Future: calculate tx hash.
+            entry.tx_hash = proposal.hash.clone(); 
             entry.block_height = proposal.height;
             entry.timestamp = proposal.time;
     
             // Apply to state
             let mut state = self.state.write().await;
+            
+            // Execute Staking Action (Delegate/Undelegate Logic)
+            if let Some(action) = staking_action {
+                action(&mut state).map_err(|e| atlas_common::error::AtlasError::Other(format!("Staking Action Failed: {}", e)))?;
+            }
+
             state.apply_entry(entry.clone())
                 .map_err(|e| atlas_common::error::AtlasError::Other(format!("Transaction execution failed: {}", e)))?;
             
@@ -269,20 +340,54 @@ impl Ledger {
             amount: slash_amt as u128,
         };
 
-        let entry_id = format!("slash-{}-{}", address, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
-        
-        let entry = LedgerEntry::new(
-            entry_id,
-            vec![debit_leg, credit_leg],
-            "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // No block hash associated yet
-            0,
-            0,
-            Some(format!("SLASHING PENALTY: Disrespectful Behavior")),
-        );
+        let mut legs = vec![debit_leg, credit_leg];
 
-        let mut state = self.state.write().await;
-        state.apply_entry(entry)
-             .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to apply slashing: {}", e)))?;
+        // 3. Shared Slashing Risk: Punish Delegators (10%)
+        {
+             // We need to mutate delegations, which is inside state.
+             // We construct legs first, but we need the amount.
+             // Since we have write lock on state later, we can't do it here easily if we want to add legs to the SAME entry.
+             // Wait, `apply_entry` takes `&mut self`.
+             // We can calculate penalty first? No, we need access to state.
+             // We already hold `self.state` lock in `apply_entry`, but here we don't hold it yet.
+             // Correct flow: Acquire LEASE/WRITE lock, calculate, create entry, apply.
+             
+             // Refactoring to hold lock once.
+             let mut state = self.state.write().await;
+             
+             // 3.1 Calculate Delegator Penalty
+             let delegated_penalty = state.delegations.slash_delegators(address, 10); // 10% penalty
+             if delegated_penalty > 0 {
+                 tracing::info!("⚔️ SLASHING SHARED: Punindo delegadores de {} em {} ATLAS (10%)", address, delegated_penalty);
+                 // Burn from Staking Pool
+                 legs.push(Leg {
+                     account: "passivo:wallet:system:staking".to_string(), // Reduce Pool Liability
+                     asset: "ATLAS".to_string(),
+                     kind: LegKind::Debit, 
+                     amount: delegated_penalty as u128,
+                 });
+                 legs.push(Leg {
+                     account: "patrimonio:slashing".to_string(), // Increase Burnt
+                     asset: "ATLAS".to_string(),
+                     kind: LegKind::Credit,
+                     amount: delegated_penalty as u128,
+                 });
+             }
+
+             let entry_id = format!("slash-{}-{}", address, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+             
+             let entry = LedgerEntry::new(
+                 entry_id,
+                 legs,
+                 "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // No block hash associated yet
+                 0,
+                 0,
+                 Some(format!("SLASHING PENALTY: Disrespectful Behavior")),
+             );
+
+             state.apply_entry(entry)
+                  .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to apply slashing: {}", e)))?;
+        }
 
         Ok(())
     }

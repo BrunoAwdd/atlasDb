@@ -4,11 +4,97 @@ use sha2::{Digest, Sha256};
 use atlas_common::entry::{LedgerEntry, LegKind};
 use crate::core::ledger::account::AccountState;
 
+/// Stores delegation information.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct DelegationStore {
+    // Delegator -> Validator -> Amount
+    pub delegations: HashMap<String, HashMap<String, u64>>,
+    // Validator -> Total Delegated Power
+    pub validator_power: HashMap<String, u64>,
+}
+
+impl DelegationStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn delegate(&mut self, delegator: String, validator: String, amount: u64) {
+        let user_delegations = self.delegations.entry(delegator).or_default();
+        *user_delegations.entry(validator.clone()).or_default() += amount;
+        
+        *self.validator_power.entry(validator).or_default() += amount;
+    }
+
+    pub fn undelegate(&mut self, delegator: String, validator: String, amount: u64) -> Result<(), String> {
+        let user_delegations = self.delegations.entry(delegator.clone()).or_default();
+        let current = user_delegations.entry(validator.clone()).or_default();
+        
+        if *current < amount {
+            return Err(format!("Insufficient delegation: has {}, tried to undelegate {}", current, amount));
+        }
+        
+        *current -= amount;
+        if *current == 0 {
+            user_delegations.remove(&validator);
+        }
+        if user_delegations.is_empty() {
+            self.delegations.remove(&delegator);
+        }
+
+        let val_power = self.validator_power.entry(validator).or_default();
+        *val_power = val_power.saturating_sub(amount); // Safety
+
+        Ok(())
+    }
+    
+    pub fn get_delegated_power(&self, validator: &str) -> u64 {
+        *self.validator_power.get(validator).unwrap_or(&0)
+    }
+
+    /// Slashes all delegators of a given validator by a percentage.
+    /// Returns the total amount slashed.
+    pub fn slash_delegators(&mut self, validator: &str, percentage: u8) -> u64 {
+        let mut total_slashed = 0;
+        let mut removed_delegators = Vec::new();
+
+        // Iterate over all delegations (This is O(N) where N = total delegators in system. suboptimal but works for now)
+        // Optimization: Store reverse map Validator -> Vec<Delegator> in future.
+        for (delegator, investments) in self.delegations.iter_mut() {
+            if let Some(amount) = investments.get_mut(validator) {
+                let penalty = (*amount * percentage as u64) / 100;
+                if penalty > 0 {
+                    *amount -= penalty;
+                    total_slashed += penalty;
+                    
+                    if *amount == 0 {
+                        investments.remove(validator);
+                        if investments.is_empty() {
+                            removed_delegators.push(delegator.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up empty delegators
+        for del in removed_delegators {
+            self.delegations.remove(&del);
+        }
+
+        // Update validator power
+        let val_power = self.validator_power.entry(validator.to_string()).or_default();
+        *val_power = val_power.saturating_sub(total_slashed);
+
+        total_slashed
+    }
+}
+
 /// Represents the global state of the application.
 /// Now follows FIP-02: Double-Entry Accounting.
 #[derive(Debug, Clone, Default)]
 pub struct State {
     pub accounts: HashMap<String, AccountState>,
+    pub delegations: DelegationStore,
 }
 
 impl State {
@@ -33,6 +119,7 @@ impl State {
 
         Self {
             accounts,
+            delegations: DelegationStore::new(),
         }
     }
 

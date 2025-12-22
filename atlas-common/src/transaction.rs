@@ -53,11 +53,13 @@ impl SignedTransaction {
         }
 
         // 5. Check 'To' Address Format
-        // Must be valid Base58 and decode to exactly 32 bytes.
-        let to_bytes = bs58::decode(&self.transaction.to).into_vec()
-            .map_err(|e| format!("Invalid 'to' address format: {}", e))?;
-        if to_bytes.len() != 32 {
-             return Err(format!("Invalid 'to' address length: {} (expected 32)", to_bytes.len()));
+        // Must be valid Base58 and decode to exactly 32 bytes, UNLESS it is a system address.
+        if !self.transaction.to.starts_with("system:") && self.transaction.to != "mint" {
+            let to_bytes = bs58::decode(&self.transaction.to).into_vec()
+                .map_err(|e| format!("Invalid 'to' address format: {}", e))?;
+            if to_bytes.len() != 32 {
+                 return Err(format!("Invalid 'to' address length: {} (expected 32)", to_bytes.len()));
+            }
         }
 
         // 6. Verify Signature
