@@ -9,7 +9,6 @@ use atlas_common::{
     env::consensus::types::ConsensusResult,
     env::proposal::Proposal,
     utils::NodeId, // Keep NodeId as it's used in get_active_nodes
-    env::consensus::types::Vote, // Keep Vote as it's used in receive_vote
 };
 
 use atlas_p2p::PeerManager;
