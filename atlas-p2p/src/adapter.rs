@@ -6,13 +6,9 @@ use atlas_common::utils::NodeId;
 use crate::config::P2pConfig;
 use crate::events::{AdapterEvent, ComposedEvent};
 use crate::peer_manager::{PeerManager, PeerCommand};
-// use crate::traits::NetworkAdapter;
 
+use crate::protocol::TxRequest;
 use atlas_common::env::node::Node;
-
-use crate::protocol::{
-    TxRequest,
-};
 
 use crate::{
     behaviour::P2pBehaviour as Behaviour,
@@ -20,44 +16,27 @@ use crate::{
 };
 
 use libp2p::{
-    core::upgrade, 
     gossipsub::{
-        self, 
         IdentTopic,
-        MessageAuthenticity, 
-        ValidationMode,
         Event as GossipsubEvent,
     }, 
-    identify, 
     kad, 
-    noise, 
     request_response::{
-        Behaviour as RequestResponseBehaviour, 
-        Config as RequestResponseConfig, 
         Event as RequestResponseEvent, 
         Message,
         OutboundRequestId, 
-        ProtocolSupport
     }, 
     swarm::{
-        Config as SwarmConfig, 
         Swarm, 
         SwarmEvent
     }, 
-    tcp, 
-    yamux, 
     Multiaddr, 
     PeerId, 
-    Transport,
-    StreamProtocol,
 };
 
 type RequestId = OutboundRequestId;
 
 use tokio::sync::{mpsc, RwLock};
-
-use crate::key_manager;
-use std::path::Path;
 
 pub struct Libp2pAdapter {
     pub peer_id: PeerId,
@@ -79,96 +58,9 @@ pub enum AdapterCmd {
     Shutdown,
 }
 
-
-
 impl Libp2pAdapter {
     pub async fn new(cfg: P2pConfig, evt_tx: mpsc::Sender<AdapterEvent>, cmd_rx: mpsc::Receiver<AdapterCmd>, peer_mgr: Arc<RwLock<PeerManager>>) -> Result<Self, P2pError> {
-        // chave/peer id
-        let key = key_manager::load_or_generate_keypair(Path::new(&cfg.keypair_path))
-            .map_err(P2pError::Io)?;
-        let peer_id = PeerId::from(key.public());
-
-        // ... (rest of the function is the same)
-
-        // transporte
-        let transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true))
-            .upgrade(upgrade::Version::V1Lazy)
-            .authenticate(noise::Config::new(&key)?)
-            .multiplex(yamux::Config::default())
-            .boxed();
-
-        // gossipsub
-        let gcfg = gossipsub::ConfigBuilder::default()
-            .validation_mode(ValidationMode::Strict)
-            .build()
-            .unwrap();
-
-        let gs = gossipsub::Behaviour::new(
-            MessageAuthenticity::Signed(key.clone()),
-            gcfg,
-        ).map_err(P2pError::GossipsubInit)?;
-
-        // identify
-        let identify = identify::Behaviour::new(
-            identify::Config::new("atlas/1.0".into(), key.public())
-                .with_agent_version("rust-libp2p".into())
-        );
-
-        // mdns
-        #[cfg(feature = "mdns")]
-        let mdns = libp2p::mdns::tokio::Behaviour::new(
-            libp2p::mdns::Config::default(), peer_id
-        )?;
-
-        // kad
-        let mut kad_cfg = kad::Config::default();
-        kad_cfg.set_query_timeout(std::time::Duration::from_secs(5));
-        let store = kad::store::MemoryStore::new(peer_id);
-        let kad = kad::Behaviour::with_config(peer_id, store, kad_cfg);
-
-        // request-response
-        let rr = {
-            let mut cfg = RequestResponseConfig::default();
-            #[allow(deprecated)]
-            cfg.set_request_timeout(std::time::Duration::from_secs(3));
-        
-            let protocols = std::iter::once((
-                StreamProtocol::new("/atlas/tx/1"),
-                ProtocolSupport::Full,
-            ));
-        
-            // Antes: RequestResponseBehaviour::new(TxCodec, protocols, cfg)
-            // Agora:
-            RequestResponseBehaviour::new(protocols, cfg) // TCodec = TxCodec (inference)
-        };
-
-        let mut behaviour = Behaviour {
-            identify,
-            ping: libp2p::ping::Behaviour::default(),
-            #[cfg(feature = "mdns")]
-            mdns,
-            kad,
-            gossipsub: gs,
-            rr,
-        };
-
-        // tópicos
-        behaviour.subscribe_core_topics()?; // usa P2pError::Gossipsub
-
-        // swarm
-        let mut swarm = Swarm::new(transport, behaviour, peer_id, SwarmConfig::with_tokio_executor());
-
-        // listen
-        for ma in &cfg.listen_multiaddrs {
-            Swarm::listen_on(&mut swarm, ma.parse::<Multiaddr>()?)?;
-        }
-
-        // bootstrap
-        for b in &cfg.bootstrap {
-            if let Ok(addr) = b.parse::<Multiaddr>() {
-                Swarm::dial(&mut swarm, addr)?;
-            }
-        }
+        let (swarm, peer_id) = crate::builder::build_swarm(&cfg)?;
 
         let mut addr_book = HashMap::new();
         {

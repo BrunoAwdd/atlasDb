@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod builder;
 pub mod behaviour;
 pub mod codec;
 pub mod config;
