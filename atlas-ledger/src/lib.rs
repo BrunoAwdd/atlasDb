@@ -51,18 +51,18 @@ impl Ledger {
         let (file_id, offset, len) = binlog.append(proposal).await?;
         
         // Extract inner transaction hash(es) for idempotency index
-        let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+        let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&proposal.content) {
              use sha2::{Sha256, Digest};
-             use atlas_common::transaction::signing_bytes;
+             use atlas_common::transactions::signing_bytes;
              batch.iter().map(|signed_tx| {
                  let mut hasher = Sha256::new();
                  hasher.update(signing_bytes(&signed_tx.transaction));
                  hasher.update(&signed_tx.signature);
                  hex::encode(hasher.finalize())
              }).collect()
-        } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+        } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&proposal.content) {
             use sha2::{Sha256, Digest};
-            use atlas_common::transaction::signing_bytes;
+            use atlas_common::transactions::signing_bytes;
             let mut hasher = Sha256::new();
             hasher.update(signing_bytes(&signed_tx.transaction));
             hasher.update(&signed_tx.signature);
@@ -128,15 +128,15 @@ impl Ledger {
     /// Returns the number of executed transactions.
     pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize> {
         // 1. Try Batch Parsing
-        let transactions: Vec<(atlas_common::transaction::Transaction, Option<Vec<u8>>, Option<Vec<u8>>)> = 
-            if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+        let transactions: Vec<(atlas_common::transactions::Transaction, Option<Vec<u8>>, Option<Vec<u8>>)> = 
+            if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&proposal.content) {
                 batch.into_iter().map(|st| (st.transaction, Some(st.signature), Some(st.public_key))).collect()
-            } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+            } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&proposal.content) {
                 // Fallback: Single SignedTransaction
                 vec![(signed_tx.transaction, Some(signed_tx.signature), Some(signed_tx.public_key))]
             } else {
                 // Fallback: Legacy Single Transaction (Unsigned)
-                let tx: atlas_common::transaction::Transaction = serde_json::from_str(&proposal.content)
+                let tx: atlas_common::transactions::Transaction = serde_json::from_str(&proposal.content)
                     .map_err(|e| atlas_common::error::AtlasError::Other(format!("Failed to parse transaction content: {}", e)))?;
                 vec![(tx, None, None)]
             };
@@ -146,7 +146,7 @@ impl Ledger {
             // If signed, verify signature
             if let (Some(sig), Some(pk)) = (signature, public_key) {
                  use ed25519_dalek::{Verifier, VerifyingKey, Signature};
-                 use atlas_common::transaction::signing_bytes;
+                 use atlas_common::transactions::signing_bytes;
                  
                  let verifying_key = VerifyingKey::from_bytes(pk.as_slice().try_into().unwrap_or(&[0u8; 32]))
                     .map_err(|e| atlas_common::error::AtlasError::Other(format!("Invalid public key: {}", e)))?;

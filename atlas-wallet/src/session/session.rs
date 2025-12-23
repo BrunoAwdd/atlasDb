@@ -1,5 +1,3 @@
-use std::time::Duration; // Keep Duration for logic if needed, or just use u64 seconds
-
 use crate::errors::NimbleError;
 use crate::identity::errors::IdentityError;
 use crate::identity::identity::{Identity, IdentityBundle};
@@ -70,7 +68,7 @@ impl Session {
         }
         // Create Transaction struct exactly as Ledger expects for verification
         // Ledger uses atlas_common::transaction::Transaction
-        let transaction = atlas_common::transaction::Transaction {
+        let transaction = atlas_common::transactions::Transaction {
             from: self.profile.address().as_str().to_string(),
             to: to_address.clone(),
             amount: amount as u128, // Ledger uses u128
@@ -79,7 +77,7 @@ impl Session {
         };
 
         // Use the same signing bytes logic as Ledger: bincode::serialize(&transaction)
-        let msg = atlas_common::transaction::signing_bytes(&transaction);
+        let msg = atlas_common::transactions::signing_bytes(&transaction);
 
         self.unlock_key(password)?;
         let signature = self.sign_message(&msg)?;

@@ -1,7 +1,6 @@
-use tonic::transport::Channel;
 use atlas_ledger::interface::api::service::ledger_proto::ledger_service_client::LedgerServiceClient;
 use atlas_ledger::interface::api::service::ledger_proto::SubmitTransactionRequest;
-use atlas_common::transaction::{Transaction, signing_bytes};
+use atlas_common::transactions::{Transaction, signing_bytes};
 use ed25519_dalek::{Signer, SigningKey};
 use rand::rngs::OsRng;
 

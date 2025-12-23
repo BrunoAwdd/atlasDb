@@ -1,4 +1,4 @@
-use atlas_common::transaction::Transaction;
+use atlas_common::transactions::Transaction;
 use atlas_common::error::Result;
 
 /// A rule that must be satisfied for a transaction to be compliant.

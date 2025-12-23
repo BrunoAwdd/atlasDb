@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use atlas_common::transaction::{Transaction, SignedTransaction, signing_bytes};
+use atlas_common::transactions::{SignedTransaction, signing_bytes};
 
 /// Mempool storage backend abstraction.
 /// Currently implemented as in-memory HashMap.

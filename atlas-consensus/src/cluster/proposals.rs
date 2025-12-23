@@ -5,7 +5,10 @@ use atlas_common::error::{AtlasError, Result};
 use atlas_p2p::adapter::AdapterCmd;
 use tracing::{info, warn};
 // use atlas_ledger::state::State;
+
 use atlas_common::crypto::merkle::calculate_merkle_root;
+use atlas_common::transactions::SignedTransaction;
+
 
 
 const PROPOSAL_TOPIC: &str = "atlas/proposal/v1";
@@ -101,10 +104,10 @@ impl Cluster {
         // Security: Validate Transaction Signatures in Content
         // We must ensure that the transactions inside the block are validly signed by their senders.
         {
-            let transactions: Vec<atlas_common::transaction::SignedTransaction> = 
-                if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transaction::SignedTransaction>>(&proposal.content) {
+            let transactions: Vec<SignedTransaction> = 
+                if let Ok(batch) = serde_json::from_str::<Vec<SignedTransaction>>(&proposal.content) {
                     batch
-                } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&proposal.content) {
+                } else if let Ok(signed_tx) = serde_json::from_str::<SignedTransaction>(&proposal.content) {
                     vec![signed_tx]
                 } else {
                     // Legacy/Unsigned content - decided to allow for now or reject? 

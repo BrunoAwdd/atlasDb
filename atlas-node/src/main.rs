@@ -243,9 +243,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              let query = params.query.as_deref().unwrap_or("").to_lowercase();
              
              for p in proposals {
-                 let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&p.content) {
+                 let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
                      Some(signed_tx.transaction)
-                 } else if let Ok(tx) = serde_json::from_str::<atlas_common::transaction::Transaction>(&p.content) {
+                 } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
                      Some(tx)
                  } else {
                      None

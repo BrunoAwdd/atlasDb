@@ -44,7 +44,7 @@ impl LedgerService for LedgerServiceImpl {
 
         // Construct Transaction
         let amount = req.amount.parse::<u128>().unwrap_or(0);
-        let transaction = atlas_common::transaction::Transaction {
+        let transaction = atlas_common::transactions::Transaction {
             from: req.from.clone(),
             to: req.to,
             amount,
@@ -66,7 +66,7 @@ impl LedgerService for LedgerServiceImpl {
 
         // 2. Verify Signature
         use ed25519_dalek::{Verifier, VerifyingKey, Signature};
-        use atlas_common::transaction::signing_bytes;
+        use atlas_common::transactions::signing_bytes;
 
         let verifying_key = VerifyingKey::from_bytes(pk_bytes.as_slice().try_into().unwrap())
             .map_err(|e| Status::invalid_argument(format!("Invalid public key: {}", e)))?;
@@ -80,7 +80,7 @@ impl LedgerService for LedgerServiceImpl {
             .map_err(|_| Status::unauthenticated("Invalid signature"))?;
 
         // 3. Create SignedTransaction
-        let signed_tx = atlas_common::transaction::SignedTransaction {
+        let signed_tx = atlas_common::transactions::SignedTransaction {
             transaction,
             signature: signature_bytes,
             public_key: pk_bytes,
@@ -89,7 +89,7 @@ impl LedgerService for LedgerServiceImpl {
         // --- Idempotency Check ---
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
-        hasher.update(atlas_common::transaction::signing_bytes(&signed_tx.transaction));
+        hasher.update(atlas_common::transactions::signing_bytes(&signed_tx.transaction));
         hasher.update(&signed_tx.signature);
         let hash = hex::encode(hasher.finalize());
 
@@ -157,7 +157,7 @@ impl LedgerService for LedgerServiceImpl {
        
        for p in proposals {
            // Try parsing the content as a SignedTransaction
-           if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&p.content) {
+           if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
                let tx = signed_tx.transaction;
                
                // Filter: Check if address matches From or To
@@ -178,7 +178,7 @@ impl LedgerService for LedgerServiceImpl {
                        memo: tx.memo.unwrap_or_default(),
                    });
                }
-           } else if let Ok(tx) = serde_json::from_str::<atlas_common::transaction::Transaction>(&p.content) {
+           } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
                // FALLBACK: Support legacy unsigned transactions (for previous blocks or simulation)
                if tx.from.contains(&req.address) || tx.to.contains(&req.address) {
                    records.push(ledger_proto::TransactionRecord {
@@ -212,9 +212,9 @@ impl LedgerService for LedgerServiceImpl {
        let mut records = Vec::new();
        
        for p in proposals {
-            let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transaction::SignedTransaction>(&p.content) {
+            let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
                 Some(signed_tx.transaction)
-            } else if let Ok(tx) = serde_json::from_str::<atlas_common::transaction::Transaction>(&p.content) {
+            } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
                 Some(tx)
             } else {
                 None

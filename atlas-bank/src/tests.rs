@@ -2,7 +2,7 @@
 mod tests {
     use crate::bank::compliance_engine::{service::ComplianceService, kyc::KycRule, traits::ComplianceRule};
     use crate::bank::institution_core::{institution::Institution, registry::InstitutionRegistry};
-    use atlas_common::transaction::Transaction;
+    use atlas_common::transactions::Transaction;
     use std::sync::Arc;
 
     #[test]

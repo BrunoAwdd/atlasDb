@@ -1,4 +1,4 @@
-use atlas_common::transaction::Transaction;
+use atlas_common::transactions::Transaction;
 use atlas_common::error::Result;
 use super::traits::ComplianceRule;
 use std::sync::Arc;
