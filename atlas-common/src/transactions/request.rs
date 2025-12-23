@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use serde::{Deserialize, Serialize};
 
 use super::{errors::TransactionError, payload::TransferPayload};
@@ -199,13 +197,8 @@ impl TransferRequest {
 }
 
 #[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
 mod tests {
-    use super::*;
-
-    fn dummy_sig() -> [u8; 64] {
-        [0u8; 64] 
-    }
-
     #[test]
     fn test_to_payload() {
         let req = TransferRequest {

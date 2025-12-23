@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::transactions::TransferRequest;
 
 use super::errors::TransactionError;

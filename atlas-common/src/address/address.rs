@@ -161,7 +161,7 @@ impl Address {
 mod tests {
     use ed25519_dalek::SigningKey;
     use rand::RngCore;
-    use rand_core::OsRng;
+    use rand::rngs::OsRng;
 
     use super::*;
 
