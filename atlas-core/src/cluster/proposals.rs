@@ -86,8 +86,8 @@ impl Cluster {
             let storage = self.local_env.storage.read().await;
             match storage.execute_transaction(&proposal).await {
                 Ok(entry) => {
-                    info!("✅ Transaction executed successfully. Entry ID: {}", entry.entry_id);
-                    tracing::info!(target: "ledger", "EVENT:TX_EXEC_SUCCESS id={} entry={}", proposal.id, entry.entry_id);
+                    info!("✅ Transaction executed successfully. Entry ID: {}", entry);
+                    tracing::info!(target: "ledger", "EVENT:TX_EXEC_SUCCESS id={} entry={}", proposal.id, entry);
                 },
                 Err(e) => {
                     warn!("❌ Transaction execution failed: {}", e);
