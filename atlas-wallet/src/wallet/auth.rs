@@ -1,4 +1,5 @@
-use super::{Wallet, Profile};
+use super::manager::Wallet;
+use crate::profile::profile_type::Profile;
 use atlas_common::auth::Authenticator;
 
 impl Authenticator for Wallet {

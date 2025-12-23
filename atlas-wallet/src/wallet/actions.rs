@@ -1,4 +1,5 @@
-use super::{Wallet, VaultData, Session};
+use super::manager::Wallet;
+use crate::{session::session::Session, vault::vault::VaultData};
 use atlas_common::transactions::TransferRequest;
 
 pub(super) fn load_vault(wallet: &mut Wallet, password: String, encoded: Vec<u8>) -> Result<(), String> {

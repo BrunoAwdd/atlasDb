@@ -1,4 +1,5 @@
-use super::{Wallet, WalletData, AccountData};
+use super::manager::Wallet;
+use super::types::{WalletData, AccountData};
 use atlas_common::transactions::TransferRequest;
 use atlas_common::address::profile_address::ProfileAddress;
 
