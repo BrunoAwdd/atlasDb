@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
+
 use tokio::sync::{oneshot, Mutex, RwLock};
-use tracing::info;
 use atlas_common::{
     auth::Authenticator,
     utils::NodeId
@@ -61,62 +61,34 @@ impl Cluster {
         Node::new(id, addr.to_string(), None, 0.0)
     }
 
+
     // @TODO: Is here the best place to save the state?
-    pub async fn save_state(&self, path: &str) -> Result<(), String> {
+    // Returns a Config object representing the current state, which can be saved to disk by the caller.
+    pub async fn export_config(&self) -> Config {
         let local_node = self.local_node.read().await;
-        let socket: SocketAddr = local_node.address.clone().parse().expect("Endereço inválido");
+        // Parsing is safe here as node address is validated on creation
+        let socket: SocketAddr = local_node.address.parse().unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
         
-        let config = Config {
+        Config {
             node_id: local_node.id.clone(),
             address:  socket.ip().to_string(),
             port: socket.port(),
             quorum_policy: self.local_env.engine.lock().await.evaluator.policy.clone(),
-            graph: Graph::new(),
+            graph: Graph::new(), // TODO: Graph state?
             storage: self.local_env.storage.read().await.clone(),
             peer_manager: self.peer_manager.read().await.clone(),
             data_dir: self.local_env.data_dir.clone(),
-        };
-
-        config.save_to_file(path).expect("Failed to save initial configuration");
-
-        Ok(())
+        }
     }
 
     pub async fn elect_leader(&self) {
-        let peer_manager = self.peer_manager.read().await;
-        let active_peers = peer_manager.get_active_peers();
-
-        let local_node_id = self.local_node.read().await.id.clone();
-        let mut candidates: Vec<_> = active_peers.into_iter().collect();
-        candidates.push(local_node_id.clone());
-        candidates.sort(); // Deterministic order
-
-        if candidates.is_empty() {
-            let mut leader_lock = self.current_leader.write().await;
-            if leader_lock.is_some() {
-                info!("Perdeu todos os pares, abdicando da liderança.");
-                *leader_lock = None;
-            }
-            return;
-        }
-
-        // Calculate current height (next proposal height)
-        let storage = self.local_env.storage.read().await;
-        let next_height = storage.proposals.len() as u64 + 1;
-        drop(storage);
-
-        // Round-Robin: (Height - 1) % NumCandidates
-        // Height starts at 1, so for Height 1 we want index 0.
-        let index = ((next_height - 1) as usize) % candidates.len();
-        let new_leader = candidates.get(index).cloned();
-
-        let mut current_leader_lock = self.current_leader.write().await;
-        
-        // Log only if leader changes or for debug (optional)
-        if *current_leader_lock != new_leader {
-            info!("👑 Novo líder eleito para altura {}: {:?} (Candidatos: {:?})", next_height, new_leader, candidates);
-            *current_leader_lock = new_leader;
-        }
+        let local_id = self.local_node.read().await.id.clone();
+        crate::cluster::election::elect_leader(
+            local_id,
+            &self.peer_manager,
+            &self.local_env.storage,
+            &self.current_leader
+        ).await;
     }
 
     pub async fn get_status(&self) -> (String, String, u64, u64) {

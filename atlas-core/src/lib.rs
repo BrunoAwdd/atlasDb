@@ -10,6 +10,8 @@ pub mod peer_manager;
 pub mod rpc;
 pub mod runtime;
 pub mod ledger;
+pub mod cli;
+pub mod utils;
 
 pub use cluster::{
     core::Cluster, 
