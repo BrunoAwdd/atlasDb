@@ -37,3 +37,7 @@ axum = "0.8.7"
 
 [build-dependencies]
 tonic-build = "0.10"
+
+[dev-dependencies]
+async-trait.workspace = true
+tempfile.workspace = true

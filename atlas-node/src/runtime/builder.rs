@@ -17,6 +17,9 @@ use atlas_p2p::{
 
 
 use crate::runtime::maestro::Maestro;
+use crate::runtime::consensus_driver::ConsensusDriver;
+use crate::runtime::sync_driver::SyncDriver;
+use crate::runtime::block_producer::BlockProducer;
 use crate::config::Config;
 
 pub struct AtlasRuntime {
@@ -68,6 +71,10 @@ pub async fn build_runtime(
     // Initialize Mempool
     let mempool = Arc::new(atlas_mempool::Mempool::default());
 
+    let consensus = ConsensusDriver::new(Arc::clone(&cluster), publisher.clone(), Arc::clone(&mempool));
+    let sync = SyncDriver::new(Arc::clone(&cluster), publisher.clone());
+    let block_producer = BlockProducer::new(Arc::clone(&cluster), publisher.clone(), Arc::clone(&mempool));
+
     let maestro = Maestro {
         cluster: Arc::clone(&cluster),
         p2p: publisher.clone(), 
@@ -75,6 +82,9 @@ pub async fn build_runtime(
         evt_rx: Mutex::new(maestro_evt_rx),
         grpc_addr,
         grpc_server_handle: Mutex::new(None),
+        consensus,
+        sync,
+        block_producer,
     };
     let maestro = Arc::new(maestro);
     let m = Arc::clone(&maestro);
@@ -116,5 +126,3 @@ pub async fn run_cli() -> Result<()> {
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
-
-

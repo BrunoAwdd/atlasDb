@@ -16,7 +16,7 @@ pub struct MyProposalService<P: P2pPublisher> {
 }
 
 #[tonic::async_trait]
-impl<P: P2pPublisher + 'static> ProposalService for MyProposalService<P> {
+impl<P: P2pPublisher + Clone + 'static> ProposalService for MyProposalService<P> {
     // Implementa o método `submit_proposal` do nosso serviço gRPC.
     async fn submit_proposal(
         &self,
@@ -59,7 +59,7 @@ impl<P: P2pPublisher + 'static> ProposalService for MyProposalService<P> {
 }
 
 // Função para iniciar o servidor gRPC com mTLS.
-pub async fn run_server<P: P2pPublisher + 'static>(
+pub async fn run_server<P: P2pPublisher + Clone + 'static>(
     maestro: Arc<Maestro<P>>,
     ledger: Arc<atlas_ledger::Ledger>,
     mempool: Arc<atlas_mempool::Mempool>,
