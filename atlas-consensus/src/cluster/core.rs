@@ -99,7 +99,7 @@ impl Cluster {
         // 2. Generate Random Seed (Deterministic)
         // Source: Last Block Hash + View (Round)
         // This ensures that if the leader fails (View increases), a new leader is selected.
-        let (seed_hash, view) = {
+        let (seed_hash, _view) = {
             let storage = self.local_env.storage.read().await;
             let last_hash = storage.proposals.last().map(|p| p.hash.clone()).unwrap_or_else(|| "0000".to_string());
             let view = storage.proposals.last().map(|p| p.round).unwrap_or(0); 
