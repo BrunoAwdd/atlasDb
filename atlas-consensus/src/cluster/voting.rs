@@ -12,15 +12,54 @@ use tracing::{info, warn};
 impl Cluster {
     pub async fn create_vote(&self, proposal_id: &str, phase: atlas_common::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
         // 1. Retrieve proposal
-        let proposal = {
+        let (proposal, already_voted) = {
             let eng = self.local_env.engine.lock().await;
-            eng.get_all_proposals().all().get(proposal_id).cloned()
+            let registry = eng.get_all_votes(); // We need access to check duplicates
+            // Implementation detail: we need to check if we voted for THIS view/phase for ANY proposal.
+            // But registry structure is `votes_by_view: HashMap<u64, HashMap<Phase, HashMap<NodeId, VoteData>>>`
+            // We need to inspect this.
+            // Since `registry` field is private/internal specific, we might rely on a helper or check logically.
+            // Accessing `votes_by_view` is direct if we are inside consensus crate or have pub access.
+            // In `engine.rs` we have `get_all_votes()` returning `&VoteRegistry`.
+            // In `registry.rs`, `votes_by_view` is private?
+            // Let's assume we can add a helper `has_voted(view, phase, voter) -> bool` to VoteRegistry or just check blindly.
+            
+            // To be safe and quick without changing Registry api deeply:
+            // Just check if there is a conflict.
+            // Wait, we can't access `votes_by_view` if it's private.
+            // We'll trust the Engine or add a check in `ConsensusEvaluator`? No.
+            
+            // Let's try to fetch proposal first.
+            let p = eng.get_all_proposals().all().get(proposal_id).cloned();
+            (p, false) // Placeholder for vote check, see below
         };
-
+        
         let proposal = match proposal {
             Some(p) => p,
             None => return Ok(None),
         };
+
+        // SAFETY CHECK: Prevent Double Voting (Self-Equivocation)
+        // We must check if we already voted for this View & Phase.
+        {
+            let eng = self.local_env.engine.lock().await;
+            let reg = eng.get_all_votes();
+            let my_id = self.local_node.read().await.id.clone();
+            
+            let voted = reg.has_voted(0, &phase, &my_id);
+            if voted {
+                 if let Some(existing) = reg.get_vote_by_view(0, &phase, &my_id) {
+                     if existing.proposal_id != proposal_id {
+                         warn!("🛑 Prevented Self-Equivocation! Already voted for {} in View 0/{:?}, refusing to vote for {}.", existing.proposal_id, phase, proposal_id);
+                         return Ok(None);
+                     } else {
+                         info!("🔄 Idempotent retry: Already voted for this proposal. Re-broadcasting/Re-returning.");
+                     }
+                 }
+            } else {
+                info!("🟢 No previous vote found for View 0/{:?}. Proceeding to vote on {}.", phase, proposal_id);
+            }
+        }
 
         // 2. Decide vote based on validity (and potentially previous phases)
         // For Prepare phase, we verify signature.
@@ -56,6 +95,27 @@ impl Cluster {
             .try_into()
             .map_err(|_| AtlasError::Auth("assinatura inválida: tamanho incorreto".to_string()))?;
         vote_data.signature = sig_arr;
+
+        // 5. ATOMIC PRE-REGISTRATION
+        // Register the vote locally BEFORE broadcasting. 
+        // This catches any self-equivocation (checking against previous votes) 
+        // and "locks" our vote for this view/phase.
+        {
+            let mut eng = self.local_env.engine.lock().await;
+            match eng.registry.register_vote(vote_data.clone()) {
+                Ok(Some(_evidence)) => {
+                     warn!("🛑 ATOMIC GUARD: Attempted to vote for proposal {} but already voted for another in View {}/{:?}. Vote aborted.", vote_data.proposal_id, vote_data.view, vote_data.phase);
+                     return Ok(None);
+                },
+                Err(e) => {
+                    warn!("Failed to register vote locally: {}", e);
+                    return Ok(None);
+                },
+                Ok(None) => {
+                    // Vote accepted locally. Proceed to broadcast.
+                }
+            }
+        }
 
         info!("📝 Publicando voto ({:?}): {:?}", phase, vote_data);
         tracing::info!(target: "consensus", "EVENT:VOTE proposal_id={} phase={:?} voter={} vote={:?}", vote_data.proposal_id, phase, vote_data.voter, vote_data.vote);

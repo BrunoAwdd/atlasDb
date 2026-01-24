@@ -7,6 +7,7 @@
 //! integration with real persistence mechanisms (e.g., database, disk, etc.).
 //! 
 pub mod audit;
+pub mod shards;
 
 use std::collections::HashMap;
 
@@ -281,5 +282,42 @@ mod tests {
         assert_eq!(store.results["p1"].approved, true);
         assert_eq!(store.results["p2"].approved, false);
         assert!(!store.results.contains_key("p3")); // sem resultado ainda
+    }
+    #[tokio::test]
+    async fn test_shard_persistence() {
+        let data_dir = "/tmp/atlas_test_ledger_shards_2";
+        let _ = std::fs::remove_dir_all(data_dir); // Clean start
+
+        let mut store = Storage::new(data_dir);
+
+        // Inject funds so tx succeeds (Atomic Commit requirement!)
+        if let Some(ledger) = &store.ledger {
+            let mut state = ledger.state.write().await;
+            state.accounts.entry("passivo:wallet:validator_1".to_string())
+                .or_insert_with(crate::core::ledger::account::AccountState::new)
+                .balances.insert("ATLAS".to_string(), 1000);
+        }
+
+        let proposal = sample_proposal("p_shard", "validator_1", r#"
+            {
+                "from": "validator_1",
+                "to": "user_2",
+                "amount": 10,
+                "asset": "ATLAS",
+                "nonce": 1,
+                "signature": [],
+                "public_key": []
+            }
+        "#);
+
+        store.log_proposal(proposal).await;
+
+        let shard_path = std::path::Path::new(data_dir).join("accounts").join("passivo:wallet:validator_1.bin");
+        
+        assert!(shard_path.exists(), "Shard file for passivo:wallet:validator_1 should exist");
+        
+        let content = std::fs::read_to_string(shard_path).unwrap();
+        assert!(content.contains("passivo:wallet:validator_1"), "Shard content should contain account name");
+        assert!(content.contains("entry-p_shard-0"), "Shard content should contain entry id");
     }
 }

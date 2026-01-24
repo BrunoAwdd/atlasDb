@@ -73,23 +73,38 @@ impl<P: P2pPublisher> ConsensusDriver<P> {
             Ok(results) => {
                 for result in results {
                     if result.approved {
-                        match result.phase {
-                            ConsensusPhase::Prepare => {
-                                self.broadcast_next_phase_vote(&result.proposal_id, ConsensusPhase::PreCommit).await;
-                            },
-                            ConsensusPhase::PreCommit => {
-                                self.broadcast_next_phase_vote(&result.proposal_id, ConsensusPhase::Commit).await;
-                            },
-                            ConsensusPhase::Commit => {
-                                info!("🎉 Proposal FINALIZED (BFT): {}", result.proposal_id);
-                                tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
+                        let next_phase = match result.phase {
+                            ConsensusPhase::Prepare => Some(ConsensusPhase::PreCommit),
+                            ConsensusPhase::PreCommit => Some(ConsensusPhase::Commit),
+                            ConsensusPhase::Commit => None,
+                        };
+
+                        if let Some(target_phase) = next_phase {
+                             // RECURSION GUARD: Check if we already voted for the next phase
+                             let storage = self.cluster.local_env.storage.read().await;
+                             let my_id = self.cluster.local_node.read().await.id.clone();
+                             
+                             let already_voted = storage.votes
+                                 .get(&result.proposal_id)
+                                 .and_then(|phases| phases.get(&target_phase))
+                                 .map(|voters| voters.contains_key(&my_id))
+                                 .unwrap_or(false);
+                             drop(storage); // Drop lock before await
+
+                             if !already_voted {
+                                 self.broadcast_next_phase_vote(&result.proposal_id, target_phase).await;
+                             }
+                        } else if matches!(result.phase, ConsensusPhase::Commit) {
+                             // Commit phase finalization (idempotent usually, check commit status?)
+                             // Current logic just logs and commits. Commit is idempotent in Ledger?
+                             info!("🎉 Proposal FINALIZED (BFT): {}", result.proposal_id);
+                             tracing::info!(target: "consensus", "EVENT:COMMIT id={} votes={}", result.proposal_id, result.votes_received);
                                 
-                                if let Err(e) = self.cluster.commit_proposal(result.clone()).await {
-                                    error!("Failed to commit proposal: {}", e);
-                                } else {
-                                    self.clean_mempool(&result.proposal_id).await;
-                                }
-                            }
+                             if let Err(e) = self.cluster.commit_proposal(result.clone()).await {
+                                 error!("Failed to commit proposal: {}", e);
+                             } else {
+                                 self.clean_mempool(&result.proposal_id).await;
+                             }
                         }
                     }
                 }
@@ -111,8 +126,11 @@ impl<P: P2pPublisher> ConsensusDriver<P> {
     }
 
     async fn clean_mempool(&self, proposal_id: &str) {
+         info!("🧹 [ConsensusDriver] clean_mempool called for {}", proposal_id);
          let storage = self.cluster.local_env.storage.read().await;
          if let Some(prop) = storage.proposals.iter().find(|p| p.id == proposal_id) {
+             info!("🧹 Cleaning mempool for proposal {}. Content len: {}", proposal_id, prop.content.len());
+             
              let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&prop.content) {
                   use sha2::{Sha256, Digest};
                   use atlas_common::transactions::signing_bytes;
@@ -120,23 +138,33 @@ impl<P: P2pPublisher> ConsensusDriver<P> {
                       let mut hasher = Sha256::new();
                       hasher.update(signing_bytes(&tx.transaction));
                       hasher.update(&tx.signature);
-                      hex::encode(hasher.finalize())
+                      let h = hex::encode(hasher.finalize());
+                      tracing::info!("🗑️ Calc cleanup hash: {}", h);
+                      h
                   }).collect()
              } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&prop.content) {
+                   // Fallback for single object (legacy)
                    use sha2::{Sha256, Digest};
                    use atlas_common::transactions::signing_bytes;
                    let mut hasher = Sha256::new();
                    hasher.update(signing_bytes(&tx.transaction));
                    hasher.update(&tx.signature);
-                   vec![hex::encode(hasher.finalize())]
+                   let h = hex::encode(hasher.finalize());
+                   tracing::info!("🗑️ Calc cleanup hash (single): {}", h);
+                   vec![h]
              } else {
+                 tracing::warn!("⚠️ Failed to parse proposal content for cleanup: {}", prop.content);
                  vec![]
              };
 
              if !tx_hashes.is_empty() {
                  self.mempool.remove_batch(&tx_hashes);
                  tracing::info!("🧹 Removed {} committed txs from mempool", tx_hashes.len());
+             } else {
+                 info!("🧹 Proposal {} contained no parseable transactions to remove.", proposal_id);
              }
+         } else {
+             tracing::warn!("⚠️ clean_mempool: Proposal {} not found in storage!", proposal_id);
          }
     }
 }

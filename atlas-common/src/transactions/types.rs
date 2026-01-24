@@ -6,13 +6,17 @@ pub struct Transaction {
     pub to: String,
     pub amount: u128,
     pub asset: String,
+    pub nonce: u64,
+    pub timestamp: u64,
     pub memo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignedTransaction {
     pub transaction: Transaction,
+    #[serde(with = "hex::serde")]
     pub signature: Vec<u8>,
+    #[serde(with = "hex::serde")]
     pub public_key: Vec<u8>,
 }
 

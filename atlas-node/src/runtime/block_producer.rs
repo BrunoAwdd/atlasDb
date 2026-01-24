@@ -10,11 +10,17 @@ pub struct BlockProducer<P: P2pPublisher> {
     cluster: Arc<Cluster>,
     p2p: P,
     mempool: Arc<Mempool>,
+    last_proposed_height: std::sync::atomic::AtomicU64,
 }
 
 impl<P: P2pPublisher> BlockProducer<P> {
     pub fn new(cluster: Arc<Cluster>, p2p: P, mempool: Arc<Mempool>) -> Self {
-        Self { cluster, p2p, mempool }
+        Self { 
+            cluster, 
+            p2p, 
+            mempool,
+            last_proposed_height: std::sync::atomic::AtomicU64::new(0),
+        }
     }
 
     /// Gossip pending transactions to ensure propagation
@@ -28,22 +34,68 @@ impl<P: P2pPublisher> BlockProducer<P> {
     }
 
     /// Attempt to produce a block if leader
-    pub async fn try_produce_block(&self) {
+    pub async fn try_produce_block(&self) -> Option<String> {
         // 1. Check if I am leader
         let leader_guard = self.cluster.current_leader.read().await;
         let local_node_id = self.cluster.local_node.read().await.id.clone();
         let am_i_leader = leader_guard.as_ref() == Some(&local_node_id);
+        let am_i_leader = leader_guard.as_ref() == Some(&local_node_id);
         drop(leader_guard);
+
+        tracing::info!("🕵️ [BlockProducer] Check: Leader? {} | Mempool Size: {}", am_i_leader, self.mempool.len());
 
         if am_i_leader {
             // 2. Check Mempool
+            // Force release stuck pending transactions (> 20s)
+            let released = self.mempool.cleanup_pending(20);
+            if released > 0 {
+                info!("🔓 Released {} zombie transactions back to mempool.", released);
+            } else {
+                tracing::info!("🔒 Pending Transactions: {}", self.mempool.pending_len()); 
+                // Need to expose pending_len helper or use read lock count 
+            }
+
             if self.mempool.len() > 0 {
                  info!("🔍 [BlockProducer] Leader checking mempool. Size: {}", self.mempool.len());
             }
             let candidates = self.mempool.get_candidates(50); // BATCH_SIZE = 50
-            if !candidates.is_empty() {
+            
+            if candidates.is_empty() {
+                // Optimization: Do not flood network with empty blocks if no txs.
+                tracing::info!("💤 Mempool empty, skipping block production.");
+                return None;
+            }
 
-                info!("⛏️ Producing block with {} transactions", candidates.len());
+            info!("⛏️ Producing block with {} transactions", candidates.len());
+
+            // 2.1 Throttling: Check if previous proposal is finalized
+             let storage = self.cluster.local_env.storage.read().await;
+             
+             if let Some(last_prop) = storage.proposals.last() {
+                 let is_committed = storage.results.get(&last_prop.id)
+                     .map(|r| r.approved)
+                     .unwrap_or(false);
+
+                 if !is_committed {
+                     // Still pending or rejected
+                     info!("⏳ Waiting for consensus on proposal {} (Height {}). Skipping production.", last_prop.id, last_prop.height);
+                     return None;
+                 }
+             }
+
+             let current_chain_height = storage.proposals.len() as u64; 
+             drop(storage);
+
+             let target_height = current_chain_height + 1;
+             
+             // Check if we already proposed for this height
+             let last = self.last_proposed_height.load(std::sync::atomic::Ordering::SeqCst);
+             if target_height <= last {
+                 info!("⏳ Waiting for consensus on Height {} (Last proposed: {}). Skipping proposal generation.", target_height, last);
+                 // OPTIONAL: If it's been too long (timeout), we might want to re-broadcast or view change, 
+                 // but bluntly creating a NEW proposal ID causes equivocation.
+                 return None;
+             }
                 
                 // 3. Serialize content as Vec<SignedTransaction>
                 let txs: Vec<atlas_common::transactions::SignedTransaction> = candidates.iter().map(|(_, tx)| tx.clone()).collect();
@@ -51,7 +103,7 @@ impl<P: P2pPublisher> BlockProducer<P> {
                     Ok(s) => s,
                     Err(e) => {
                         error!("Failed to serialize transaction batch: {}", e);
-                        return;
+                        return None;
                     }
                 };
 
@@ -59,16 +111,21 @@ impl<P: P2pPublisher> BlockProducer<P> {
                 match self.submit_proposal(content).await {
                     Ok(pid) => {
                         info!("✅ Block Produced! Proposal ID: {}", pid);
+                        self.last_proposed_height.store(target_height, std::sync::atomic::Ordering::SeqCst);
                         // 5. Mark as Pending (In-Flight)
-                        let hashes: Vec<String> = candidates.iter().map(|(h, _)| h.clone()).collect();
-                        self.mempool.mark_pending(&hashes);
+                        if !candidates.is_empty() {
+                            let hashes: Vec<String> = candidates.iter().map(|(h, _)| h.clone()).collect();
+                            self.mempool.mark_pending(&hashes);
+                        }
+                        return Some(pid);
                     },
                     Err(e) => {
                         error!("❌ Failed to produce block: {}", e);
                     }
                 }
-            }
+            // } <--- Removed closing brace for !candidates.is_empty()
         }
+        None
     }
 
     pub async fn submit_proposal(&self, content: String) -> Result<String, String> {
@@ -79,6 +136,18 @@ impl<P: P2pPublisher> BlockProducer<P> {
 
         let storage = self.cluster.local_env.storage.read().await;
         
+        // Dynamic Round Calculation:
+        // Check if there are existing votes for this height (implying a failed/stalled view).
+        // If so, increment the round to avoid "AlreadyVoted" equivocation errors.
+        let engine = self.cluster.local_env.engine.lock().await;
+        let max_view = engine.registry.get_highest_view();
+        drop(engine);
+
+        let round = match max_view {
+            Some(v) => v + 1,
+            None => 0,
+        };
+
         let (parent, height, prev_hash) = if let Some(last_prop) = storage.proposals.last() {
             (Some(last_prop.id.clone()), last_prop.height + 1, last_prop.hash.clone())
         } else {
@@ -94,7 +163,7 @@ impl<P: P2pPublisher> BlockProducer<P> {
             height,
             hash: String::new(), 
             prev_hash: prev_hash.clone(),
-            round: 0, // Placeholder
+            round, 
             time: chrono::Utc::now().timestamp(),
             state_root: {
                 // Manual construction of leaves for metadata

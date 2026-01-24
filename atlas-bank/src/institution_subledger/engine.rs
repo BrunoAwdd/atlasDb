@@ -29,11 +29,19 @@ impl AccountingEngine {
     ) -> Result<LedgerEntry, String> {
         // 1. Derive Accounts
         // For a standard transfer between users in a bank ledger:
-        // Sender: "passivo:wallet:<sender>" (Liability)
-        // Receiver: "passivo:wallet:<receiver>" (Liability)
-        
-        let sender_account = Account::new(format!("passivo:wallet:{}", sender))?;
-        let receiver_account = Account::new(format!("passivo:wallet:{}", receiver))?;
+        // Sender: "passivo:wallet:<sender>" (Liability) unless it's a raw code (starts with digit) or hash (0x)
+        let sender_account = if sender.chars().next().map_or(false, |c| c.is_ascii_digit()) || sender.starts_with("0x") {
+            Account::new(sender.to_string())?
+        } else {
+            Account::new(format!("passivo:wallet:{}", sender))?
+        };
+
+        // Receiver: "passivo:wallet:<receiver>" (Liability) unless it's a raw code or hash
+        let receiver_account = if receiver.chars().next().map_or(false, |c| c.is_ascii_digit()) || receiver.starts_with("0x") {
+            Account::new(receiver.to_string())?
+        } else {
+            Account::new(format!("passivo:wallet:{}", receiver))?
+        };
 
         // 2. Create Legs
         // Debit Sender (Reduce Liability)

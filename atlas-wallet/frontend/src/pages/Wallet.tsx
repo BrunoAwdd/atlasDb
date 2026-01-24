@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import QRCode from "react-qr-code";
+
 import { ledgerClient } from "@/lib/client";
 
 import { Button } from "@/components/ui/button";
@@ -7,16 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 import { useNavigate } from "react-router-dom";
-import {
-  PanelRight,
-  Copy,
-  Check,
-  QrCode,
-  ArrowUpRight,
-  ArrowDownLeft,
-  LogOut,
-} from "lucide-react";
+import { PanelRight, ArrowUpRight, ArrowDownLeft, LogOut } from "lucide-react";
 import { get_data, sing_transfer, switch_profile } from "../pkg/atlas_wallet";
+import { AddressSection } from "@/components/AddressSection";
 
 function WalletView() {
   const [wallet, setWallet] = useState<any>(null); // você pode definir o tipo melhor depois
@@ -25,11 +18,9 @@ function WalletView() {
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("");
   const [activeProfile, setActiveProfile] = useState<"exposed" | "hidden">(
-    "exposed"
+    "exposed",
   );
 
-  const [copied, setCopied] = useState(false);
-  const [showQr, setShowQr] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
 
   const navigate = useNavigate();
@@ -54,7 +45,7 @@ function WalletView() {
     } catch (error) {
       console.error(
         "Error loading identity from WASM (not initialized?):",
-        error
+        error,
       );
       // If error (e.g. wasm not init), we assume no session.
       setStatus("Sessão não encontrada.");
@@ -122,14 +113,37 @@ function WalletView() {
         setStatus("Offline: Não foi possível buscar saldo.");
       }
 
+      // Attempt to extract nonces if available in session
+      let exposedNonce = "0";
+      let hiddenNonce = "0";
+
+      if (session instanceof Map) {
+        // Try getting nonce from map
+        const expMap = session.get("exposed");
+        const hidMap = session.get("hidden");
+        if (expMap && expMap.get("nonce") !== undefined)
+          exposedNonce = expMap.get("nonce").toString();
+        if (hidMap && hidMap.get("nonce") !== undefined)
+          hiddenNonce = hidMap.get("nonce").toString();
+      } else {
+        // Try getting nonce from object (Standard Object from serde_wasm_bindgen)
+        const sessAny = session as any;
+        if (sessAny.exposed?.nonce !== undefined)
+          exposedNonce = sessAny.exposed.nonce.toString();
+        if (sessAny.hidden?.nonce !== undefined)
+          hiddenNonce = sessAny.hidden.nonce.toString();
+      }
+
       // Set wallet with structured balances
       setWallet({
         exposed: {
           address: exposedAddr,
+          nonce: exposedNonce,
           balances: { BRL: exposedBalBRL, MOX: exposedBalMOX },
         },
         hidden: {
           address: hiddenAddr,
+          nonce: hiddenNonce,
           balances: { BRL: hiddenBalBRL, MOX: hiddenBalMOX },
         },
       });
@@ -159,7 +173,7 @@ function WalletView() {
         toAddress,
         BigInt(amount),
         password,
-        txMemo
+        txMemo,
       );
 
       console.log("Assinatura gerada (RAW):", result);
@@ -228,10 +242,49 @@ function WalletView() {
       setStatus("Enviando (gRPC)...");
 
       // 2. Submit to Ledger
-      const currentAddr =
-        activeProfile === "exposed"
-          ? wallet.exposed.address
-          : wallet.hidden.address;
+      // CRITICAL: Use the 'from' address that was ACTUALLY signed by the WASM module.
+      // Relying on 'wallet.exposed.address' or 'activeProfile' here is risky because
+      // the WASM internal state might be different (e.g. if switch_profile failed or desynced).
+      let currentAddr = "";
+      let nonceStr = "0";
+      let timestampStr = "0";
+
+      if (result instanceof Map) {
+        const transfer = result.get("transfer");
+        // Check if transaction is a Map or Object
+        const transaction =
+          transfer instanceof Map
+            ? transfer.get("transaction")
+            : transfer.transaction;
+
+        if (transaction instanceof Map) {
+          currentAddr = transaction.get("from");
+          nonceStr = transaction.get("nonce").toString();
+          timestampStr = transaction.get("timestamp").toString();
+        } else {
+          currentAddr = transaction.from;
+          nonceStr = transaction.nonce.toString();
+          timestampStr = transaction.timestamp.toString();
+        }
+      } else {
+        // Object structure
+        currentAddr = result.transfer.transaction.from;
+        nonceStr = result.transfer.transaction.nonce.toString();
+        timestampStr = result.transfer.transaction.timestamp.toString();
+      }
+
+      if (!currentAddr) {
+        // Fallback to state if something went wrong parsing (should not happen)
+        console.warn(
+          "Could not extract 'from' from signed result, falling back to activeProfile state.",
+        );
+        currentAddr =
+          activeProfile === "exposed"
+            ? wallet.exposed.address
+            : wallet.hidden.address;
+      }
+
+      console.log("Submitting Transaction FROM:", currentAddr);
 
       const txResponse = await ledgerClient.SubmitTransaction({
         from: currentAddr,
@@ -241,6 +294,8 @@ function WalletView() {
         memo: txMemo, // Use the SAME memo signed by WASM
         signature: signatureHex,
         public_key: publicKeyHex,
+        nonce: nonceStr,
+        timestamp: timestampStr,
       });
 
       console.log("Ledger Response:", txResponse);
@@ -283,83 +338,7 @@ function WalletView() {
     setShowQr(false); // Reset QR on switch
   };
 
-  const copyToClipboard = async (text: string) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-      setStatus("Erro ao copiar.");
-    }
-  };
-
-  const AddressSection = ({ type, data }: { type: string; data: any }) => (
-    <div className="space-y-4 animate-in fade-in duration-300">
-      <div className="flex flex-col items-center justify-center py-6 bg-secondary/20 rounded-2xl border border-border/50 space-y-2">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-1">
-          Saldo {type === "exposed" ? "Total" : "Oculto"}
-        </span>
-        <div className="flex flex-col items-center">
-          <h2 className="text-3xl font-bold tracking-tight">
-            {data?.balances?.BRL || "0"}{" "}
-            <span className="text-sm font-medium text-muted-foreground">
-              BRL
-            </span>
-          </h2>
-          <h2 className="text-xl font-bold tracking-tight text-muted-foreground/80">
-            {data?.balances?.MOX || "0"}{" "}
-            <span className="text-xs font-medium">MOX</span>
-          </h2>
-        </div>
-      </div>
-
-      <div className="bg-secondary/40 p-4 rounded-xl border border-border/50 space-y-3">
-        <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            Endereço {type === "exposed" ? "Público" : "Privado"}
-          </label>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => setShowQr(!showQr)}
-              title="Mostrar QR Code"
-            >
-              <QrCode className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => copyToClipboard(data?.address)}
-              title="Copiar endereço"
-            >
-              {copied ? (
-                <Check className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        <p className="text-xs font-mono break-all text-muted-foreground bg-background/50 p-2 rounded border border-border/20">
-          {data?.address || "N/A"}
-        </p>
-
-        {showQr && data?.address && (
-          <div className="flex justify-center pt-2 pb-1 animate-in zoom-in-50 duration-300">
-            <div className="p-3 bg-white rounded-xl shadow-sm">
-              <QRCode value={data.address} size={150} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // AddressSection moved to @/components/AddressSection.tsx
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground animate-in fade-in duration-500">
@@ -557,7 +536,7 @@ function WalletView() {
                               </p>
                               <p className="text-[10px] text-muted-foreground">
                                 {new Date(
-                                  Number(tx.timestamp)
+                                  Number(tx.timestamp),
                                 ).toLocaleString()}
                               </p>
                             </div>

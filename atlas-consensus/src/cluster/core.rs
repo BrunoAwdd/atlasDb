@@ -238,11 +238,14 @@ impl Cluster {
         0
     }
 
-    /// Helper to convert a Libp2p PeerId string into an Atlas Base58 Address.
+    /// Helper to convert a Libp2p PeerId string into an Atlas Bech32 Address.
     /// Assumes Ed25519 Identity Keys.
     fn node_id_to_address(&self, node_id_str: &str) -> Option<String> {
         // We use libp2p dependency to parse
         use std::str::FromStr;
+        use atlas_common::address::address::Address;
+        use ed25519_dalek::VerifyingKey;
+
         let peer_id = libp2p::PeerId::from_str(node_id_str).ok()?;
         let bytes = peer_id.to_bytes();
 
@@ -254,7 +257,10 @@ impl Cluster {
         // Total prefix: 6 bytes [0, 36, 8, 1, 18, 32]
         if bytes.len() == 38 && bytes.starts_with(&[0x00, 0x24, 0x08, 0x01, 0x12, 0x20]) {
              let pub_key_bytes = &bytes[6..];
-             return Some(bs58::encode(pub_key_bytes).into_string());
+             let verifying_key = VerifyingKey::from_bytes(pub_key_bytes.try_into().ok()?).ok()?;
+             
+             // Convert to Bech32 (nbex) which is what Ledger expects
+             return Address::address_from_pk(&verifying_key, "nbex").ok();
         }
 
         tracing::warn!("NodeId {} does not match expected Ed25519 Identity pattern.", node_id_str);
@@ -337,8 +343,20 @@ mod tests {
              let bytes = peer_id.to_bytes();
              if bytes.len() == 38 && bytes.starts_with(&[0x00, 0x24, 0x08, 0x01, 0x12, 0x20]) {
                  let pub_key_bytes = &bytes[6..];
-                 let addr = bs58::encode(pub_key_bytes).into_string();
-                 assert_eq!(addr, expected_addr);
+                 // Calculate expected Bech32
+                 use atlas_common::address::address::Address;
+                 use ed25519_dalek::VerifyingKey;
+                 let vk = VerifyingKey::from_bytes(pub_key_bytes.try_into().unwrap()).unwrap();
+                 let addr = Address::address_from_pk(&vk, "nbex").unwrap();
+                 
+                 // We don't hardcode "FV9..." anymore because that was Base58.
+                 // We assert that the function returns this calculated Bech32.
+                 let result = Cluster::new(atlas_common::env::runtime::AtlasEnv::mock(), atlas_common::utils::NodeId("test".to_string()), std::sync::Arc::new(tokio::sync::RwLock::new(atlas_common::auth::NoOpAuthenticator)))
+                    .node_id_to_address(node_id_str)
+                    .unwrap();
+                    
+                 assert_eq!(result, addr);
+                 assert!(result.starts_with("nbex"));
              } else {
                 panic!("Pattern match failed for known valid ID");
             }

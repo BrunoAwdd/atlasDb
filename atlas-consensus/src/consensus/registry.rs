@@ -116,6 +116,26 @@ impl VoteRegistry {
     // pub fn replace(&mut self, new_votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, Vote>>>) {
     //     self.votes = new_votes;
     // }
+
+    pub fn has_voted(&self, view: u64, phase: &ConsensusPhase, node: &NodeId) -> bool {
+        self.votes_by_view
+            .get(&view)
+            .and_then(|phases| phases.get(phase))
+            .map(|nodes| nodes.contains_key(node))
+            .unwrap_or(false)
+    }
+
+    pub fn get_vote_by_view(&self, view: u64, phase: &ConsensusPhase, node: &NodeId) -> Option<&VoteData> {
+        self.votes_by_view
+            .get(&view)
+            .and_then(|phases| phases.get(phase))
+            .and_then(|nodes| nodes.get(node))
+    }
+
+    /// Returns the highest view number observed in registered votes.
+    pub fn get_highest_view(&self) -> Option<u64> {
+        self.votes_by_view.keys().max().copied()
+    }
 }
 
 #[cfg(test)]

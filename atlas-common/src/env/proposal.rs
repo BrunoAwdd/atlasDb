@@ -44,6 +44,7 @@ pub struct Proposal {
 
     #[serde(with = "hex::serde")]
     pub signature: [u8; 64],
+    #[serde(with = "hex::serde")]
     pub public_key: Vec<u8>,
 }
     

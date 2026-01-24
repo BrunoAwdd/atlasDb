@@ -13,6 +13,8 @@ mod tests {
             to: "bob".to_string(),
             amount: 100,
             asset: "USD".to_string(),
+            nonce: 0,
+            timestamp: 123456789,
             memo: None,
         };
 
@@ -27,6 +29,8 @@ mod tests {
             to: "bob".to_string(),
             amount: 100,
             asset: "USD".to_string(),
+            nonce: 1,
+            timestamp: 123456789,
             memo: None,
         };
 
@@ -43,6 +47,8 @@ mod tests {
             to: "bob".to_string(),
             amount: 100,
             asset: "USD".to_string(),
+            nonce: 0,
+            timestamp: 123456789,
             memo: None,
         };
         assert!(service.check_compliance(&tx_fail).is_err());
@@ -52,6 +58,8 @@ mod tests {
             to: "bob".to_string(),
             amount: 100,
             asset: "USD".to_string(),
+            nonce: 1,
+            timestamp: 123456789,
             memo: None,
         };
         assert!(service.check_compliance(&tx_ok).is_ok());

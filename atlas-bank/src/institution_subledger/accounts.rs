@@ -51,6 +51,15 @@ impl Account {
     }
 
     pub fn is_valid(path: &str) -> bool {
+        // Allow numeric codes (1.1:Name)
+        if path.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            return true;
+        }
+        // Allow Blockchain Hashes (0x...)
+        if path.starts_with("0x") {
+            return true;
+        }
+
         let parts: Vec<&str> = path.split(':').collect();
         if parts.len() < 2 {
             return false;
@@ -59,6 +68,25 @@ impl Account {
     }
 
     pub fn account_type(&self) -> AccountType {
+        // Handle numeric codes
+        if let Some(first_char) = self.0.chars().next() {
+            if first_char.is_ascii_digit() {
+                return match first_char {
+                    '1' => AccountType::Asset,
+                    '2' => AccountType::Liability,
+                    '3' => AccountType::Equity,
+                    '4' => AccountType::Revenue, // Mapping Result to Revenue/Income generic
+                    '5' => AccountType::Expense, // Mapping Compensation/Expense generic
+                    _ => AccountType::Liability, // Default fallback
+                };
+            }
+        }
+        
+        // Handle Blockchain Hashes -> Liability (Customer Funds)
+        if self.0.starts_with("0x") {
+            return AccountType::Liability;
+        }
+
         let parts: Vec<&str> = self.0.split(':').collect();
         AccountType::from_str(parts[0]).unwrap() // Safe because of new() check
     }

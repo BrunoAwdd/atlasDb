@@ -5,4 +5,5 @@ pub mod storage;
 pub mod manager;
 pub mod proposal_manager;
 pub mod transaction_engine;
+pub mod schema;
 // pub mod transaction; // moved to atlas-common

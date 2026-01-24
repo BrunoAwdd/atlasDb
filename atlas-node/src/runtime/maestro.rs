@@ -148,7 +148,26 @@ impl<P: P2pPublisher + Clone + 'static> Maestro<P> {
                                     }
                                 }
                             },
-    
+
+                            AdapterEvent::Gossip { topic, data, from: _ } if topic == "atlas/proposal/v1" => {
+                                tracing::info!("📨 Received Proposal via Gossip");
+                                self.consensus.handle_proposal(data).await;
+                            },
+
+                            AdapterEvent::Gossip { topic, data, from: _ } if topic == "atlas/vote/v1" => {
+                                tracing::debug!("📨 Received Vote via Gossip");
+                                self.consensus.handle_vote(data).await;
+                            },
+
+                            AdapterEvent::Gossip { topic, data, from: _ } if topic == "atlas/evidence/v1" => {
+                                tracing::warn!("📨 Received Equivocation Evidence via Gossip");
+                                self.consensus.handle_evidence(data).await;
+                            },
+
+                            AdapterEvent::Gossip { topic, .. } => {
+                                tracing::debug!("Unhandled Gossip topic: {}", topic);
+                            },
+
                             _ => {}
                         }
                     } else {
@@ -202,8 +221,24 @@ impl<P: P2pPublisher + Clone + 'static> Maestro<P> {
                     // Gossip Pending Txs
                     self.block_producer.gossip_pending_txs().await;
 
-                    // Block Production
-                    self.block_producer.try_produce_block().await;
+                    // Block Production with Self-Voting
+                    if let Some(pid) = self.block_producer.try_produce_block().await {
+                         info!("🗳️ [Maestro] Leader Self-Voting for proposal {}", pid);
+                         // 1. Create Vote
+                         match self.cluster.create_vote(&pid, atlas_common::env::consensus::types::ConsensusPhase::Prepare).await {
+                             Ok(Some(vote)) => {
+                                 if let Ok(bytes) = bincode::serialize(&vote) {
+                                     // 2. Broadcast (Gossip)
+                                     self.p2p.publish("atlas/vote/v1", bytes.clone()).await.ok();
+                                     // 3. Loopback (Local Processing)
+                                     self.consensus.handle_vote(bytes).await;
+                                     info!("✅ [Maestro] Self-Vote processed successfully");
+                                 }
+                             },
+                             Ok(None) => tracing::warn!("⚠️ Failed to create self-vote (already voted or error)"),
+                             Err(e) => tracing::error!("❌ Error creating self-vote: {}", e),
+                         }
+                    }
                 }
             }
         }

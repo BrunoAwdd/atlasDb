@@ -33,7 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         amount: "500".into(),
         asset: "BRL".into(),
         memo: Some("Paying for lunch".into()),
-        signature: "sig_123".into(),
+        signature: "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into(),
+        public_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),
     });
 
     let response = client.submit_transaction(request).await?;

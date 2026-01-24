@@ -22,11 +22,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let from_addr = hex::encode(public_key); 
 
     // 2. Create Transaction
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let tx = Transaction {
         from: from_addr.clone(),
         to: "recipient_addr".to_string(),
         amount: 100,
         asset: "MEL".to_string(),
+        nonce: 1,
+        timestamp,
         memo: Some("Security Test".to_string()),
     };
 
@@ -45,6 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         memo: tx.memo.clone(),
         signature: hex::encode(signature_bytes),
         public_key: hex::encode(public_key),
+        nonce: 1,
+        timestamp,
     };
 
     let resp = client.submit_transaction(req).await;
@@ -64,6 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         memo: tx.memo.clone(),
         signature: hex::encode(bad_signature),
         public_key: hex::encode(public_key),
+        nonce: 1,
+        timestamp,
     };
 
     let resp_bad = client.submit_transaction(req_bad).await;

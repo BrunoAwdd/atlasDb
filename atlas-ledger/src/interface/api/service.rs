@@ -14,6 +14,7 @@ use ledger_proto::{
     GetStatementRequest, GetStatementResponse,
     ListTransactionsRequest, ListTransactionsResponse
 };
+use tracing::{info, warn, error};
 use std::sync::Arc;
 use crate::Ledger;
 use atlas_mempool::Mempool;
@@ -30,11 +31,11 @@ impl LedgerService for LedgerServiceImpl {
         request: Request<SubmitTransactionRequest>,
     ) -> Result<Response<SubmitTransactionResponse>, Status> {
         let req = request.into_inner();
-        println!("📝 [LedgerService] SubmitTransaction Request received from: {}", req.from);
+        info!("📝 [LedgerService] SubmitTransaction Request received from: {}", req.from);
         
         // validate inputs (basic)
         if req.amount.is_empty() {
-            println!("❌ [LedgerService] Amount empty");
+            warn!("❌ [LedgerService] Amount empty");
             return Ok(Response::new(SubmitTransactionResponse {
                 success: false,
                 tx_hash: "".to_string(),
@@ -49,18 +50,34 @@ impl LedgerService for LedgerServiceImpl {
             to: req.to,
             amount,
             asset: req.asset,
+            nonce: req.nonce,
+            timestamp: req.timestamp,
             memo: req.memo,
         };
 
         // --- Security Verification ---
         // 1. Decode inputs
-        let signature_bytes = hex::decode(&req.signature).map_err(|_| Status::invalid_argument("Invalid signature hex"))?;
-        let pk_bytes = hex::decode(&req.public_key).map_err(|_| Status::invalid_argument("Invalid public key hex"))?;
+        let signature_bytes = match hex::decode(&req.signature) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("❌ [LedgerService] Invalid Signature Hex: {}", e);
+                return Err(Status::invalid_argument("Invalid signature hex"));
+            }
+        };
+        let pk_bytes = match hex::decode(&req.public_key) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("❌ [LedgerService] Invalid Public Key Hex: {}", e);
+                return Err(Status::invalid_argument("Invalid public key hex"));
+            }
+        };
 
         if signature_bytes.len() != 64 {
+            warn!("❌ [LedgerService] Invalid Signature Length: {}", signature_bytes.len());
             return Err(Status::invalid_argument("Invalid signature length"));
         }
         if pk_bytes.len() != 32 {
+            warn!("❌ [LedgerService] Invalid Public Key Length: {}", pk_bytes.len());
             return Err(Status::invalid_argument("Invalid public key length"));
         }
 
@@ -77,7 +94,10 @@ impl LedgerService for LedgerServiceImpl {
         let msg = signing_bytes(&transaction);
         
         verifying_key.verify(&msg, &signature)
-            .map_err(|_| Status::unauthenticated("Invalid signature"))?;
+            .map_err(|_| {
+                warn!("❌ [LedgerService] Signature Verification Failed at Ingestion! From: {}", req.from);
+                Status::unauthenticated("Invalid signature")
+            })?;
 
         // 3. Create SignedTransaction
         let signed_tx = atlas_common::transactions::SignedTransaction {
@@ -94,7 +114,7 @@ impl LedgerService for LedgerServiceImpl {
         let hash = hex::encode(hasher.finalize());
 
         if self.ledger.exists_transaction(&hash).await.unwrap_or(false) {
-            println!("♻️ [LedgerService] Transaction already exists in Ledger: {}", hash);
+            info!("♻️ [LedgerService] Transaction already exists in Ledger: {}", hash);
             return Ok(Response::new(SubmitTransactionResponse {
                 success: true, // It is successful in the sense that it's processed (idempotent success)
                 tx_hash: hash,
@@ -104,8 +124,14 @@ impl LedgerService for LedgerServiceImpl {
 
         // Add to Mempool
         let new = match self.mempool.add(signed_tx) {
-            Ok(n) => n,
-            Err(e) => return Err(Status::invalid_argument(format!("Mempool validation failed: {}", e))),
+            Ok(n) => {
+                info!("✅ [LedgerService] Transaction added to mempool. New? {}", n);
+                n
+            },
+            Err(e) => {
+                 error!("❌ [LedgerService] Mempool Validation Failed: {}", e);
+                 return Err(Status::invalid_argument(format!("Mempool validation failed: {}", e)));
+            }
         };
 
         // TODO: Compute hash to return it

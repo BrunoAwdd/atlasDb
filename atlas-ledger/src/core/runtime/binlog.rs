@@ -24,6 +24,8 @@ impl Binlog {
              let metadata = fs::metadata(&file_path).await?;
              metadata.len()
         } else {
+             // Create the file explicitly to avoid "Not Found" warnings on read_all
+             File::create(&file_path).await?;
              0
         };
 

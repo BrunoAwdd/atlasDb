@@ -19,6 +19,10 @@ export interface SubmitTransactionRequest {
   /** crypto signature for authentication */
   signature: string;
   public_key: string;
+  /** u64 as string */
+  nonce: string;
+  /** u64 as string */
+  timestamp: string;
 }
 
 export interface SubmitTransactionResponse {
@@ -66,13 +70,15 @@ function createBaseSubmitTransactionRequest(): SubmitTransactionRequest {
     memo: undefined,
     signature: "",
     public_key: "",
+    nonce: "0",
+    timestamp: "0",
   };
 }
 
 export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
   encode(
     message: SubmitTransactionRequest,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     if (message.from !== "") {
       writer.uint32(10).string(message.from);
@@ -95,12 +101,18 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     if (message.public_key !== "") {
       writer.uint32(58).string(message.public_key);
     }
+    if (message.nonce !== "0") {
+      writer.uint32(64).uint64(message.nonce);
+    }
+    if (message.timestamp !== "0") {
+      writer.uint32(72).uint64(message.timestamp);
+    }
     return writer;
   },
 
   decode(
     input: BinaryReader | Uint8Array,
-    length?: number
+    length?: number,
   ): SubmitTransactionRequest {
     const reader =
       input instanceof BinaryReader ? input : new BinaryReader(input);
@@ -165,6 +177,22 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
           message.public_key = reader.string();
           continue;
         }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.nonce = reader.uint64().toString();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.timestamp = reader.uint64().toString();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -187,6 +215,10 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
       public_key: isSet(object.public_key)
         ? globalThis.String(object.public_key)
         : "",
+      nonce: isSet(object.nonce) ? globalThis.String(object.nonce) : "0",
+      timestamp: isSet(object.timestamp)
+        ? globalThis.String(object.timestamp)
+        : "0",
     };
   },
 
@@ -210,16 +242,25 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     if (message.signature !== "") {
       obj.signature = message.signature;
     }
+    if (message.public_key !== "") {
+      obj.public_key = message.public_key;
+    }
+    if (message.nonce !== "0") {
+      obj.nonce = message.nonce;
+    }
+    if (message.timestamp !== "0") {
+      obj.timestamp = message.timestamp;
+    }
     return obj;
   },
 
   create(
-    base?: DeepPartial<SubmitTransactionRequest>
+    base?: DeepPartial<SubmitTransactionRequest>,
   ): SubmitTransactionRequest {
     return SubmitTransactionRequest.fromPartial(base ?? {});
   },
   fromPartial(
-    object: DeepPartial<SubmitTransactionRequest>
+    object: DeepPartial<SubmitTransactionRequest>,
   ): SubmitTransactionRequest {
     const message = createBaseSubmitTransactionRequest();
     message.from = object.from ?? "";
@@ -228,6 +269,9 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     message.asset = object.asset ?? "";
     message.memo = object.memo ?? undefined;
     message.signature = object.signature ?? "";
+    message.public_key = object.public_key ?? "";
+    message.nonce = object.nonce ?? "0";
+    message.timestamp = object.timestamp ?? "0";
     return message;
   },
 };
@@ -240,7 +284,7 @@ export const SubmitTransactionResponse: MessageFns<SubmitTransactionResponse> =
   {
     encode(
       message: SubmitTransactionResponse,
-      writer: BinaryWriter = new BinaryWriter()
+      writer: BinaryWriter = new BinaryWriter(),
     ): BinaryWriter {
       if (message.success !== false) {
         writer.uint32(8).bool(message.success);
@@ -256,7 +300,7 @@ export const SubmitTransactionResponse: MessageFns<SubmitTransactionResponse> =
 
     decode(
       input: BinaryReader | Uint8Array,
-      length?: number
+      length?: number,
     ): SubmitTransactionResponse {
       const reader =
         input instanceof BinaryReader ? input : new BinaryReader(input);
@@ -325,12 +369,12 @@ export const SubmitTransactionResponse: MessageFns<SubmitTransactionResponse> =
     },
 
     create(
-      base?: DeepPartial<SubmitTransactionResponse>
+      base?: DeepPartial<SubmitTransactionResponse>,
     ): SubmitTransactionResponse {
       return SubmitTransactionResponse.fromPartial(base ?? {});
     },
     fromPartial(
-      object: DeepPartial<SubmitTransactionResponse>
+      object: DeepPartial<SubmitTransactionResponse>,
     ): SubmitTransactionResponse {
       const message = createBaseSubmitTransactionResponse();
       message.success = object.success ?? false;
@@ -347,7 +391,7 @@ function createBaseGetBalanceRequest(): GetBalanceRequest {
 export const GetBalanceRequest: MessageFns<GetBalanceRequest> = {
   encode(
     message: GetBalanceRequest,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(10).string(message.address);
@@ -427,7 +471,7 @@ function createBaseGetBalanceResponse(): GetBalanceResponse {
 export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
   encode(
     message: GetBalanceResponse,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     if (message.balance !== "") {
       writer.uint32(10).string(message.balance);
@@ -440,7 +484,7 @@ export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
 
   decode(
     input: BinaryReader | Uint8Array,
-    length?: number
+    length?: number,
   ): GetBalanceResponse {
     const reader =
       input instanceof BinaryReader ? input : new BinaryReader(input);
@@ -510,7 +554,7 @@ function createBaseGetStatementRequest(): GetStatementRequest {
 export const GetStatementRequest: MessageFns<GetStatementRequest> = {
   encode(
     message: GetStatementRequest,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(10).string(message.address);
@@ -523,7 +567,7 @@ export const GetStatementRequest: MessageFns<GetStatementRequest> = {
 
   decode(
     input: BinaryReader | Uint8Array,
-    length?: number
+    length?: number,
   ): GetStatementRequest {
     const reader =
       input instanceof BinaryReader ? input : new BinaryReader(input);
@@ -601,7 +645,7 @@ function createBaseTransactionRecord(): TransactionRecord {
 export const TransactionRecord: MessageFns<TransactionRecord> = {
   encode(
     message: TransactionRecord,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     if (message.txHash !== "") {
       writer.uint32(10).string(message.txHash);
@@ -763,7 +807,7 @@ function createBaseGetStatementResponse(): GetStatementResponse {
 export const GetStatementResponse: MessageFns<GetStatementResponse> = {
   encode(
     message: GetStatementResponse,
-    writer: BinaryWriter = new BinaryWriter()
+    writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     for (const v of message.transactions) {
       TransactionRecord.encode(v!, writer.uint32(10).fork()).join();
@@ -773,7 +817,7 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
 
   decode(
     input: BinaryReader | Uint8Array,
-    length?: number
+    length?: number,
   ): GetStatementResponse {
     const reader =
       input instanceof BinaryReader ? input : new BinaryReader(input);
@@ -788,7 +832,7 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
           }
 
           message.transactions.push(
-            TransactionRecord.decode(reader, reader.uint32())
+            TransactionRecord.decode(reader, reader.uint32()),
           );
           continue;
         }
@@ -813,7 +857,7 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
     const obj: any = {};
     if (message.transactions?.length) {
       obj.transactions = message.transactions.map((e) =>
-        TransactionRecord.toJSON(e)
+        TransactionRecord.toJSON(e),
       );
     }
     return obj;
@@ -832,7 +876,7 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
 
 export interface LedgerService {
   SubmitTransaction(
-    request: SubmitTransactionRequest
+    request: SubmitTransactionRequest,
   ): Promise<SubmitTransactionResponse>;
   GetBalance(request: GetBalanceRequest): Promise<GetBalanceResponse>;
   GetStatement(request: GetStatementRequest): Promise<GetStatementResponse>;
@@ -850,12 +894,12 @@ export class LedgerServiceClientImpl implements LedgerService {
     this.GetStatement = this.GetStatement.bind(this);
   }
   SubmitTransaction(
-    request: SubmitTransactionRequest
+    request: SubmitTransactionRequest,
   ): Promise<SubmitTransactionResponse> {
     const data = SubmitTransactionRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "SubmitTransaction", data);
     return promise.then((data) =>
-      SubmitTransactionResponse.decode(new BinaryReader(data))
+      SubmitTransactionResponse.decode(new BinaryReader(data)),
     );
   }
 
@@ -863,7 +907,7 @@ export class LedgerServiceClientImpl implements LedgerService {
     const data = GetBalanceRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "GetBalance", data);
     return promise.then((data) =>
-      GetBalanceResponse.decode(new BinaryReader(data))
+      GetBalanceResponse.decode(new BinaryReader(data)),
     );
   }
 
@@ -871,7 +915,7 @@ export class LedgerServiceClientImpl implements LedgerService {
     const data = GetStatementRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "GetStatement", data);
     return promise.then((data) =>
-      GetStatementResponse.decode(new BinaryReader(data))
+      GetStatementResponse.decode(new BinaryReader(data)),
     );
   }
 }
@@ -880,7 +924,7 @@ interface Rpc {
   request(
     service: string,
     method: string,
-    data: Uint8Array
+    data: Uint8Array,
   ): Promise<Uint8Array>;
 }
 
@@ -896,12 +940,12 @@ type Builtin =
 export type DeepPartial<T> = T extends Builtin
   ? T
   : T extends globalThis.Array<infer U>
-  ? globalThis.Array<DeepPartial<U>>
-  : T extends ReadonlyArray<infer U>
-  ? ReadonlyArray<DeepPartial<U>>
-  : T extends {}
-  ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : Partial<T>;
+    ? globalThis.Array<DeepPartial<U>>
+    : T extends ReadonlyArray<infer U>
+      ? ReadonlyArray<DeepPartial<U>>
+      : T extends {}
+        ? { [K in keyof T]?: DeepPartial<T[K]> }
+        : Partial<T>;
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;

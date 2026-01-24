@@ -9,14 +9,15 @@ pub struct Mempool {
     // Using RwLock for thread-safe access
     // Key is TxHash, Value is SignedTransaction
     transactions: Arc<RwLock<HashMap<String, SignedTransaction>>>,
-    pending: Arc<RwLock<std::collections::HashSet<String>>>,
+    // Store timestamp (u64) of when it was marked pending
+    pending: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl Mempool {
     pub fn new() -> Self {
         Self {
             transactions: Arc::new(RwLock::new(HashMap::new())),
-            pending: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            pending: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -24,9 +25,7 @@ impl Mempool {
     /// Returns Ok(true) if added, Ok(false) if duplicate, Err if invalid signature.
     pub fn add(&self, tx: SignedTransaction) -> Result<bool, String> {
         // 1. Verify Stateless (Signature, Address Derivation, Formats)
-        // This ensures no garbage or spoofed addresses enter the mempool.
         tx.validate_stateless()?;
-
 
         // 2. Add to Pool
         let tx_hash = self.hash_signed_tx(&tx);
@@ -42,8 +41,9 @@ impl Mempool {
     /// They remain in the pool (to prevent duplicates) but are ignored by get_candidates.
     pub fn mark_pending(&self, tx_hashes: &[String]) {
         let mut pending = self.pending.write().unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         for hash in tx_hashes {
-            pending.insert(hash.clone());
+            pending.insert(hash.clone(), now);
         }
     }
 
@@ -54,8 +54,20 @@ impl Mempool {
         }
     }
 
+    /// Releases transactions that have been pending for too long (e.g., failed proposals).
+    /// allow_time_sec: seconds before considering it "stuck" (e.g. 20s)
+    pub fn cleanup_pending(&self, allow_time_sec: u64) -> usize {
+        let mut pending = self.pending.write().unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        
+        let initial_len = pending.len();
+        pending.retain(|_, &mut ts| now < ts + allow_time_sec);
+        initial_len - pending.len()
+    }
+
     /// Removes a list of transactions (e.g., after they are included in a block).
     pub fn remove_batch(&self, tx_hashes: &[String]) {
+        println!("Removing {} transactions from mempool", tx_hashes.len());
         let mut pool = self.transactions.write().unwrap();
         let mut pending = self.pending.write().unwrap();
         for hash in tx_hashes {
@@ -70,7 +82,7 @@ impl Mempool {
         let pool = self.transactions.read().unwrap();
         let pending = self.pending.read().unwrap();
         pool.iter()
-            .filter(|(k, _)| !pending.contains(*k))
+            .filter(|(k, _)| !pending.contains_key(*k))
             .take(n)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
@@ -84,6 +96,10 @@ impl Mempool {
     pub fn len(&self) -> usize {
         let pool = self.transactions.read().unwrap();
         pool.len()
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.pending.read().unwrap().len()
     }
 
     pub fn is_empty(&self) -> bool {

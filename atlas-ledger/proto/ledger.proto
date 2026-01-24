@@ -17,6 +17,8 @@ message SubmitTransactionRequest {
   optional string memo = 5;
   string signature = 6; // crypto signature for authentication
   string public_key = 7; // public key of the signer
+  uint64 nonce = 8;
+  uint64 timestamp = 9;
 }
 
 message SubmitTransactionResponse {

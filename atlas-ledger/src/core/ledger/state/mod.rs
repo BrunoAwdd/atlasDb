@@ -125,10 +125,15 @@ impl State {
 
     /// Applies a LedgerEntry to the state.
     /// Validates that Debits == Credits for each asset.
+    /// Applies a LedgerEntry to the state atomically.
+    /// Follows a Two-Phase Commit strategy:
+    /// Phase 1: Simulate & Validate (Double-Entry + Balances)
+    /// Phase 2: Apply Changes (Memory Mutation)
     pub fn apply_entry(&mut self, entry: LedgerEntry) -> Result<(), String> {
-        // 1. Validate Double-Entry Rule (Debits == Credits)
+        // --- PHASE 1: Validation (ReadOnly) ---
+        
+        // 1.1 Validate Double-Entry Rule (Debits == Credits)
         let mut asset_totals: HashMap<String, i128> = HashMap::new();
-
         for leg in &entry.legs {
             let amount = leg.amount as i128;
             let entry = asset_totals.entry(leg.asset.clone()).or_insert(0);
@@ -137,29 +142,47 @@ impl State {
                 LegKind::Credit => *entry += amount,
             }
         }
-
         for (asset, total) in asset_totals {
             if total != 0 {
-                return Err(format!("Unbalanced entry for asset {}: net {}", asset, total));
+                return Err(format!("Accounting Error: Unbalanced entry for asset {}: net {}", asset, total));
             }
         }
 
-        // 2. Apply changes
+        // 1.2 Validate Balances (Simulation)
+        // We must check if accounts have enough funds for Debits WITHOUT modifying state yet.
+        for leg in &entry.legs {
+            if let LegKind::Debit = leg.kind {
+                // Peek account
+                let balance = if let Some(account) = self.accounts.get(&leg.account) {
+                    *account.balances.get(&leg.asset).unwrap_or(&0)
+                } else {
+                    0 // Account doesn't exist -> Balance 0
+                };
+
+                if balance < leg.amount {
+                    return Err(format!("Insufficient funds for account {} asset {} (Required: {}, Available: {})", 
+                        leg.account, leg.asset, leg.amount, balance));
+                }
+            }
+        }
+
+        // --- PHASE 2: Execution (Mutation) ---
+        // At this point, all checks passed. We can safely mutate.
+        // This phase SHOULD NOT fail via Result (logic errors only).
+
         for leg in entry.legs {
             let account = self.accounts.entry(leg.account.clone()).or_insert_with(AccountState::new);
             
             let balance = account.balances.entry(leg.asset.clone()).or_insert(0);
             match leg.kind {
-                LegKind::Debit => {
-                    if *balance < leg.amount {
-                        return Err(format!("Insufficient funds for account {} asset {}", leg.account, leg.asset));
-                    }
-                    *balance -= leg.amount;
-                },
+                LegKind::Debit => *balance -= leg.amount,
                 LegKind::Credit => *balance += leg.amount,
             }
             
+            // Update Headers
             account.last_entry_id = Some(entry.entry_id.clone());
+            account.last_transaction_hash = Some(entry.tx_hash.clone()); // Update AEC Pointer
+            account.nonce += 1;
         }
 
         Ok(())
@@ -181,5 +204,89 @@ impl State {
             }
             hasher.finalize().to_vec()
         }).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_common::entry::{Leg, LegKind, LedgerEntry};
+
+    #[test]
+    fn test_atomic_commit_reverts_on_failure() {
+        let mut state = State::new();
+        // Setup: Give Alice 100
+        state.accounts.entry("Alice".to_string()).or_insert_with(AccountState::new)
+            .balances.insert("USD".to_string(), 100);
+
+        // Transaction: Alice -> Bob 150 (Should fail due to insufficient funds)
+        // Leg 1: Debit Alice 150 (Fails Phase 1)
+        // Leg 2: Credit Bob 150
+        let legs = vec![
+            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 150 },
+            Leg { account: "Bob".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 150 },
+        ];
+        let entry = LedgerEntry::new("tx1".to_string(), legs, "hash1".to_string(), 0, 0, None);
+
+        let result = state.apply_entry(entry);
+        assert!(result.is_err());
+        
+        // ASSERT ATOMICITY: Alice should still have 100, NOT -50 or 100 but Bob having 150.
+        // And Bob should not exist or have 0.
+        let alice_bal = *state.accounts.get("Alice").unwrap().balances.get("USD").unwrap();
+        assert_eq!(alice_bal, 100); 
+        assert!(state.accounts.get("Bob").is_none());
+    }
+
+    #[test]
+    fn test_double_entry_enforcement() {
+        let mut state = State::new();
+        // Transaction: Mint 100 USD to Alice but forget to credit liability (Unbalanced)
+        let legs = vec![
+            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 100 },
+        ];
+        let entry = LedgerEntry::new("tx2".to_string(), legs, "hash2".to_string(), 0, 0, None);
+
+        let result = state.apply_entry(entry);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Unbalanced"));
+    }
+
+    #[test]
+    fn test_aec_chaining_pointers_update() {
+        let mut state = State::new();
+        
+        // Tx 1: Equity -> Alice 100
+        let legs = vec![
+            Leg { account: "Equity".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 100 },
+            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 100 },
+        ];
+        // Hack: Manually fund Equity for the test or disable balance check for Equity? 
+        // Our Phase 1 checks balance. So let's fund Equity first.
+        state.accounts.entry("Equity".to_string()).or_insert_with(AccountState::new)
+            .balances.insert("USD".to_string(), 1000);
+
+        let entry1 = LedgerEntry::new("tx1".to_string(), legs, "params_hash_1".to_string(), 0, 0, None);
+        state.apply_entry(entry1).unwrap();
+
+        // Verify Alice Pointer
+        let alice = state.accounts.get("Alice").unwrap();
+        assert_eq!(alice.last_transaction_hash, Some("params_hash_1".to_string()));
+
+        // Tx 2: Alice -> Bob 50
+        let legs2 = vec![
+            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 50 },
+            Leg { account: "Bob".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 50 },
+        ];
+        let entry2 = LedgerEntry::new("tx2".to_string(), legs2, "params_hash_2".to_string(), 0, 0, None);
+        state.apply_entry(entry2).unwrap();
+
+        // Verify Alice Pointer Moved
+        let alice_v2 = state.accounts.get("Alice").unwrap();
+        assert_eq!(alice_v2.last_transaction_hash, Some("params_hash_2".to_string()));
+        
+        // Verify Bob Pointer Created
+        let bob = state.accounts.get("Bob").unwrap();
+        assert_eq!(bob.last_transaction_hash, Some("params_hash_2".to_string()));
     }
 }

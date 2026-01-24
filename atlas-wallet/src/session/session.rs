@@ -27,6 +27,10 @@ impl Session {
     }
 
     pub fn switch_profile(&mut self) -> Result<&dyn ProfileType, IdentityError> {
+        // CRITICAL: Clear any cached keys from the previous profile!
+        // Otherwise, we might sign a transaction for the NEW profile using the OLD profile's key.
+        self.clear_sensitive();
+
         let profile_id = self.profile.id();
 
         match profile_id {
@@ -66,6 +70,8 @@ impl Session {
         if self.profile.address().as_str() == to_address {            
             return Err(NimbleError::from("Same address transaction not allowed"));
         }
+        let timestamp = atlas_common::utils::time::current_time();
+
         // Create Transaction struct exactly as Ledger expects for verification
         // Ledger uses atlas_common::transaction::Transaction
         let transaction = atlas_common::transactions::Transaction {
@@ -73,6 +79,8 @@ impl Session {
             to: to_address.clone(),
             amount: amount as u128, // Ledger uses u128
             asset: "BRL".to_string(), // Hardcoded as per frontend logic, ideally param
+            nonce,
+            timestamp, // Use captured timestamp
             memo: memo.clone(),
         };
 
@@ -82,7 +90,10 @@ impl Session {
         self.unlock_key(password)?;
         let signature = self.sign_message(&msg)?;
         
-        let payload = TransferPayload::new(&self.profile.address().as_str(), to_address.clone(), amount, nonce);
+        // We don't strictly need TransferPayload here anymore for the request construction
+        // since we are passing fields directly to build_signed_request.
+        // But if needed for other logic, we could create it.
+        // The important part is returning the SAME timestamp.
 
         let request = TransferRequest::build_signed_request(
             self.profile.address().as_str().to_string(),
@@ -90,7 +101,7 @@ impl Session {
             amount,
             signature,
             memo,
-            payload.timestamp,
+            timestamp, // Use SAME captured timestamp
             nonce,
         )?;
 

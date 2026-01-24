@@ -17,6 +17,7 @@ pub enum TypedAddress {
     Exposed(ExposedAddress),
 }
 
+
 impl TryFrom<&str> for TypedAddress {
     type Error = AddressError;
 
@@ -69,6 +70,7 @@ impl TryFrom<String> for TypedAddress {
         }
     }
 }
+
 
 impl std::ops::Deref for Address {
     type Target = str;
@@ -128,28 +130,13 @@ impl Address {
     }
 
     /// Converts a `VerifyingKey` into a bech32m-encoded address with the "nimble" prefix.
-    ///
-    /// The conversion involves:
-    /// - Converting the 32-byte public key into 5-bit chunks (base32 compatible).
-    /// - Encoding the result with the bech32m variant.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the conversion to 5-bit or the final encoding fails.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// let address = address_from_pk(&public_key);
-    /// assert!(address.starts_with("nimble1"));
-    /// ```
     pub fn address_from_pk(public_key: &VerifyingKey, prefix: &str) -> Result<String, AddressError> {
         let bytes = public_key.to_bytes();
 
         let five_bit: Vec<u5> = convert_bits(&bytes, 8, 5, true)
             .map_err(AddressError::BitConversionFailed)?
             .into_iter()
-            .map(|b| u5::try_from_u8(b).unwrap()) // `unwrap()` aqui ainda é seguro porque `convert_bits` garante que o valor é válido
+            .map(|b| u5::try_from_u8(b).unwrap())
             .collect();
 
         encode(prefix, five_bit, Variant::Bech32m)
