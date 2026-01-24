@@ -19,7 +19,6 @@ pub(super) fn sing_transfer(
     wallet: &mut Wallet,
     to_address: String,
     amount: u64,
-    password: String,
     memo: Option<String>,
 ) -> Result<(String, TransferRequest, Vec<u8>), String> {
     let session = wallet.session.as_mut().ok_or_else(|| "Sessão não carregada".to_string())?;
@@ -29,7 +28,6 @@ pub(super) fn sing_transfer(
     let request = session.create_signed_transfer(
         to_address,
         amount,
-        password,
         memo,
         nonce,
     ).map_err(|e| format!("Erro ao criar transferência: {:?}", e))?;
@@ -46,13 +44,11 @@ pub(super) fn sing_transfer(
     Ok((id, request, public_key))
 }
 
-pub(super) fn sign_message(wallet: &mut Wallet, message: Vec<u8>, password: String) -> Result<String, String> {
+pub(super) fn sign_message(wallet: &mut Wallet, message: Vec<u8>) -> Result<String, String> {
     let session = wallet.session.as_mut().ok_or_else(|| "Sessão não carregada".to_string())?;
     let slice: &[u8] = &message;
 
-    session.unlock_key(password)
-        .map_err(|e| format!("Erro ao desbloquear sessão: {:?}", e))?;
-
+    // session is already unlocked
     let signature = session
         .sign_message(slice)
         .map_err(|e| format!("Erro ao assinar: {:?}", e))?;

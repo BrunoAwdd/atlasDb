@@ -31,14 +31,13 @@ impl Wallet {
         &mut self,
         to_address: String,
         amount: u64,
-        password: String,
         memo: Option<String>,
     ) -> Result<(String, TransferRequest, Vec<u8>), String> {
-        actions::sing_transfer(self, to_address, amount, password, memo)
+        actions::sing_transfer(self, to_address, amount, memo)
     }
 
-    pub fn sign_message(&mut self, message: Vec<u8>, password: String) -> Result<String, String> {
-        actions::sign_message(self, message, password)
+    pub fn sign_message(&mut self, message: Vec<u8>) -> Result<String, String> {
+        actions::sign_message(self, message)
     }
 
     pub fn switch_profile(&mut self) -> Result<(), String> {

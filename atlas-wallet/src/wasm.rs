@@ -57,12 +57,11 @@ pub fn get_data() -> Result<JsValue, JsValue> {
 pub fn sing_transfer(
     to_address: String,
     amount: u64,
-    password: String,
     memo: Option<String>,
 ) -> Result<JsValue, JsValue> {
     WALLET.with(|wallet| {
         let mut w = wallet.borrow_mut();
-        let (id, request, public_key) = w.sing_transfer(to_address, amount, password, memo)?;
+        let (id, request, public_key) = w.sing_transfer(to_address, amount, memo)?;
 
         let payload = serde_json::json!({
             "id": id,

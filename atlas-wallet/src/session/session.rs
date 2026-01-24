@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::errors::NimbleError;
 use crate::identity::errors::IdentityError;
 use crate::identity::identity::{Identity, IdentityBundle};
@@ -9,28 +10,37 @@ use atlas_common::transactions::{payload::TransferPayload, TransferRequest};
 pub struct Session {
     pub identity: Identity,
     pub profile: Profile,
-    verifying_key: Option<ed25519_dalek::VerifyingKey>,
+    // verifying_key: Option<ed25519_dalek::VerifyingKey>, // Not strictly needed if we have SigningKey, but useful for validation
     signing_key: Option<ed25519_dalek::SigningKey>,
-    unlocked_at: Option<u64>
+    secrets: HashMap<String, SigningKey>, // Cache keys: "exposed" -> Key, "hidden" -> Key
 }
 
 impl Session {
     /// Cria uma nova sessão com um Profile e Identity carregados
-    pub fn new(identity: Identity) -> Result<Self, NimbleError> {
+    pub fn new(identity: Identity, secrets: HashMap<String, SigningKey>) -> Result<Self, NimbleError> {
         let profile = Profile::Exposed(identity.clone().exposed);
-        Ok(Self { identity, profile, verifying_key: None, signing_key: None, unlocked_at: None })
+        // Set initial signing key for exposed profile
+        let signing_key = secrets.get("exposed").cloned();
+        
+        Ok(Self { identity, profile, signing_key, secrets })
     }
 
     pub fn from_bundle(bundle: IdentityBundle) -> Result<Self, NimbleError> {
-        let session = Self::new(bundle.identity)?;
+        let mut secrets = HashMap::new();
+        
+        let sk_exposed = SigningKey::from_bytes(&bundle.sk_exposed);
+        let sk_hidden = SigningKey::from_bytes(&bundle.sk_hidden);
+        
+        secrets.insert("exposed".to_string(), sk_exposed);
+        secrets.insert("hidden".to_string(), sk_hidden);
+
+        let session = Self::new(bundle.identity, secrets)?;
         Ok(session)
     }
 
     pub fn switch_profile(&mut self) -> Result<&dyn ProfileType, IdentityError> {
-        // CRITICAL: Clear any cached keys from the previous profile!
-        // Otherwise, we might sign a transaction for the NEW profile using the OLD profile's key.
-        self.clear_sensitive();
-
+        // No need to clear sensitive data as we are intentionally keeping it in memory
+        
         let profile_id = self.profile.id();
 
         match profile_id {
@@ -44,17 +54,21 @@ impl Session {
                 return Err(IdentityError::ProfileNotFound(profile_id.to_string()));
             }
         }
+        
+        // Update active signing key based on new profile
+        let new_id = self.profile.id();
+        self.signing_key = self.secrets.get(new_id).cloned();
 
-    Ok(match &self.profile {
-        Profile::Hidden(p) => p,
-        Profile::Exposed(p) => p,
-    })
-}
-    /// Exemplo de função para assinar uma mensagem
+        Ok(match &self.profile {
+            Profile::Hidden(p) => p,
+            Profile::Exposed(p) => p,
+        })
+    }
+
     pub fn sign_message(&self, message: &[u8]) -> Result<[u8;64], NimbleError> {
         let secret = self.signing_key
             .clone()
-            .ok_or_else(|| NimbleError::from("Session not unlocked"))?;
+            .ok_or_else(|| NimbleError::from("Session key not available (should be loaded)"))?;
         let sig = self.profile.sign(secret, message)?;
         Ok(sig)
     }
@@ -63,7 +77,6 @@ impl Session {
         &mut self,
         to_address: String,
         amount: u64,
-        password: String,
         memo: Option<String>,
         nonce: u64,
     ) -> Result<TransferRequest, NimbleError> {
@@ -73,109 +86,80 @@ impl Session {
         let timestamp = atlas_common::utils::time::current_time();
 
         // Create Transaction struct exactly as Ledger expects for verification
-        // Ledger uses atlas_common::transaction::Transaction
         let transaction = atlas_common::transactions::Transaction {
             from: self.profile.address().as_str().to_string(),
             to: to_address.clone(),
-            amount: amount as u128, // Ledger uses u128
-            asset: "BRL".to_string(), // Hardcoded as per frontend logic, ideally param
+            amount: amount as u128,
+            asset: "BRL".to_string(),
             nonce,
-            timestamp, // Use captured timestamp
+            timestamp,
             memo: memo.clone(),
         };
 
         // Use the same signing bytes logic as Ledger: bincode::serialize(&transaction)
         let msg = atlas_common::transactions::signing_bytes(&transaction);
 
-        self.unlock_key(password)?;
+        // No unlock_key needed, key should be in self.signing_key
         let signature = self.sign_message(&msg)?;
         
-        // We don't strictly need TransferPayload here anymore for the request construction
-        // since we are passing fields directly to build_signed_request.
-        // But if needed for other logic, we could create it.
-        // The important part is returning the SAME timestamp.
-
         let request = TransferRequest::build_signed_request(
             self.profile.address().as_str().to_string(),
             to_address,
             amount,
             signature,
             memo,
-            timestamp, // Use SAME captured timestamp
+            timestamp,
             nonce,
         )?;
 
         Ok(request)
     }
 
-    fn set_signing_key(&mut self, secret: SigningKey) {
-        self.verifying_key = Some(ed25519_dalek::VerifyingKey::from(&secret));
-        self.signing_key = Some(secret);
-        // Expiration in 10 minutes (600 seconds)
-        let now = atlas_common::utils::time::current_time();
-        self.unlocked_at = Some(now + 600);
-    }
-
-    fn is_expired(&self) -> bool {
-        match self.unlocked_at {
-            Some(expiration_time) => {
-                 let now = atlas_common::utils::time::current_time();
-                 now > expiration_time
-            },
-            None => true,
+    // validate_transfer and validate_message can reconstruct verifying key from signing key or use profile public key
+    // For now, let's remove strict Session expiration and just use profile methods.
+    // Profile has validate_transfer methods but they need verifying key.
+    // We can get verifying key from signing key if present, or from profile data?
+    // Profile struct usually holds public key.
+    
+    // Let's implement helper to get verifying key always
+    fn get_verifying_key(&self) -> Result<ed25519_dalek::VerifyingKey, NimbleError> {
+        if let Some(sk) = &self.signing_key {
+            return Ok(ed25519_dalek::VerifyingKey::from(sk));
         }
-    }
-
-    pub fn unlock_key(&mut self, password: String) -> Result<(), NimbleError>  {
-        let secret = if self.is_expired() {
-            self.profile.get_signing_key(password)?
-        } else {
-            self.signing_key
-                .clone()
-                .ok_or_else(|| NimbleError::from("Session not unlocked"))?
-        };
-        
-        self.set_signing_key(secret);
-
-        Ok(())
+        // Fallback to profile public key if we want, but for Session intended use (signing), we need SK.
+        // For validation only, we might use profile PK.
+        // Let's try to use SigningKey since we expect it to be there.
+        Err(NimbleError::from("Signing key not available"))
     }
 
     pub fn validate_transfer(&self, transfer: TransferRequest) -> Result<(), NimbleError> {
-        if self.is_expired() {
-            return Err(NimbleError::from("Session expired"));
-        }
-
-        self.profile.validate_transfer(transfer, self.verifying_key.clone().ok_or_else(|| NimbleError::from("Session not unlocked"))?)?;
-        
+        let vk = self.get_verifying_key()?;
+        self.profile.validate_transfer(transfer, vk)?;
         Ok(())
     }
 
     pub fn validate_message(&self, msg: Vec<u8>, signature: &[u8; 64]) -> Result<(), NimbleError> {
-        if self.is_expired() {
-            return Err(NimbleError::from("Session expired"));
-        }
-        
-        self.profile.validate_message(msg, signature, self.verifying_key.clone().ok_or_else(|| NimbleError::from("Session not unlocked"))?)?;
-
+        let vk = self.get_verifying_key()?;
+        self.profile.validate_message(msg, signature, vk)?;
         Ok(())
     }
 
     pub fn clear_sensitive(&mut self) {
-        self.signing_key = None; // Zeroizing garante limpeza
-        self.unlocked_at = None;
+        // If we want to really clear, we clear the secrets map.
+        self.signing_key = None;
+        self.secrets.clear();
     }
 
     pub fn get_public_key(&self) -> Option<Vec<u8>> {
-        self.verifying_key.map(|vk| vk.as_bytes().to_vec())
+         self.signing_key.as_ref().map(|sk| ed25519_dalek::VerifyingKey::from(sk).as_bytes().to_vec())
     }
     
-    /// Limpa os dados da sessão (para segurança)
     pub fn clear(&mut self) {
         self.profile.zeroize();
-        // Adicione zeroization no Identity também, se quiser
+        self.clear_sensitive();
     }
 }
-
+// Tests need update too
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,7 +170,7 @@ mod tests {
         let password = "test-password".to_string();
         let bundle = generate(&seed, password.clone()).unwrap();
 
-        let session = Session::new(bundle.identity).unwrap();
+        let session = Session::from_bundle(bundle).unwrap();
         session
     }
 
@@ -196,6 +180,8 @@ mod tests {
         assert_eq!(session.profile.id(), "exposed");
         assert!(session.identity.exposed.is_public());
         assert!(!session.identity.hidden.is_public());
+        // Should hold keys
+        assert!(session.signing_key.is_some());
     }
     
     #[test]
@@ -204,18 +190,20 @@ mod tests {
         session.switch_profile().unwrap();
         assert_eq!(session.profile.id(), "hidden");
         assert_ne!(session.profile.id(), "exposed");
+        // Should still hold keys (switched)
+        assert!(session.signing_key.is_some());
     }
 
     #[test]
     fn test_session_sign_message() {
-        let mut session = create_test_session();
+        let session = create_test_session();
         let message = b"hello nimble";
 
-        session.unlock_key("test-password".to_string()).unwrap();
+        // No need to unlock
         let signature = session.sign_message(message)
             .expect("Signing should succeed");
 
-        assert_eq!(signature.len(), 64); // ed25519 signatures são sempre 64 bytes
+        assert_eq!(signature.len(), 64);
     }
 
     #[test]
@@ -226,5 +214,7 @@ mod tests {
 
         // Verifica que campos sensíveis foram zerados
         assert!(session.profile.is_cleared(), "Profile should be cleared");
+        assert!(session.secrets.is_empty(), "Secrets should be cleared");
+        assert!(session.signing_key.is_none(), "Signing key should be cleared");
     }
 }
