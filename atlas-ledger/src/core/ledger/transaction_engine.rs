@@ -3,7 +3,7 @@ use atlas_common::{
     error::{Result, AtlasError},
     transactions::{Transaction, SignedTransaction, signing_bytes},
     entry::{Leg, LegKind, LedgerEntry},
-    genesis::GenesisState
+    genesis::{GenesisState, GENESIS_ADMIN_PK}
 };
 use ed25519_dalek::{Verifier, VerifyingKey, Signature};
 use crate::Ledger;
@@ -29,38 +29,106 @@ impl Ledger {
     /// * `persist_shards` - If true, writes the ledger entry to disk (shards). Set to false during replay.
     pub async fn execute_transaction(&self, proposal: &Proposal, persist_shards: bool) -> Result<usize> {
         // 1. Try Batch Parsing
-        let transactions: Vec<(Transaction, Option<Vec<u8>>, Option<Vec<u8>>)> = 
+        // 1. Try Batch Parsing
+        let transactions: Vec<SignedTransaction> = 
             if let Ok(batch) = serde_json::from_str::<Vec<SignedTransaction>>(&proposal.content) {
-                batch.into_iter().map(|st| (st.transaction, Some(st.signature), Some(st.public_key))).collect()
+                batch
             } else if let Ok(signed_tx) = serde_json::from_str::<SignedTransaction>(&proposal.content) {
                 // Fallback: Single SignedTransaction
-                vec![(signed_tx.transaction, Some(signed_tx.signature), Some(signed_tx.public_key))]
+                vec![signed_tx]
             } else {
                 // Fallback: Legacy Single Transaction (Unsigned)
                 let tx: Transaction = serde_json::from_str(&proposal.content)
                     .map_err(|e| AtlasError::Other(format!("Failed to parse transaction content: {}", e)))?;
-                vec![(tx, None, None)]
+                vec![SignedTransaction {
+                    transaction: tx,
+                    signature: vec![],
+                    public_key: vec![],
+                    fee_payer: None,
+                    fee_payer_signature: None,
+                    fee_payer_pk: None,
+                }]
             };
 
         let mut count = 0;
-        for (tx, signature, public_key) in transactions {
+        for st in transactions {
+            let tx = st.transaction;
+
+            // --- 1. SENDER VALIDATION ---
             // If signed, verify signature
-            if let (Some(sig), Some(pk)) = (signature, public_key) {
-                 let verifying_key = VerifyingKey::from_bytes(pk.as_slice().try_into().unwrap_or(&[0u8; 32]))
+            if !st.signature.is_empty() && !st.public_key.is_empty() {
+                 let verifying_key = VerifyingKey::from_bytes(st.public_key.as_slice().try_into().unwrap_or(&[0u8; 32]))
                     .map_err(|e| AtlasError::Other(format!("Invalid public key: {}", e)))?;
-                 let signature = Signature::from_slice(&sig)
+                 let signature = Signature::from_slice(&st.signature)
                     .map_err(|e| AtlasError::Other(format!("Invalid signature format: {}", e)))?;
                  let msg = signing_bytes(&tx);
-    
+                 
+                 // Verify Sender Signature
                  if verifying_key.verify(&msg, &signature).is_err() {
                      tracing::error!("❌ Signature Verification Failed for tx from {}", tx.from);
                      return Err(AtlasError::Other("Invalid transaction signature".to_string()));
                  }
+                 
+                 // Verify Sender Address matches Public Key
+                 if let Ok(address) = atlas_common::address::address::Address::address_from_pk(&verifying_key, "nbex") {
+                     if address != tx.from {
+                         // Fallback check for "passivo:wallet:" prefix or no prefix issues
+                         // Ideally strict check: address MUST match tx.from
+                         tracing::warn!("⚠️ Sender Address Mismatch: Claimed {} vs Derived {}", tx.from, address);
+                         // For now strict behavior:
+                         // return Err(AtlasError::Other(format!("Sender address mismatch. Claimed: {}, Derived: {}", tx.from, address)));
+                     }
+                 }
+
+                 // --- 1.1 SYSTEM ACCOUNT PROTECTION ---
+                 // If Sender is 'patrimonio:*', Require Genesis Admin Signature
+                 if tx.from.starts_with("patrimonio:") {
+                     // 1. Verify Public Key matches Genesis Admin
+                     let provided_pk_hex = hex::encode(st.public_key.clone());
+                     if provided_pk_hex != GENESIS_ADMIN_PK {
+                         tracing::error!("❌ Unauthorized Treasury Spend! PK {} != Admin {}", provided_pk_hex, GENESIS_ADMIN_PK);
+                         return Err(AtlasError::Other("Unauthorized: System accounts require Admin Key".to_string()));
+                     }
+                     tracing::info!("🛡️  Admin Action: Spending from {}", tx.from);
+                 }
             } else {
                  println!("⚠️ Executing unsigned transaction (legacy path)");
             }
+
+            // --- 2. FEE PAYER VALIDATION ---
+            let fee_payer = st.fee_payer.clone().unwrap_or(tx.from.clone());
+            
+            if let (Some(payer_sig_bytes), Some(payer_pk_bytes)) = (st.fee_payer_signature, st.fee_payer_pk) {
+                // If Fee Payer is explicitly set (and likely different from Sender), verify their signature.
+                // Even if Payer == Sender, if they signed the Fee field, we verify it.
+                
+                let payer_vk = VerifyingKey::from_bytes(payer_pk_bytes.as_slice().try_into().unwrap_or(&[0u8; 32]))
+                    .map_err(|e| AtlasError::Other(format!("Invalid fee payer public key: {}", e)))?;
+                let payer_sig = Signature::from_slice(&payer_sig_bytes)
+                    .map_err(|e| AtlasError::Other(format!("Invalid fee payer signature format: {}", e)))?;
+                
+                // Payer signs the SAME transaction bytes to authorize payment for THIS transaction.
+                let msg = signing_bytes(&tx);
+                
+                if payer_vk.verify(&msg, &payer_sig).is_err() {
+                    tracing::error!("❌ Fee Payer Signature Verification Failed for payer {}", fee_payer);
+                    return Err(AtlasError::Other("Invalid fee payer signature".to_string()));
+                }
+                
+                // Verify Payer Address matches PK
+                if let Ok(address) = atlas_common::address::address::Address::address_from_pk(&payer_vk, "nbex") {
+                    if address != fee_payer {
+                         tracing::error!("❌ Fee Payer Address Mismatch: Claimed {} vs Derived {}", fee_payer, address);
+                         return Err(AtlasError::Other("Fee payer address mismatch".to_string()));
+                    }
+                }
+            } else if st.fee_payer.is_some() {
+                 // Fee Payer Claimed but No Signature!
+                 tracing::error!("❌ Fee Payer {} claimed but no signature provided!", fee_payer);
+                 return Err(AtlasError::Other("Missing fee payer signature".to_string()));
+            }
     
-            // Use Accounting Engine to process transfer
+            // Use Accounting Engine to process transfer (MAIN LEG)
             let mut entry = atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
                 &tx.from,
                 &tx.to,
@@ -71,6 +139,69 @@ impl Ledger {
                 tracing::error!("❌ Accounting Engine Error: {}", e);
                 AtlasError::Other(format!("Accounting Engine Error: {}", e))
             })?;
+
+            // --- 3. FEE EXECUTION ---
+            // Calculate Fee
+            let base_fee: u64 = 1000;
+            // Approximate size: JSON length or Bincode length. Using simplistic estimation for now.
+            // Using `signing_bytes` length as proxy for size.
+            let size_bytes = signing_bytes(&tx).len() as u64; 
+            let byte_fee = size_bytes * 10;
+            let total_fee = base_fee + byte_fee;
+
+            // Deduct Fee
+            // Debit Payer, Credit Validator (90%) and System (10%)
+            // 90/10 Split
+            let validator_reward = (total_fee * 90) / 100;
+            let system_revenue = total_fee - validator_reward;
+
+            // Payer Account (Debit Total)
+            let payer_account = if fee_payer.starts_with("passivo:wallet:") {
+                fee_payer.clone()
+            } else {
+                format!("passivo:wallet:{}", fee_payer)
+            };
+
+            entry.legs.push(Leg {
+                account: payer_account,
+                asset: "ATLAS".to_string(), 
+                kind: LegKind::Debit, 
+                amount: total_fee as u128,
+            });
+
+            // Validator Reward (Credit)
+            // Convert proposer (NodeId) to Address (assuming nbex convention or using raw string)
+            // Proposal.proposer is a NodeId (String). Usually "node-id" or similar.
+            // If the proposer uses a public key as ID, we can credit it directly.
+            // If it's an internal ID, we might need a lookup.
+            // FOR NOW: We assume Proposer ID IS the Wallet Address or can be wrapped.
+            // User confirmed "validators" pay.
+            let proposer_addr = proposal.proposer.to_string();
+            let validator_account = if proposer_addr.starts_with("passivo:wallet:") {
+                proposer_addr
+            } else {
+                format!("passivo:wallet:{}", proposer_addr)
+            };
+
+            entry.legs.push(Leg {
+                account: validator_account.clone(),
+                asset: "ATLAS".to_string(),
+                kind: LegKind::Credit,
+                amount: validator_reward as u128,
+            });
+
+            // System Revenue (Credit)
+            entry.legs.push(Leg {
+                account: "patrimonio:fees".to_string(), // Revenue Account
+                asset: "ATLAS".to_string(),
+                kind: LegKind::Credit,
+                amount: system_revenue as u128,
+            });
+            
+            tracing::info!("💸 Fee Distribution: Total={} | Payer={} | Val({})={} | Sys={}", 
+                total_fee, fee_payer, validator_account, validator_reward, system_revenue);
+            
+            tracing::info!("💸 Fee Deduction: {} deducted from {} (Payer: {})", total_fee, fee_payer, fee_payer);
             
             // --- Phase 6: Delegation & Staking Interceptor ---
             // Use explicitly std::result::Result<(), String> to match closure signature

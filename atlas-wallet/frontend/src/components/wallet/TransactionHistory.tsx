@@ -77,7 +77,7 @@ export function TransactionHistory({
                         {tx.txHash.substring(0, 10)}...
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        {new Date(Number(tx.timestamp)).toLocaleString()}
+                        {new Date(Number(tx.timestamp) * 1000).toLocaleString()}
                       </p>
                     </div>
                   </div>

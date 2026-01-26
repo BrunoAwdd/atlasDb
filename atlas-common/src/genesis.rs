@@ -15,3 +15,8 @@ impl GenesisState {
         }
     }
 }
+
+// Hardcoded Genesis Admin Public Key (Ed25519)
+// Corresponds to 'nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft' (Alice)
+// This key allows spending from 'patrimonio:fees' and other system accounts.
+pub const GENESIS_ADMIN_PK: &str = "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c";

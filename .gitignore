@@ -7,6 +7,7 @@
 /example/*/data
 /example/*/keypair
 /example/*/nodes.json
+/audits
 /.vscode
 .idea
 *.ds_store

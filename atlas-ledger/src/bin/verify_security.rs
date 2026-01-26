@@ -50,6 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public_key: hex::encode(public_key),
         nonce: 1,
         timestamp,
+        fee_payer: None,
+        fee_payer_signature: None,
+        fee_payer_public_key: None,
     };
 
     let resp = client.submit_transaction(req).await;
@@ -71,6 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public_key: hex::encode(public_key),
         nonce: 1,
         timestamp,
+        fee_payer: None,
+        fee_payer_signature: None,
+        fee_payer_public_key: None,
     };
 
     let resp_bad = client.submit_transaction(req_bad).await;

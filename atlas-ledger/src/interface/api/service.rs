@@ -99,11 +99,35 @@ impl LedgerService for LedgerServiceImpl {
                 Status::unauthenticated("Invalid signature")
             })?;
 
+        // Decode Fee Payer fields if present
+        let fee_payer_sig = if let Some(hex_sig) = &req.fee_payer_signature {
+            match hex::decode(hex_sig) {
+                Ok(b) => Some(b),
+                Err(e) => {
+                     warn!("❌ [LedgerService] Invalid Fee Payer Signature Hex: {}", e);
+                     return Err(Status::invalid_argument("Invalid fee payer signature hex"));
+                }
+            }
+        } else { None };
+
+        let fee_payer_pk = if let Some(hex_pk) = &req.fee_payer_public_key {
+            match hex::decode(hex_pk) {
+                Ok(b) => Some(b),
+                Err(e) => {
+                     warn!("❌ [LedgerService] Invalid Fee Payer PK Hex: {}", e);
+                     return Err(Status::invalid_argument("Invalid fee payer pk hex"));
+                }
+            }
+        } else { None };
+
         // 3. Create SignedTransaction
         let signed_tx = atlas_common::transactions::SignedTransaction {
             transaction,
             signature: signature_bytes,
             public_key: pk_bytes,
+            fee_payer: req.fee_payer,
+            fee_payer_signature: fee_payer_sig,
+            fee_payer_pk: fee_payer_pk,
         };
 
         // --- Idempotency Check & Nonce Validation ---

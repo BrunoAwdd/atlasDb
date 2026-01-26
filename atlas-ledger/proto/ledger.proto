@@ -19,6 +19,9 @@ message SubmitTransactionRequest {
   string public_key = 7; // public key of the signer
   uint64 nonce = 8;
   uint64 timestamp = 9;
+  optional string fee_payer = 10;
+  optional string fee_payer_signature = 11; // hex
+  optional string fee_payer_public_key = 12; // hex
 }
 
 message SubmitTransactionResponse {

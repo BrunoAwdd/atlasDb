@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use std::collections::HashMap;
 use atlas_common::error::Result;
 use crate::core::runtime::{binlog::Binlog, index::Index};
 use crate::core::ledger::state::State;
@@ -129,5 +130,10 @@ impl Ledger {
         }
 
         Ok(())
+    }
+
+    pub async fn get_all_accounts(&self) -> HashMap<String, crate::core::ledger::account::AccountState> {
+        let state = self.state.read().await;
+        state.accounts.clone()
     }
 }

@@ -10,8 +10,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚠️  DEPRECATED: This standalone server is deprecated. Please use `atlas-node` instead.");
     println!("Atlas Ledger Server listening on {}", addr);
 
-    // Initialize Ledger with local path for consistency with atlas-node
-    let data_dir = "data/db";
+    // Initialize Ledger
+    // Allow overriding data directory via CLI arg: server <DATA_DIR>
+    let args: Vec<String> = std::env::args().collect();
+    let data_dir = args.get(1).map(|s| s.as_str()).unwrap_or("data/db");
+    
+    println!("Atlas Ledger Server listening on {}", addr);
     println!("Using data directory: {}", data_dir);
     let ledger = Ledger::new(data_dir).await?;
     let ledger = Arc::new(ledger);
@@ -49,12 +53,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             asset: String,
             timestamp: u64,
             memo: String,
+            fee_payer: Option<String>,
         }
 
         #[derive(Serialize)]
         struct ListResponse {
             transactions: Vec<TxDto>,
             total_count: u64,
+        }
+
+        #[derive(Serialize)]
+        struct BalanceResponse {
+            address: String,
+            asset: String,
+            balance: String,
+        }
+
+        async fn get_balance_api(
+            State(ledger): State<Arc<Ledger>>,
+            Query(params): Query<ListParams>,
+        ) -> Json<BalanceResponse> {
+            let address = params.query.unwrap_or_default();
+            // Default to ATLAS
+            let asset = "ATLAS"; 
+            
+            // Ledger::get_balance signature: async fn get_balance(&self, address: &str, asset: &str) -> Result<u64>
+            let balance = ledger.get_balance(&address, asset).await.unwrap_or(0);
+            
+            Json(BalanceResponse {
+                address,
+                asset: asset.to_string(),
+                balance: balance.to_string(),
+            })
         }
 
         async fn list_transactions_api(
@@ -70,12 +100,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let query = params.query.as_deref().unwrap_or("").to_lowercase();
 
             for p in proposals {
-                 let tx_res = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
-                     Some(signed_tx.transaction)
+                 let (tx_res, fee_payer) = if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
+                     (Some(signed_tx.transaction), signed_tx.fee_payer)
                  } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
-                     Some(tx)
+                     (Some(tx), None)
                  } else {
-                     None
+                     (None, None)
                  };
 
                  if let Some(tx) = tx_res {
@@ -97,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             asset: tx.asset,
                             timestamp: p.time as u64,
                             memo: tx.memo.unwrap_or_default(),
+                            fee_payer,
                     });
                  }
             }
@@ -113,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let app = Router::new()
             .route("/api/transactions", get(list_transactions_api))
+            .route("/api/balance", get(get_balance_api))
             .with_state(ledger_for_api)
             .layer(tower_http_axum::cors::CorsLayer::permissive());
 
