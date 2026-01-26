@@ -28,14 +28,27 @@ function App() {
     nonce: number;
   }
 
+  interface TokenMetadata {
+    name: string;
+    symbol: string;
+    decimals: number;
+    logo: string;
+    issuer: string;
+  }
+
   const [balance, setBalance] = useState<BalanceDto | null>(null);
   const [data, setData] = useState<ListResponse | null>(null);
   const [accounts, setAccounts] = useState<Record<string, AccountState> | null>(
     null,
   );
+  const [tokens, setTokens] = useState<Record<string, TokenMetadata> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<"transactions" | "accounts">("transactions");
+  const [view, setView] = useState<"transactions" | "accounts" | "assets">(
+    "transactions",
+  );
 
   useEffect(() => {
     const fetchData = async () => {
@@ -65,11 +78,17 @@ function App() {
           } else {
             setBalance(null);
           }
-        } else {
+        } else if (view === "accounts") {
           // Fetch Accounts
           const res = await fetch("http://localhost:3001/api/accounts");
           const json = await res.json();
           setAccounts(json);
+          setBalance(null);
+        } else if (view === "assets") {
+          // Fetch Tokens
+          const res = await fetch("http://localhost:3001/api/tokens");
+          const json = await res.json();
+          setTokens(json);
           setBalance(null);
         }
       } catch (e) {
@@ -88,7 +107,7 @@ function App() {
     }
 
     // Poll accounts less frequency
-    if (view === "accounts") {
+    if (view === "accounts" || view === "assets") {
       interval = setInterval(fetchData, 10000);
     }
 
@@ -114,6 +133,12 @@ function App() {
             onClick={() => setView("accounts")}
           >
             Accounts (Rich List)
+          </button>
+          <button
+            className={view === "assets" ? "active" : ""}
+            onClick={() => setView("assets")}
+          >
+            Assets
           </button>
         </div>
       </header>
@@ -146,7 +171,7 @@ function App() {
       )}
 
       <div className="card">
-        {loading && !data && !accounts ? (
+        {loading && !data && !accounts && !tokens ? (
           <p>Loading...</p>
         ) : (
           <>
@@ -255,6 +280,46 @@ function App() {
                     <tr>
                       <td colSpan={3} style={{ textAlign: "center" }}>
                         No active accounts found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {view === "assets" && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Name</th>
+                    <th>Issuer</th>
+                    <th>Decimals</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokens &&
+                    Object.entries(tokens).map(([symbol, meta]) => (
+                      <tr key={symbol}>
+                        <td>
+                          <span className="badge">{symbol}</span>
+                        </td>
+                        <td>{meta.name}</td>
+                        <td>
+                          <span className="hash" title={meta.issuer}>
+                            {meta.issuer
+                              .replace("passivo:wallet:", "")
+                              .substring(0, 12)}
+                            ...
+                          </span>
+                        </td>
+                        <td>{meta.decimals}</td>
+                      </tr>
+                    ))}
+                  {(!tokens || Object.keys(tokens).length === 0) && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center" }}>
+                        No registered assets found.
                       </td>
                     </tr>
                   )}

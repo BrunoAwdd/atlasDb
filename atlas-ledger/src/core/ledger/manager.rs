@@ -136,4 +136,9 @@ impl Ledger {
         let state = self.state.read().await;
         state.accounts.clone()
     }
+
+    pub async fn get_all_tokens(&self) -> HashMap<String, crate::core::ledger::token::TokenMetadata> {
+        let state = self.state.read().await;
+        state.tokens.clone()
+    }
 }

@@ -1,4 +1,5 @@
 pub mod account;
+pub mod token;
 // pub mod entry; // moved to atlas-common
 pub mod state;
 pub mod storage;

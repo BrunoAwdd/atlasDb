@@ -127,6 +127,15 @@ impl Ledger {
                  tracing::error!("❌ Fee Payer {} claimed but no signature provided!", fee_payer);
                  return Err(AtlasError::Other("Missing fee payer signature".to_string()));
             }
+
+            // --- 2.5 ASSET VALIDATION ---
+            if tx.asset != "ATLAS" {
+                let state_guard = self.state.read().await;
+                if !state_guard.tokens.contains_key(&tx.asset) {
+                     tracing::error!("❌ Unknown Asset: {}", tx.asset);
+                     return Err(AtlasError::Other(format!("Asset '{}' is not registered.", tx.asset)));
+                }
+            }
     
             // Use Accounting Engine to process transfer (MAIN LEG)
             let mut entry = atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
@@ -203,6 +212,58 @@ impl Ledger {
             
             tracing::info!("💸 Fee Deduction: {} deducted from {} (Payer: {})", total_fee, fee_payer, fee_payer);
             
+            // --- Phase 5.5: Token Registry Interceptor ---
+            let mut registry_action: Option<Box<dyn FnOnce(&mut crate::core::ledger::state::State) -> std::result::Result<(), String> + Send>> = None;
+
+            if tx.to == "system:registry" {
+                 // Enforce Payment Asset is ATLAS
+                 if tx.asset != "ATLAS" {
+                     return Err(AtlasError::Other("Registration fee must be paid in ATLAS".to_string()));
+                 }
+
+                 // Enforce Fee: 100 ATLAS
+                 let registration_fee: u64 = 100;
+                 if tx.amount < registration_fee as u128 {
+                      return Err(AtlasError::Other("Insufficient registration fee (100 ATLAS required)".to_string()));
+                 }
+                 
+                 // Move funds from "system:registry" (where AccountingEngine put them) to "patrimonio:fees"
+                 entry.legs.push(Leg {
+                     account: "passivo:wallet:system:registry".to_string(),
+                     asset: "ATLAS".to_string(),
+                     kind: LegKind::Debit, 
+                     amount: registration_fee as u128,
+                 });
+                 entry.legs.push(Leg {
+                     account: "patrimonio:fees".to_string(),
+                     asset: "ATLAS".to_string(),
+                     kind: LegKind::Credit,
+                     amount: registration_fee as u128,
+                 });
+
+                 if let Some(memo) = &tx.memo {
+                     if let Ok(mut metadata) = serde_json::from_str::<crate::core::ledger::token::TokenMetadata>(memo) {
+                         // Enforce issuer matches sender
+                         metadata.issuer = tx.from.clone();
+                         let token_symbol = metadata.symbol.clone();
+                         
+                         tracing::info!("®️ REGISTER TOKEN: {} ({}) by {}", token_symbol, metadata.name, tx.from);
+
+                         registry_action = Some(Box::new(move |state| {
+                             if state.tokens.contains_key(&token_symbol) {
+                                 return Err(format!("Token {} already registered", token_symbol));
+                             }
+                             state.tokens.insert(token_symbol, metadata);
+                             Ok(())
+                         }));
+                     } else {
+                         return Err(AtlasError::Other("Invalid Token Metadata JSON in Memo".to_string()));
+                     }
+                 } else {
+                      return Err(AtlasError::Other("Missing Metadata in Memo".to_string()));
+                 }
+            }
+
             // --- Phase 6: Delegation & Staking Interceptor ---
             // Use explicitly std::result::Result<(), String> to match closure signature
             let mut staking_action: Option<Box<dyn FnOnce(&mut crate::core::ledger::state::State) -> std::result::Result<(), String> + Send>> = None;
@@ -305,6 +366,11 @@ impl Ledger {
             // Execute Staking Action (Delegate/Undelegate Logic)
             if let Some(action) = staking_action {
                 action(&mut state).map_err(|e| AtlasError::Other(format!("Staking Action Failed: {}", e)))?;
+            }
+            
+            // Execute Registry Action
+            if let Some(action) = registry_action {
+                action(&mut state).map_err(|e| AtlasError::Other(format!("Token Registration Failed: {}", e)))?;
             }
 
             // Pre-Ex Balances

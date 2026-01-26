@@ -115,17 +115,38 @@ export function useWalletData() {
       // Debug: Show fetched balances in status
       setStatus(`Sync OK. BRL: ${exposedBalBRL} | MOX: ${exposedBalMOX}`);
 
-      setWallet({
-        exposed: {
-          address: exposedAddr,
-          nonce: exposedNonce,
-          balances: { BRL: exposedBalBRL, MOX: exposedBalMOX },
-        },
-        hidden: {
-          address: hiddenAddr,
-          nonce: hiddenNonce,
-          balances: { BRL: hiddenBalBRL, MOX: hiddenBalMOX },
-        },
+      setWallet((prev) => {
+        // Security: Ensure Nonce never decreases (Handling Race Conditions)
+        let safeExposedNonce = exposedNonce;
+        let safeHiddenNonce = hiddenNonce;
+
+        if (prev) {
+          if (BigInt(prev.exposed.nonce) > BigInt(exposedNonce)) {
+            console.warn(
+              `⚠️ Keeping local nonce ${prev.exposed.nonce} for Exposed (Remote: ${exposedNonce})`,
+            );
+            safeExposedNonce = prev.exposed.nonce;
+          }
+          if (BigInt(prev.hidden.nonce) > BigInt(hiddenNonce)) {
+            console.warn(
+              `⚠️ Keeping local nonce ${prev.hidden.nonce} for Hidden (Remote: ${hiddenNonce})`,
+            );
+            safeHiddenNonce = prev.hidden.nonce;
+          }
+        }
+
+        return {
+          exposed: {
+            address: exposedAddr,
+            nonce: safeExposedNonce,
+            balances: { BRL: exposedBalBRL, MOX: exposedBalMOX },
+          },
+          hidden: {
+            address: hiddenAddr,
+            nonce: safeHiddenNonce,
+            balances: { BRL: hiddenBalBRL, MOX: hiddenBalMOX },
+          },
+        };
       });
     } else {
       setStatus("Carteira vazia / Erro no formato.");

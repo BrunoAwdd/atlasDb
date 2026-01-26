@@ -54,6 +54,7 @@ pub async fn start_rest_api(port: u16, state: AppState) {
         .route("/api/mempool", get(list_mempool_api))
         .route("/api/balance", get(get_balance_api))
         .route("/api/accounts", get(list_accounts_api))
+        .route("/api/tokens", get(list_tokens_api))
         .with_state(state)
         .layer(tower_http_axum::cors::CorsLayer::permissive());
 
@@ -143,4 +144,10 @@ async fn list_accounts_api(
     State(state): State<AppState>,
 ) -> Json<HashMap<String, atlas_ledger::core::ledger::account::AccountState>> {
    Json(state.ledger.get_all_accounts().await)
+}
+
+async fn list_tokens_api(
+    State(state): State<AppState>,
+) -> Json<HashMap<String, atlas_ledger::core::ledger::token::TokenMetadata>> {
+   Json(state.ledger.get_all_tokens().await)
 }

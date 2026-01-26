@@ -89,12 +89,15 @@ impl DelegationStore {
     }
 }
 
+use crate::core::ledger::token::TokenMetadata;
+
 /// Represents the global state of the application.
 /// Now follows FIP-02: Double-Entry Accounting.
 #[derive(Debug, Clone, Default)]
 pub struct State {
     pub accounts: HashMap<String, AccountState>,
     pub delegations: DelegationStore,
+    pub tokens: HashMap<String, TokenMetadata>,
 }
 
 impl State {
@@ -119,9 +122,26 @@ impl State {
         wallet_alice_hidden.balances.insert("ATLAS".to_string(), 1_000_000); // Stake Power
         accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
 
+        let mut tokens = HashMap::new();
+        tokens.insert("USD".to_string(), TokenMetadata {
+            name: "US Dollar".to_string(),
+            symbol: "USD".to_string(),
+            decimals: 2,
+            logo: "".to_string(),
+            issuer: "passivo:wallet:mint".to_string(),
+        });
+        tokens.insert("BRL".to_string(), TokenMetadata {
+            name: "Brazilian Real".to_string(),
+            symbol: "BRL".to_string(),
+            decimals: 2,
+            logo: "".to_string(),
+            issuer: "passivo:wallet:mint".to_string(),
+        });
+
         Self {
             accounts,
             delegations: DelegationStore::new(),
+            tokens,
         }
     }
 
@@ -172,6 +192,8 @@ impl State {
         // At this point, all checks passed. We can safely mutate.
         // This phase SHOULD NOT fail via Result (logic errors only).
 
+        let mut involved_accounts = std::collections::HashSet::new();
+
         for leg in entry.legs {
             let account = self.accounts.entry(leg.account.clone()).or_insert_with(AccountState::new);
             
@@ -180,11 +202,16 @@ impl State {
                 LegKind::Debit => *balance -= leg.amount,
                 LegKind::Credit => *balance += leg.amount,
             }
-            
-            // Update Headers
-            account.last_entry_id = Some(entry.entry_id.clone());
-            account.last_transaction_hash = Some(entry.tx_hash.clone()); // Update AEC Pointer
-            account.nonce += 1;
+            involved_accounts.insert(leg.account);
+        }
+
+        // Update Headers (ONCE per account)
+        for acc_id in involved_accounts {
+            if let Some(account) = self.accounts.get_mut(&acc_id) {
+                account.last_entry_id = Some(entry.entry_id.clone());
+                account.last_transaction_hash = Some(entry.tx_hash.clone());
+                account.nonce += 1;
+            }
         }
 
         Ok(())
