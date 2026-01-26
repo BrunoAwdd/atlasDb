@@ -1,0 +1,26 @@
+{
+  "node_id": "node-75664b1b",
+  "address": "127.0.0.1",
+  "port": 50051,
+  "quorum_policy": {
+    "fraction": 0.67,
+    "min_voters": 2
+  },
+  "graph": {
+    "vertices": {},
+    "edges": []
+  },
+  "storage": {
+    "proposals": [],
+    "votes": {},
+    "results": {}
+  },
+  "peer_manager": {
+    "active_peers": [],
+    "reserve_peers": [],
+    "known_peers": {},
+    "max_active": 10,
+    "max_reserve": 10
+  },
+  "data_dir": "data/db"
+}

@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 /// Represents an individual node in the cluster.
 #[derive(Debug, Clone, Serialize, Deserialize)]

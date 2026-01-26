@@ -1,0 +1,130 @@
+use std::fs;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+
+use atlas_common::{
+    utils::NodeId,
+    env::{
+        proposal::Proposal,
+        consensus::types::{ConsensusResult, Vote, ConsensusPhase},
+    },
+};
+
+/// Structure that represents the full audit data of a consensus session.
+///
+/// It includes:
+/// - All submitted proposals.
+/// - Votes cast by each node.
+/// - Final consensus results for each proposal.
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct AuditData {
+    /// List of all proposals submitted to the system.
+    pub proposals: Vec<Proposal>,
+
+    /// Mapping of proposal ID to a map of phases, node IDs and their corresponding votes.
+    pub votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, Vote>>>,
+
+    /// Mapping of proposal ID to the final consensus result.
+    pub results: HashMap<String, ConsensusResult>,
+}
+
+/// Saves audit data to a JSON file in pretty format.
+///
+/// # Parameters
+/// - `path`: The path to the file where the data will be written.
+/// - `data`: Reference to the `AuditData` to be saved.
+///
+/// # Returns
+/// `Ok(())` on success, or an I/O error if the operation fails.
+pub fn save_audit(path: &str, data: &AuditData) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(data)?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+/// Loads audit data from a JSON file.
+///
+/// # Parameters
+/// - `path`: The path to the file to read.
+///
+/// # Returns
+/// An `AuditData` instance parsed from the file, or an I/O error if reading or parsing fails.
+pub fn load_audit(path: &str) -> std::io::Result<AuditData> {
+    let json = fs::read_to_string(path)?;
+    let data: AuditData = serde_json::from_str(&json)?;
+    Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_common::env::{
+        proposal::Proposal
+    };
+    use atlas_common::{
+        env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
+    };
+
+    #[test]
+    fn test_save_and_load_audit_data() {
+        let mut proposals = Vec::new();
+        let mut votes = HashMap::new();
+        let mut results = HashMap::new();
+
+        // Simulates a proposal
+        let proposal = Proposal {
+            id: "prop-123".to_string(),
+            proposer: NodeId("node-A".into()),
+            content: "Connect A to B".to_string(),
+            parent: None,
+            height: 0,
+            signature: [0u8; 64],
+            public_key: vec![],
+            hash: "hash".to_string(),
+            prev_hash: "prev_hash".to_string(),
+            round: 0,
+            state_root: "root".to_string(),
+            time: 0,
+        };
+        proposals.push(proposal.clone());
+
+        // Simulates a Vote
+        let mut phase_map = HashMap::new();
+        let mut vote_map = HashMap::new();
+        vote_map.insert(NodeId("node-A".to_string()), Vote::Yes);
+        phase_map.insert(ConsensusPhase::Prepare, vote_map);
+        votes.insert(proposal.id.clone(), phase_map);
+
+        // Simulates a consensus result
+        let result = ConsensusResult {
+            proposal_id: proposal.id.clone(),
+            approved: true,
+            votes_received: 1,
+            phase: ConsensusPhase::Prepare,
+        };
+        results.insert(proposal.id.clone(), result);
+
+        let data = AuditData {
+            proposals,
+            votes,
+            results,
+        };
+
+        // Save to a temporary file
+        let path = "/tmp/audit_test_file.json";
+
+        save_audit(path, &data).expect("Failed to save audit");
+
+        // Read the file and compare
+        let loaded = load_audit(path).expect("Failed to load audit");
+
+        assert_eq!(loaded.proposals.len(), 1);
+        assert_eq!(loaded.votes.len(), 1);
+        assert_eq!(loaded.results.len(), 1);
+
+        let loaded_proposal = &loaded.proposals[0];
+        assert_eq!(loaded_proposal.id, "prop-123");
+        assert_eq!(loaded.votes["prop-123"][&ConsensusPhase::Prepare][&NodeId("node-A".to_string())], Vote::Yes);
+        assert_eq!(loaded.results["prop-123"].approved, true);
+    }
+}

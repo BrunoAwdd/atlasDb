@@ -1,7 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use serde::{Deserialize, Serialize};
 
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 use crate::cluster::node::Node;
 
@@ -149,15 +149,6 @@ impl PeerManager {
         }
     }
 
-    fn find_worst_active_peer(&self) -> Option<NodeId> {
-        self.active_peers.iter().min_by_key(|id| {
-            let stats = self.known_peers.get(*id);
-            (
-                stats.map(|s| (s.reliability_score * 100.0) as i64).unwrap_or(0),
-                std::cmp::Reverse(stats.map(|s| s.latency).unwrap_or(Some(u64::MAX))),
-            )
-        }).cloned()
-    }
 
     pub fn get_peer_stats(&self, id: &NodeId) -> Option<Node> {
         self.known_peers.get(id).cloned()
@@ -212,7 +203,20 @@ impl PeerManager {
                 }
             },
             PeerCommand::UpdateStats(id, stats) => {
-                self.update_stats(&id, &stats)
+                let event = if self.known_peers.contains_key(&id) {
+                    self.update_stats(&id, &stats)
+                } else {
+                    self.register_peer(id.clone(), stats);
+                    PeerEvent::Registered(id.clone())
+                };
+
+                if self.reserve_peers.contains(&id) && self.active_peers.len() < self.max_active {
+                    self.reserve_peers.remove(&id);
+                    self.active_peers.insert(id.clone());
+                    return PeerEvent::Promoted(id);
+                }
+
+                event
             },
         }
     }

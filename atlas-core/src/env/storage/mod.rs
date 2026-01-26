@@ -18,30 +18,72 @@ use super::{
     proposal::Proposal,
 };
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::{ConsensusResult, Vote, ConsensusPhase},
 };
+
+use crate::ledger::Ledger;
+use std::sync::Arc;
 
 /// In-memory simulation of a distributed storage ledger.
 ///
 /// Used to persist proposals, vote traces, and final consensus outcomes.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Storage {
     /// All proposals submitted to the system.
     pub proposals: Vec<Proposal>,
 
-    /// Map of proposal ID → (node ID → vote).
-    pub votes: HashMap<String, HashMap<NodeId, Vote>>,
+    /// Map of proposal ID → Phase → (node ID → vote).
+    pub votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, Vote>>>,
 
     /// Map of proposal ID → final consensus result.
     pub results: HashMap<String, ConsensusResult>,
+
+    /// Persistent Ledger (Binlog + Redb)
+    #[serde(skip)]
+    pub ledger: Option<Arc<Ledger>>,
 }
 
 impl Storage {
     /// Constructs an empty storage instance.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(data_dir: &str) -> Self {
+        // Since this is called from a synchronous context (builder::init), we need to block.
+        // We create a temporary runtime for this initialization.
+        // To avoid "Cannot start a runtime from within a runtime" panic (if called from async context like setup.rs),
+        // we spawn a dedicated thread.
+        let data_dir = data_dir.to_string();
+        let (ledger, loaded_proposals) = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(async {
+                let ledger = Ledger::new(&data_dir).await.expect("Failed to initialize Ledger");
+                let proposals = ledger.get_all_proposals().await.unwrap_or_else(|e| {
+                    eprintln!("Failed to load proposals from ledger: {}", e);
+                    Vec::new()
+                });
+                (ledger, proposals)
+            })
+        }).join().expect("Failed to join thread");
+
+        println!("📦 Loaded {} proposals from storage.", loaded_proposals.len());
+
+        let mut results = HashMap::new();
+        for proposal in &loaded_proposals {
+            // Assume any proposal in the Binlog is effectively committed/executed during replay
+            results.insert(proposal.id.clone(), ConsensusResult {
+                proposal_id: proposal.id.clone(),
+                approved: true,
+                votes_received: 1, // Placeholder
+                phase: ConsensusPhase::Commit,
+            });
+        }
+
+        Self {
+            proposals: loaded_proposals,
+            votes: HashMap::new(),
+            results,
+            ledger: Some(Arc::new(ledger)),
+        }
     }
 
     /// Logs a newly submitted proposal.
@@ -49,16 +91,47 @@ impl Storage {
     /// This allows the system to retain proposal metadata for future auditing.
     pub fn log_proposal(&mut self, proposal: Proposal) {
         println!("📝 Storing proposal [{}]", proposal.id);
-        self.proposals.push(proposal);
+        // Idempotency Check: Don't duplicate
+        if self.proposals.iter().any(|p| p.id == proposal.id) {
+            return;
+        }
+
+        self.proposals.push(proposal.clone());
+        if let Some(ledger) = &self.ledger {
+            // Append to WAL
+            // Note: Since Ledger is behind IoLock, we trust the in-memory check above for uniqueness within this session.
+            // On restart, the loop logic prevents re-execution.
+            let _ = tokio::task::block_in_place(|| {
+                 tokio::runtime::Handle::current().block_on(async {
+                     if !ledger.exists_proposal(&proposal.id).await {
+                         // Last Mile Protection: Deep Validation
+                         if let Err(e) = ledger.validate_proposal_hard(&proposal).await {
+                             println!("⛔ Proposal {} rejected by Ledger Validation: {}", proposal.id, e);
+                             Ok((0,0,0)) // Return match compatible with append
+                         } else {
+                             ledger.binlog.write().await.append(&proposal).await
+                         }
+                     } else {
+                         // Duplicate detected in Ledger
+                         println!("♻️ Proposal {} already in Ledger (Binlog), skipping write.", proposal.id);
+                         Ok((0,0,0)) // Mock success
+                     }
+                 })
+            });
+        } else {
+            eprintln!("⚠️ Ledger not initialized, proposal not persisted to disk!");
+        }
     }
 
-    /// Logs a vote submitted by a node for a given proposal.
+    /// Logs a vote submitted by a node for a given proposal in a specific phase.
     ///
-    /// Votes are stored per proposal and are associated with the node that cast them.
-    pub fn log_vote(&mut self, proposal_id: &str, node: NodeId, vote: Vote) {
-        println!("🧾 Logging vote from [{}] on [{}]", node, proposal_id);
+    /// Votes are stored per proposal/phase and are associated with the node that cast them.
+    pub fn log_vote(&mut self, proposal_id: &str, phase: ConsensusPhase, node: NodeId, vote: Vote) {
+        println!("🧾 Logging vote from [{}] on [{}] (Phase: {:?})", node, proposal_id, phase);
         self.votes
             .entry(proposal_id.to_string())
+            .or_default()
+            .entry(phase)
             .or_default()
             .insert(node, vote);
     }
@@ -109,12 +182,45 @@ impl Storage {
         self.votes = data.votes;
         self.results = data.results;
     }
+
+    /// Returns all proposals with height greater than the given height.
+    pub async fn get_proposals_after(&self, height: u64) -> Vec<Proposal> {
+        if let Some(ledger) = &self.ledger {
+            match ledger.get_proposals_after(height).await {
+                Ok(proposals) => return proposals,
+                Err(e) => eprintln!("❌ Failed to read from ledger: {}", e),
+            }
+        }
+        
+        // Fallback to in-memory (mostly for tests or if ledger fails)
+        self.proposals.iter()
+            .filter(|p| p.height > height)
+            .cloned()
+            .collect()
+    }
+
+    pub async fn get_proposal(&self, id: &str) -> Result<Option<Proposal>, String> {
+        if let Some(ledger) = &self.ledger {
+            ledger.get_proposal(id).await.map_err(|e| e.to_string())
+        } else {
+            // Fallback to in-memory
+            Ok(self.proposals.iter().find(|p| p.id == id).cloned())
+        }
+    }
+
+    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize, String> {
+        if let Some(ledger) = &self.ledger {
+            ledger.execute_transaction(proposal, true).await.map_err(|e| e.to_string())
+        } else {
+            Err("Ledger not initialized".to_string())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_sdk::{
+    use atlas_common::{
         utils::NodeId,
     };
 
@@ -128,6 +234,12 @@ mod tests {
             proposer: node(proposer),
             content: content.to_string(),
             parent: None,
+            height: 0,
+            hash: "hash".to_string(),
+            prev_hash: "prev_hash".to_string(),
+            round: 0,
+            time: 0,
+            state_root: "state_root".to_string(),
             signature: [0u8; 64],
             public_key: vec![],
         }
@@ -138,12 +250,14 @@ mod tests {
             approved,
             votes_received: votes,
             proposal_id: proposal_id.to_string(),
+            phase: atlas_common::env::consensus::types::ConsensusPhase::Commit,
         }
     }
 
-    #[test]
-    fn test_log_proposal_stores_correctly() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_log_proposal_stores_correctly() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut store = Storage::new(temp_dir.path().to_str().unwrap());
         let proposal = sample_proposal("p1", "n1", "create edge");
 
         store.log_proposal(proposal.clone());
@@ -154,21 +268,24 @@ mod tests {
         assert_eq!(store.proposals[0].proposer, node("n1"));
     }
 
-    #[test]
-    fn test_log_vote_adds_vote_entry() {
-        let mut store = Storage::new();
-        store.log_vote("p1", node("n1"), Vote::Yes);
-        store.log_vote("p1", node("n2"), Vote::No);
+    #[tokio::test]
+    async fn test_log_vote_adds_vote_entry() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut store = Storage::new(temp_dir.path().to_str().unwrap());
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes);
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n2"), Vote::No);
 
-        let votes = store.votes.get("p1").unwrap();
+        let phases = store.votes.get("p1").unwrap();
+        let votes = phases.get(&ConsensusPhase::Prepare).unwrap();
         assert_eq!(votes.len(), 2);
         assert_eq!(votes.get(&node("n1")), Some(&Vote::Yes));
         assert_eq!(votes.get(&node("n2")), Some(&Vote::No));
     }
 
-    #[test]
-    fn test_log_result_registers_outcome() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_log_result_registers_outcome() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut store = Storage::new(temp_dir.path().to_str().unwrap());
         let result = sample_result(true, 3, "p42");
 
         store.log_result("p42", result.clone());
@@ -178,20 +295,23 @@ mod tests {
         assert_eq!(store.results["p42"].votes_received, 3);
     }
 
-    #[test]
-    fn test_vote_overwrite_behavior() {
-        let mut store = Storage::new();
-        store.log_vote("p1", node("n1"), Vote::No);
-        store.log_vote("p1", node("n1"), Vote::Yes); // overwrite
+    #[tokio::test]
+    async fn test_vote_overwrite_behavior() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut store = Storage::new(temp_dir.path().to_str().unwrap());
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::No);
+        store.log_vote("p1", ConsensusPhase::Prepare, node("n1"), Vote::Yes); // overwrite
 
-        let votes = store.votes.get("p1").unwrap();
+        let phases = store.votes.get("p1").unwrap();
+        let votes = phases.get(&ConsensusPhase::Prepare).unwrap();
         assert_eq!(votes.len(), 1); // still 1 voter
         assert_eq!(votes.get(&node("n1")), Some(&Vote::Yes));
     }
 
-    #[test]
-    fn test_print_summary_handles_all_states() {
-        let mut store = Storage::new();
+    #[tokio::test]
+    async fn test_print_summary_handles_all_states() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut store = Storage::new(temp_dir.path().to_str().unwrap());
 
         let p1 = sample_proposal("p1", "n1", "A → B");
         let p2 = sample_proposal("p2", "n2", "B → C");

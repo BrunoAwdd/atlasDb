@@ -17,9 +17,12 @@ prost-build.workspace = true
 tonic.workspace = true
 
 [dependencies]
-atlas-sdk = { path = "../atlas-sdk" }
+atlas-common = { path = "../atlas-common" }
+atlas-ledger = { path = "../atlas-ledger" }
+atlas-mempool = { path = "../atlas-mempool" }
 ed25519-dalek.workspace = true
 async-trait.workspace = true
+chrono = { version = "0.4", workspace = true }
 bincode.workspace = true
 env_logger.workspace = true
 futures.workspace = true
@@ -39,10 +42,11 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 uuid.workspace = true
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
+redb = "1.4.0"
 
 [dev-dependencies]
 tempfile.workspace = true
 
 [features]
 mdns = ["libp2p/mdns"]
-default = []
+default = ["mdns"]

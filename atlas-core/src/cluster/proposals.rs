@@ -28,6 +28,8 @@ impl Cluster {
         self.local_env.engine.lock().await
             .add_proposal(proposal.clone());
 
+        self.local_env.storage.write().await.log_proposal(proposal);
+
         Ok(())
     }
 
@@ -58,25 +60,51 @@ impl Cluster {
         info!("✅ Assinatura verificada com sucesso para proposta {} (Proposer: {})", proposal.id, proposal.proposer);
         tracing::info!(target: "consensus", "EVENT:VERIFY_PROPOSAL_OK id={}", proposal.id);
 
-        self.local_env.engine.lock().await.add_proposal(proposal);
+        self.add_proposal(proposal).await?;
         Ok(())
     }
 
-    pub(crate) async fn evaluate_proposals(&self) -> Result<Vec<atlas_sdk::env::consensus::types::ConsensusResult>> {
+    pub(crate) async fn evaluate_proposals(&self) -> Result<Vec<atlas_common::env::consensus::types::ConsensusResult>> {
         info!("🗳️ Avaliando consenso");
         let results = self.local_env.engine.lock().await.evaluate_proposals().await;
         Ok(results)
     }
     
-    pub(crate) async fn commit_proposal(&self, result: atlas_sdk::env::consensus::types::ConsensusResult) -> Result<()> {
+    pub(crate) async fn commit_proposal(&self, result: atlas_common::env::consensus::types::ConsensusResult) -> Result<()> {
         info!("💾 Committing proposal {} (Approved: {})", result.proposal_id, result.approved);
         
         // 1. Log result to in-memory storage
         self.local_env.storage.write().await.log_result(&result.proposal_id, result.clone());
 
-        // 2. Persist to disk (simple audit file)
+        // 2. Execute Transaction (FIP-02)
+        // We need to fetch the full proposal to execute it.
+        let proposal_opt = self.local_env.storage.read().await.get_proposal(&result.proposal_id).await
+            .map_err(|e| AtlasError::Other(format!("Failed to fetch proposal for execution: {}", e)))?;
+
+        if let Some(proposal) = proposal_opt {
+            info!("⚙️ Executing transaction for proposal {}", proposal.id);
+            let storage = self.local_env.storage.read().await;
+            match storage.execute_transaction(&proposal).await {
+                Ok(entry) => {
+                    info!("✅ Transaction executed successfully. Entry ID: {}", entry);
+                    tracing::info!(target: "ledger", "EVENT:TX_EXEC_SUCCESS id={} entry={}", proposal.id, entry);
+                },
+                Err(e) => {
+                    warn!("❌ Transaction execution failed: {}", e);
+                    tracing::warn!(target: "ledger", "EVENT:TX_EXEC_FAIL id={} error={}", proposal.id, e);
+                }
+            }
+        } else {
+            warn!("⚠️ Proposal {} not found in storage, cannot execute transaction.", result.proposal_id);
+        }
+
+        // 3. Persist to disk (simple audit file)
         let node_id = self.local_node.read().await.id.clone();
-        let filename = format!("audit-{}.json", node_id);
+        let audit_dir = "audits";
+        if let Err(e) = std::fs::create_dir_all(audit_dir) {
+            warn!("Failed to create audit directory: {}", e);
+        }
+        let filename = format!("{}/audit-{}.json", audit_dir, node_id);
         self.local_env.export_audit(&filename).await;
 
         Ok(())

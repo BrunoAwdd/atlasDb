@@ -2,7 +2,7 @@ use std::{fs, io, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock};
-use atlas_sdk::{
+use atlas_common::{
     env::{
         consensus::types::ConsensusResult,
         
@@ -21,6 +21,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// Touched for rebuild
 pub struct Config {
     pub node_id: NodeId,
     pub address: String,
@@ -29,10 +30,11 @@ pub struct Config {
     pub graph: Graph,
     pub storage: Storage,
     pub peer_manager: PeerManager,
+    pub data_dir: String,
 }
 
 impl Config {
-    pub fn build_cluster_env(
+    pub async fn build_cluster_env(
         self,
         auth: Arc<RwLock<dyn Authenticator>>,
     ) -> Cluster {
@@ -44,19 +46,35 @@ impl Config {
             self.quorum_policy,
         );
 
-        for proposal in &self.storage.proposals {
+        // Initialize Ledger
+        use crate::ledger::Ledger;
+        let ledger = Ledger::new(&self.data_dir).await.expect("Failed to initialize Ledger from config");
+        
+        // Load proposals from Ledger
+        let loaded_proposals = ledger.get_all_proposals().await.unwrap_or_else(|e| {
+            eprintln!("Failed to load proposals from ledger: {}", e);
+            Vec::new()
+        });
+        
+        println!("📦 Loaded {} proposals from storage (via Config).", loaded_proposals.len());
+
+        let mut storage = self.storage;
+        storage.proposals = loaded_proposals.clone();
+        storage.ledger = Some(Arc::new(ledger));
+
+        // Add loaded proposals to engine
+        for proposal in &storage.proposals {
             engine.pool.add(proposal.clone());
             engine.registry.register_proposal(&proposal.id);
         }
 
-        engine.registry.replace(self.storage.votes.clone());
-
         let env = AtlasEnv {
             graph: self.graph,
-            storage: Arc::new(RwLock::new(self.storage)),
+            storage: Arc::new(RwLock::new(storage)),
             engine: Arc::new(Mutex::new(engine)),
             callback: Arc::new(noop_callback),
             peer_manager: Arc::clone(&peer_manager),
+            data_dir: self.data_dir.clone(),
         };
 
         Cluster::new(env, self.node_id, auth)

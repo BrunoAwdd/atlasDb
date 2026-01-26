@@ -11,7 +11,7 @@ use tracing::info;
 
 use serde::{Serialize, Deserialize};
 
-use atlas_sdk::{
+use atlas_common::{
     env::{
         consensus::types::Vote, 
         consensus::types::ConsensusResult,
@@ -42,9 +42,10 @@ pub struct EnvConfig {
     
     // cluster engine
     pub proposals: Vec<Proposal>,
-    pub votes: HashMap<String, HashMap<NodeId, Vote>>,
+    pub votes: HashMap<String, HashMap<atlas_common::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
     pub quorum_policy: QuorumPolicy,
 
+    pub data_dir: String,
 }
 
 impl EnvConfig {
@@ -54,7 +55,8 @@ impl EnvConfig {
         peer_manager: PeerManager, 
         quorum_policy: QuorumPolicy, 
         proposals: Vec<Proposal>,
-        votes: HashMap<String, HashMap<NodeId, Vote>>
+        votes: HashMap<String, HashMap<atlas_common::env::consensus::types::ConsensusPhase, HashMap<NodeId, Vote>>>,
+        data_dir: String,
     ) -> Self {
         info!("📝 Criando nova configuração");
 
@@ -65,6 +67,7 @@ impl EnvConfig {
             proposals,
             votes,
             quorum_policy,
+            data_dir,
         }
     }
 
@@ -81,9 +84,21 @@ impl EnvConfig {
         Ok(config)
     }
 
-    pub fn build_env(self) -> AtlasEnv {
+    pub fn build_env(mut self) -> AtlasEnv {
         let peer_manager = Arc::new(RwLock::new(self.peer_manager));
         let engine = ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_policy);
+
+        // Initialize Ledger
+        // Initialize Ledger
+        use crate::ledger::Ledger;
+        let data_dir = self.data_dir.clone();
+        let ledger = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(async {
+                Ledger::new(&data_dir).await.expect("Failed to initialize Ledger from config")
+            })
+        }).join().expect("Failed to join thread");
+        self.storage.ledger = Some(Arc::new(ledger));
 
         fn noop_callback(_: ConsensusResult) {}
         AtlasEnv {
@@ -92,6 +107,7 @@ impl EnvConfig {
             engine: Arc::new(Mutex::new(engine)),
             callback: Arc::new(noop_callback),
             peer_manager,
+            data_dir: self.data_dir.clone(),
         }
     }
     

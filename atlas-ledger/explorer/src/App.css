@@ -1,0 +1,56 @@
+/* Modern Tab Design */
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem;
+  border-radius: 12px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tabs button {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tabs button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tabs button.active {
+  background: #646cff; /* Vite Blue / Brand Color */
+  color: white;
+  box-shadow: 0 4px 12px rgba(100, 108, 255, 0.3);
+}
+
+.tabs button.active:hover {
+  background: #747bff;
+}
+
+/* Enhancing container */
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(to right, #646cff, #a264ff);
+  -webkit-background-clip: text;
+  color: transparent;
+}

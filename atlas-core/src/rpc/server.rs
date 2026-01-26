@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tonic::transport::{Server, ServerTlsConfig, Identity, Certificate};
+use tonic::transport::Server;
 
 use crate::runtime::maestro::Maestro;
 use crate::network::p2p::ports::P2pPublisher;
 use crate::rpc::atlas::{
     proposal_service_server::{ProposalService, ProposalServiceServer},
-    ProposalRequest, ProposalReply,
+    ProposalRequest, ProposalReply, StatusRequest, StatusReply,
 };
 
 
@@ -40,36 +40,47 @@ impl<P: P2pPublisher + 'static> ProposalService for MyProposalService<P> {
             }
         }
     }
+
+    async fn get_status(
+        &self,
+        _request: Request<StatusRequest>,
+    ) -> Result<Response<StatusReply>, Status> {
+        let (node_id, leader_id, height, view) = self.maestro.get_status().await;
+        
+        let reply = StatusReply {
+            node_id,
+            leader_id,
+            height,
+            view,
+        };
+
+        Ok(Response::new(reply))
+    }
 }
 
 // Função para iniciar o servidor gRPC com mTLS.
 pub async fn run_server<P: P2pPublisher + 'static>(
     maestro: Arc<Maestro<P>>,
+    ledger: Arc<atlas_ledger::Ledger>,
+    mempool: Arc<atlas_mempool::Mempool>,
     addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[TLS] Servidor gRPC escutando em {}", addr);
+    println!("[Unified] Servidor gRPC escutando em {}", addr);
 
-    // Carregar os certificados e a chave do servidor
-    let cert = tokio::fs::read("certs/server.pem").await?;
-    let key = tokio::fs::read("certs/server.key").await?;
-    let server_identity = Identity::from_pem(cert, key);
-
-    // Carregar o certificado da CA que assinou os certificados dos clientes
-    let ca_cert = tokio::fs::read("certs/ca.pem").await?;
-    let client_ca_cert = Certificate::from_pem(ca_cert);
-
-    // Configurar o TLS do servidor para exigir autenticação do cliente (mTLS)
-    let tls_config = ServerTlsConfig::new()
-        .identity(server_identity)
-        .client_ca_root(client_ca_cert);
-
-    let service = MyProposalService {
+    let proposal_service = MyProposalService {
         maestro,
     };
 
+    let ledger_service = atlas_ledger::interface::api::service::LedgerServiceImpl {
+        ledger,
+        mempool,
+    };
+
+    use atlas_ledger::interface::api::service::ledger_proto::ledger_service_server::LedgerServiceServer;
+
     Server::builder()
-        .tls_config(tls_config)?
-        .add_service(ProposalServiceServer::new(service))
+        .add_service(ProposalServiceServer::new(proposal_service))
+        .add_service(LedgerServiceServer::new(ledger_service))
         .serve(addr)
         .await?;
 

@@ -1,0 +1,16 @@
+[package]
+name = "atlas-bank"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+atlas-common = { path = "../atlas-common" }
+atlas-kyc = { path = "../atlas-kyc" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Temporary dependency on atlas-ledger types might be tricky.
+# Ideally atlas-bank should define its own "Transaction" trait or struct,
+# OR rely on a lower-level shared "types" crate.
+# For now, I will duplicate/move Transaction struct to atlas-common or atlas-bank if needed.

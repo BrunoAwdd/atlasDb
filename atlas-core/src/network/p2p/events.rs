@@ -4,10 +4,10 @@ use libp2p::{
     kad,
     request_response,
     ping,
-    PeerId,
+
 };
 
-use atlas_sdk::utils::NodeId;
+use atlas_common::utils::NodeId;
 
 use crate::network::p2p::protocol::{TxRequest, TxBundle};
 
@@ -46,6 +46,6 @@ pub enum AdapterEvent {
     PublishFailed {topic: String, data: Vec<u8>},
     Gossip {topic: String, data: Vec<u8>, from: NodeId},
     Vote(Vec<u8>),
-    TxRequest { from: NodeId, txids: Vec<[u8;32]> },
-    TxBundle  { from: NodeId, txs: Vec<Vec<u8>> },
+    TxRequest { from: NodeId, req: TxRequest, req_id: u64 },
+    TxBundle  { from: NodeId, bundle: TxBundle },
 }

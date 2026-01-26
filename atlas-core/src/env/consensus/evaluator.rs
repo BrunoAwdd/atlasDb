@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use tracing::info;
 
-use atlas_sdk::{
+use atlas_common::{
     utils::NodeId,
-    env::consensus::types::{ConsensusResult, Vote},
+    env::consensus::types::ConsensusResult,
 };
 
 use super::{
@@ -41,37 +41,41 @@ impl ConsensusEvaluator {
         registry: &VoteRegistry,
         active_nodes: &HashSet<NodeId>,
     ) -> Vec<ConsensusResult> {
-        let total_nodes = active_nodes.len();
-        let fraction_required = ((total_nodes as f64) * self.policy.fraction).ceil() as usize;
-        let quorum_count = std::cmp::max(fraction_required, self.policy.min_voters);
+        let n = active_nodes.len();
+        // BFT Quorum: f = (n-1)/3, quorum = 2f + 1
+        let f = (n.saturating_sub(1)) / 3;
+        let quorum_count = 2 * f + 1;
 
         info!(
-            "🗳️ Avaliando consenso (nós ativos: {}, policy: {:.2}/{}, necessário: {})",
-            total_nodes,
-            self.policy.fraction,
-            self.policy.min_voters,
-            quorum_count
+            "🗳️ Avaliando consenso BFT (nós: {}, f: {}, quorum: {})",
+            n, f, quorum_count
         );
 
         let mut results = Vec::new();
 
-        for (proposal_id, votes) in registry.all() {
-            let yes_votes = votes.values().filter(|v| matches!(v, Vote::Yes)).count();
-            let approved = yes_votes >= quorum_count;
+        // Iterate over all proposals and phases
+        use atlas_common::env::consensus::types::ConsensusPhase;
+        let phases = [ConsensusPhase::Prepare, ConsensusPhase::PreCommit, ConsensusPhase::Commit];
 
-            results.push(ConsensusResult {
-                approved,
-                votes_received: yes_votes,
-                proposal_id: proposal_id.clone(),
-            });
+        for (proposal_id, _) in registry.all() {
+            for phase in &phases {
+                let yes_votes = registry.count_yes(proposal_id, phase);
+                let approved = yes_votes >= quorum_count;
 
-            info!(
-                "🗳️ Proposta [{}]: {}/{} votos 'Yes' — {}",
-                proposal_id,
-                yes_votes,
-                quorum_count,
-                if approved { "✅ APROVADA" } else { "❌ REJEITADA" }
-            );
+                if approved {
+                    results.push(ConsensusResult {
+                        approved,
+                        votes_received: yes_votes,
+                        proposal_id: proposal_id.clone(),
+                        phase: phase.clone(),
+                    });
+
+                    info!(
+                        "🗳️ Proposta [{}] Fase {:?}: {}/{} votos 'Yes' — ✅ APROVADA",
+                        proposal_id, phase, yes_votes, quorum_count
+                    );
+                }
+            }
         }
 
         results
@@ -82,50 +86,36 @@ impl ConsensusEvaluator {
 mod tests {
     use super::*;
     use crate::env::consensus::registry::VoteRegistry;
-    use atlas_sdk::env::consensus::types::Vote;
+    use atlas_common::env::consensus::types::{Vote, ConsensusPhase};
 
     #[test]
-    fn test_quorum_policy_fraction() {
-        let policy = QuorumPolicy { fraction: 0.5, min_voters: 1 };
+    fn test_bft_quorum_calculation() {
+        let policy = QuorumPolicy::default();
         let evaluator = ConsensusEvaluator::new(policy);
         let mut registry = VoteRegistry::new();
-        let active_nodes: HashSet<NodeId> = vec![
-            NodeId("node1".into()), NodeId("node2".into()), NodeId("node3".into())
-        ].into_iter().collect();
-
-        // 3 nodes, 0.5 fraction -> ceil(1.5) = 2 votes needed.
+        
+        // 4 nodes -> f=1 -> quorum=3
+        let active_nodes: HashSet<NodeId> = (0..4).map(|i| NodeId(format!("node{}", i))).collect();
 
         let proposal_id = "prop1".to_string();
         registry.register_proposal(&proposal_id);
-        registry.register_vote(&proposal_id, NodeId("node1".into()), Vote::Yes);
         
+        // Vote 1: Not enough
+        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node0".into()), Vote::Yes);
         let results = evaluator.evaluate(&registry, &active_nodes);
-        assert!(!results[0].approved, "Should fail with 1/3 votes");
+        assert!(results.is_empty());
 
-        registry.register_vote(&proposal_id, NodeId("node2".into()), Vote::Yes);
+        // Vote 2: Not enough
+        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node1".into()), Vote::Yes);
         let results = evaluator.evaluate(&registry, &active_nodes);
-        assert!(results[0].approved, "Should pass with 2/3 votes");
-    }
+        assert!(results.is_empty());
 
-    #[test]
-    fn test_quorum_policy_min_voters() {
-        let policy = QuorumPolicy { fraction: 0.1, min_voters: 3 }; // fraction gives 0.4 -> 1, but min is 3
-        let evaluator = ConsensusEvaluator::new(policy);
-        let mut registry = VoteRegistry::new();
-        let active_nodes: HashSet<NodeId> = vec![
-            NodeId("node1".into()), NodeId("node2".into()), NodeId("node3".into()), NodeId("node4".into())
-        ].into_iter().collect();
-
-        let proposal_id = "prop2".to_string();
-        registry.register_proposal(&proposal_id);
-        registry.register_vote(&proposal_id, NodeId("node1".into()), Vote::Yes);
-        registry.register_vote(&proposal_id, NodeId("node2".into()), Vote::Yes);
-
+        // Vote 3: Quorum reached!
+        registry.register_vote(&proposal_id, ConsensusPhase::Prepare, NodeId("node2".into()), Vote::Yes);
         let results = evaluator.evaluate(&registry, &active_nodes);
-        assert!(!results[0].approved, "Should fail with 2 votes (min 3)");
-
-        registry.register_vote(&proposal_id, NodeId("node3".into()), Vote::Yes);
-        let results = evaluator.evaluate(&registry, &active_nodes);
-        assert!(results[0].approved, "Should pass with 3 votes");
+        
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].phase, ConsensusPhase::Prepare);
+        assert!(results[0].approved);
     }
 }
