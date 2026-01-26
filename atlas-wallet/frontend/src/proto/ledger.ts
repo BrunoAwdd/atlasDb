@@ -15,14 +15,15 @@ export interface SubmitTransactionRequest {
   /** u128 as string */
   amount: string;
   asset: string;
-  memo?: string | undefined;
+  memo?:
+    | string
+    | undefined;
   /** crypto signature for authentication */
   signature: string;
-  public_key: string;
-  /** u64 as string */
-  nonce: string;
-  /** u64 as string */
-  timestamp: string;
+  /** public key of the signer */
+  publicKey: string;
+  nonce: number;
+  timestamp: number;
 }
 
 export interface SubmitTransactionResponse {
@@ -40,11 +41,12 @@ export interface GetBalanceResponse {
   /** u128 as string */
   balance: string;
   asset: string;
+  nonce: number;
 }
 
 export interface GetStatementRequest {
   address: string;
-  limit: string;
+  limit: number;
 }
 
 export interface TransactionRecord {
@@ -53,12 +55,22 @@ export interface TransactionRecord {
   to: string;
   amount: string;
   asset: string;
-  timestamp: string;
+  timestamp: number;
   memo: string;
 }
 
 export interface GetStatementResponse {
   transactions: TransactionRecord[];
+}
+
+export interface ListTransactionsRequest {
+  limit: number;
+  offset: number;
+}
+
+export interface ListTransactionsResponse {
+  transactions: TransactionRecord[];
+  totalCount: number;
 }
 
 function createBaseSubmitTransactionRequest(): SubmitTransactionRequest {
@@ -69,17 +81,14 @@ function createBaseSubmitTransactionRequest(): SubmitTransactionRequest {
     asset: "",
     memo: undefined,
     signature: "",
-    public_key: "",
-    nonce: "0",
-    timestamp: "0",
+    publicKey: "",
+    nonce: 0,
+    timestamp: 0,
   };
 }
 
 export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
-  encode(
-    message: SubmitTransactionRequest,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: SubmitTransactionRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.from !== "") {
       writer.uint32(10).string(message.from);
     }
@@ -98,24 +107,20 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     if (message.signature !== "") {
       writer.uint32(50).string(message.signature);
     }
-    if (message.public_key !== "") {
-      writer.uint32(58).string(message.public_key);
+    if (message.publicKey !== "") {
+      writer.uint32(58).string(message.publicKey);
     }
-    if (message.nonce !== "0") {
+    if (message.nonce !== 0) {
       writer.uint32(64).uint64(message.nonce);
     }
-    if (message.timestamp !== "0") {
+    if (message.timestamp !== 0) {
       writer.uint32(72).uint64(message.timestamp);
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number,
-  ): SubmitTransactionRequest {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): SubmitTransactionRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSubmitTransactionRequest();
     while (reader.pos < end) {
@@ -174,7 +179,7 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
             break;
           }
 
-          message.public_key = reader.string();
+          message.publicKey = reader.string();
           continue;
         }
         case 8: {
@@ -182,7 +187,7 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
             break;
           }
 
-          message.nonce = reader.uint64().toString();
+          message.nonce = longToNumber(reader.uint64());
           continue;
         }
         case 9: {
@@ -190,7 +195,7 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
             break;
           }
 
-          message.timestamp = reader.uint64().toString();
+          message.timestamp = longToNumber(reader.uint64());
           continue;
         }
       }
@@ -209,16 +214,10 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
       amount: isSet(object.amount) ? globalThis.String(object.amount) : "",
       asset: isSet(object.asset) ? globalThis.String(object.asset) : "",
       memo: isSet(object.memo) ? globalThis.String(object.memo) : undefined,
-      signature: isSet(object.signature)
-        ? globalThis.String(object.signature)
-        : "",
-      public_key: isSet(object.public_key)
-        ? globalThis.String(object.public_key)
-        : "",
-      nonce: isSet(object.nonce) ? globalThis.String(object.nonce) : "0",
-      timestamp: isSet(object.timestamp)
-        ? globalThis.String(object.timestamp)
-        : "0",
+      signature: isSet(object.signature) ? globalThis.String(object.signature) : "",
+      publicKey: isSet(object.publicKey) ? globalThis.String(object.publicKey) : "",
+      nonce: isSet(object.nonce) ? globalThis.Number(object.nonce) : 0,
+      timestamp: isSet(object.timestamp) ? globalThis.Number(object.timestamp) : 0,
     };
   },
 
@@ -242,26 +241,22 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     if (message.signature !== "") {
       obj.signature = message.signature;
     }
-    if (message.public_key !== "") {
-      obj.public_key = message.public_key;
+    if (message.publicKey !== "") {
+      obj.publicKey = message.publicKey;
     }
-    if (message.nonce !== "0") {
-      obj.nonce = message.nonce;
+    if (message.nonce !== 0) {
+      obj.nonce = Math.round(message.nonce);
     }
-    if (message.timestamp !== "0") {
-      obj.timestamp = message.timestamp;
+    if (message.timestamp !== 0) {
+      obj.timestamp = Math.round(message.timestamp);
     }
     return obj;
   },
 
-  create(
-    base?: DeepPartial<SubmitTransactionRequest>,
-  ): SubmitTransactionRequest {
-    return SubmitTransactionRequest.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<SubmitTransactionRequest>, I>>(base?: I): SubmitTransactionRequest {
+    return SubmitTransactionRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial(
-    object: DeepPartial<SubmitTransactionRequest>,
-  ): SubmitTransactionRequest {
+  fromPartial<I extends Exact<DeepPartial<SubmitTransactionRequest>, I>>(object: I): SubmitTransactionRequest {
     const message = createBaseSubmitTransactionRequest();
     message.from = object.from ?? "";
     message.to = object.to ?? "";
@@ -269,9 +264,9 @@ export const SubmitTransactionRequest: MessageFns<SubmitTransactionRequest> = {
     message.asset = object.asset ?? "";
     message.memo = object.memo ?? undefined;
     message.signature = object.signature ?? "";
-    message.public_key = object.public_key ?? "";
-    message.nonce = object.nonce ?? "0";
-    message.timestamp = object.timestamp ?? "0";
+    message.publicKey = object.publicKey ?? "";
+    message.nonce = object.nonce ?? 0;
+    message.timestamp = object.timestamp ?? 0;
     return message;
   },
 };
@@ -280,119 +275,100 @@ function createBaseSubmitTransactionResponse(): SubmitTransactionResponse {
   return { success: false, txHash: "", errorMessage: "" };
 }
 
-export const SubmitTransactionResponse: MessageFns<SubmitTransactionResponse> =
-  {
-    encode(
-      message: SubmitTransactionResponse,
-      writer: BinaryWriter = new BinaryWriter(),
-    ): BinaryWriter {
-      if (message.success !== false) {
-        writer.uint32(8).bool(message.success);
-      }
-      if (message.txHash !== "") {
-        writer.uint32(18).string(message.txHash);
-      }
-      if (message.errorMessage !== "") {
-        writer.uint32(26).string(message.errorMessage);
-      }
-      return writer;
-    },
+export const SubmitTransactionResponse: MessageFns<SubmitTransactionResponse> = {
+  encode(message: SubmitTransactionResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    if (message.txHash !== "") {
+      writer.uint32(18).string(message.txHash);
+    }
+    if (message.errorMessage !== "") {
+      writer.uint32(26).string(message.errorMessage);
+    }
+    return writer;
+  },
 
-    decode(
-      input: BinaryReader | Uint8Array,
-      length?: number,
-    ): SubmitTransactionResponse {
-      const reader =
-        input instanceof BinaryReader ? input : new BinaryReader(input);
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseSubmitTransactionResponse();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.success = reader.bool();
-            continue;
+  decode(input: BinaryReader | Uint8Array, length?: number): SubmitTransactionResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSubmitTransactionResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
           }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
 
-            message.txHash = reader.string();
-            continue;
-          }
-          case 3: {
-            if (tag !== 26) {
-              break;
-            }
-
-            message.errorMessage = reader.string();
-            continue;
-          }
+          message.success = reader.bool();
+          continue;
         }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.txHash = reader.string();
+          continue;
         }
-        reader.skip(tag & 7);
-      }
-      return message;
-    },
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
 
-    fromJSON(object: any): SubmitTransactionResponse {
-      return {
-        success: isSet(object.success)
-          ? globalThis.Boolean(object.success)
-          : false,
-        txHash: isSet(object.txHash) ? globalThis.String(object.txHash) : "",
-        errorMessage: isSet(object.errorMessage)
-          ? globalThis.String(object.errorMessage)
-          : "",
-      };
-    },
+          message.errorMessage = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
 
-    toJSON(message: SubmitTransactionResponse): unknown {
-      const obj: any = {};
-      if (message.success !== false) {
-        obj.success = message.success;
-      }
-      if (message.txHash !== "") {
-        obj.txHash = message.txHash;
-      }
-      if (message.errorMessage !== "") {
-        obj.errorMessage = message.errorMessage;
-      }
-      return obj;
-    },
+  fromJSON(object: any): SubmitTransactionResponse {
+    return {
+      success: isSet(object.success) ? globalThis.Boolean(object.success) : false,
+      txHash: isSet(object.txHash) ? globalThis.String(object.txHash) : "",
+      errorMessage: isSet(object.errorMessage) ? globalThis.String(object.errorMessage) : "",
+    };
+  },
 
-    create(
-      base?: DeepPartial<SubmitTransactionResponse>,
-    ): SubmitTransactionResponse {
-      return SubmitTransactionResponse.fromPartial(base ?? {});
-    },
-    fromPartial(
-      object: DeepPartial<SubmitTransactionResponse>,
-    ): SubmitTransactionResponse {
-      const message = createBaseSubmitTransactionResponse();
-      message.success = object.success ?? false;
-      message.txHash = object.txHash ?? "";
-      message.errorMessage = object.errorMessage ?? "";
-      return message;
-    },
-  };
+  toJSON(message: SubmitTransactionResponse): unknown {
+    const obj: any = {};
+    if (message.success !== false) {
+      obj.success = message.success;
+    }
+    if (message.txHash !== "") {
+      obj.txHash = message.txHash;
+    }
+    if (message.errorMessage !== "") {
+      obj.errorMessage = message.errorMessage;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SubmitTransactionResponse>, I>>(base?: I): SubmitTransactionResponse {
+    return SubmitTransactionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SubmitTransactionResponse>, I>>(object: I): SubmitTransactionResponse {
+    const message = createBaseSubmitTransactionResponse();
+    message.success = object.success ?? false;
+    message.txHash = object.txHash ?? "";
+    message.errorMessage = object.errorMessage ?? "";
+    return message;
+  },
+};
 
 function createBaseGetBalanceRequest(): GetBalanceRequest {
   return { address: "", asset: "" };
 }
 
 export const GetBalanceRequest: MessageFns<GetBalanceRequest> = {
-  encode(
-    message: GetBalanceRequest,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: GetBalanceRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(10).string(message.address);
     }
@@ -403,8 +379,7 @@ export const GetBalanceRequest: MessageFns<GetBalanceRequest> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): GetBalanceRequest {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetBalanceRequest();
     while (reader.pos < end) {
@@ -453,10 +428,10 @@ export const GetBalanceRequest: MessageFns<GetBalanceRequest> = {
     return obj;
   },
 
-  create(base?: DeepPartial<GetBalanceRequest>): GetBalanceRequest {
-    return GetBalanceRequest.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<GetBalanceRequest>, I>>(base?: I): GetBalanceRequest {
+    return GetBalanceRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial(object: DeepPartial<GetBalanceRequest>): GetBalanceRequest {
+  fromPartial<I extends Exact<DeepPartial<GetBalanceRequest>, I>>(object: I): GetBalanceRequest {
     const message = createBaseGetBalanceRequest();
     message.address = object.address ?? "";
     message.asset = object.asset ?? "";
@@ -465,29 +440,25 @@ export const GetBalanceRequest: MessageFns<GetBalanceRequest> = {
 };
 
 function createBaseGetBalanceResponse(): GetBalanceResponse {
-  return { balance: "", asset: "" };
+  return { balance: "", asset: "", nonce: 0 };
 }
 
 export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
-  encode(
-    message: GetBalanceResponse,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: GetBalanceResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.balance !== "") {
       writer.uint32(10).string(message.balance);
     }
     if (message.asset !== "") {
       writer.uint32(18).string(message.asset);
     }
+    if (message.nonce !== 0) {
+      writer.uint32(24).uint64(message.nonce);
+    }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number,
-  ): GetBalanceResponse {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): GetBalanceResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetBalanceResponse();
     while (reader.pos < end) {
@@ -509,6 +480,14 @@ export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
           message.asset = reader.string();
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.nonce = longToNumber(reader.uint64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -522,6 +501,7 @@ export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
     return {
       balance: isSet(object.balance) ? globalThis.String(object.balance) : "",
       asset: isSet(object.asset) ? globalThis.String(object.asset) : "",
+      nonce: isSet(object.nonce) ? globalThis.Number(object.nonce) : 0,
     };
   },
 
@@ -533,44 +513,41 @@ export const GetBalanceResponse: MessageFns<GetBalanceResponse> = {
     if (message.asset !== "") {
       obj.asset = message.asset;
     }
+    if (message.nonce !== 0) {
+      obj.nonce = Math.round(message.nonce);
+    }
     return obj;
   },
 
-  create(base?: DeepPartial<GetBalanceResponse>): GetBalanceResponse {
-    return GetBalanceResponse.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<GetBalanceResponse>, I>>(base?: I): GetBalanceResponse {
+    return GetBalanceResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial(object: DeepPartial<GetBalanceResponse>): GetBalanceResponse {
+  fromPartial<I extends Exact<DeepPartial<GetBalanceResponse>, I>>(object: I): GetBalanceResponse {
     const message = createBaseGetBalanceResponse();
     message.balance = object.balance ?? "";
     message.asset = object.asset ?? "";
+    message.nonce = object.nonce ?? 0;
     return message;
   },
 };
 
 function createBaseGetStatementRequest(): GetStatementRequest {
-  return { address: "", limit: "0" };
+  return { address: "", limit: 0 };
 }
 
 export const GetStatementRequest: MessageFns<GetStatementRequest> = {
-  encode(
-    message: GetStatementRequest,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: GetStatementRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(10).string(message.address);
     }
-    if (message.limit !== "0") {
+    if (message.limit !== 0) {
       writer.uint32(16).uint64(message.limit);
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number,
-  ): GetStatementRequest {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): GetStatementRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetStatementRequest();
     while (reader.pos < end) {
@@ -589,7 +566,7 @@ export const GetStatementRequest: MessageFns<GetStatementRequest> = {
             break;
           }
 
-          message.limit = reader.uint64().toString();
+          message.limit = longToNumber(reader.uint64());
           continue;
         }
       }
@@ -604,7 +581,7 @@ export const GetStatementRequest: MessageFns<GetStatementRequest> = {
   fromJSON(object: any): GetStatementRequest {
     return {
       address: isSet(object.address) ? globalThis.String(object.address) : "",
-      limit: isSet(object.limit) ? globalThis.String(object.limit) : "0",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
     };
   },
 
@@ -613,40 +590,29 @@ export const GetStatementRequest: MessageFns<GetStatementRequest> = {
     if (message.address !== "") {
       obj.address = message.address;
     }
-    if (message.limit !== "0") {
-      obj.limit = message.limit;
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
     }
     return obj;
   },
 
-  create(base?: DeepPartial<GetStatementRequest>): GetStatementRequest {
-    return GetStatementRequest.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<GetStatementRequest>, I>>(base?: I): GetStatementRequest {
+    return GetStatementRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial(object: DeepPartial<GetStatementRequest>): GetStatementRequest {
+  fromPartial<I extends Exact<DeepPartial<GetStatementRequest>, I>>(object: I): GetStatementRequest {
     const message = createBaseGetStatementRequest();
     message.address = object.address ?? "";
-    message.limit = object.limit ?? "0";
+    message.limit = object.limit ?? 0;
     return message;
   },
 };
 
 function createBaseTransactionRecord(): TransactionRecord {
-  return {
-    txHash: "",
-    from: "",
-    to: "",
-    amount: "",
-    asset: "",
-    timestamp: "0",
-    memo: "",
-  };
+  return { txHash: "", from: "", to: "", amount: "", asset: "", timestamp: 0, memo: "" };
 }
 
 export const TransactionRecord: MessageFns<TransactionRecord> = {
-  encode(
-    message: TransactionRecord,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: TransactionRecord, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.txHash !== "") {
       writer.uint32(10).string(message.txHash);
     }
@@ -662,7 +628,7 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
     if (message.asset !== "") {
       writer.uint32(42).string(message.asset);
     }
-    if (message.timestamp !== "0") {
+    if (message.timestamp !== 0) {
       writer.uint32(48).uint64(message.timestamp);
     }
     if (message.memo !== "") {
@@ -672,8 +638,7 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): TransactionRecord {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseTransactionRecord();
     while (reader.pos < end) {
@@ -724,7 +689,7 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
             break;
           }
 
-          message.timestamp = reader.uint64().toString();
+          message.timestamp = longToNumber(reader.uint64());
           continue;
         }
         case 7: {
@@ -751,9 +716,7 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
       to: isSet(object.to) ? globalThis.String(object.to) : "",
       amount: isSet(object.amount) ? globalThis.String(object.amount) : "",
       asset: isSet(object.asset) ? globalThis.String(object.asset) : "",
-      timestamp: isSet(object.timestamp)
-        ? globalThis.String(object.timestamp)
-        : "0",
+      timestamp: isSet(object.timestamp) ? globalThis.Number(object.timestamp) : 0,
       memo: isSet(object.memo) ? globalThis.String(object.memo) : "",
     };
   },
@@ -775,8 +738,8 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
     if (message.asset !== "") {
       obj.asset = message.asset;
     }
-    if (message.timestamp !== "0") {
-      obj.timestamp = message.timestamp;
+    if (message.timestamp !== 0) {
+      obj.timestamp = Math.round(message.timestamp);
     }
     if (message.memo !== "") {
       obj.memo = message.memo;
@@ -784,17 +747,17 @@ export const TransactionRecord: MessageFns<TransactionRecord> = {
     return obj;
   },
 
-  create(base?: DeepPartial<TransactionRecord>): TransactionRecord {
-    return TransactionRecord.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<TransactionRecord>, I>>(base?: I): TransactionRecord {
+    return TransactionRecord.fromPartial(base ?? ({} as any));
   },
-  fromPartial(object: DeepPartial<TransactionRecord>): TransactionRecord {
+  fromPartial<I extends Exact<DeepPartial<TransactionRecord>, I>>(object: I): TransactionRecord {
     const message = createBaseTransactionRecord();
     message.txHash = object.txHash ?? "";
     message.from = object.from ?? "";
     message.to = object.to ?? "";
     message.amount = object.amount ?? "";
     message.asset = object.asset ?? "";
-    message.timestamp = object.timestamp ?? "0";
+    message.timestamp = object.timestamp ?? 0;
     message.memo = object.memo ?? "";
     return message;
   },
@@ -805,22 +768,15 @@ function createBaseGetStatementResponse(): GetStatementResponse {
 }
 
 export const GetStatementResponse: MessageFns<GetStatementResponse> = {
-  encode(
-    message: GetStatementResponse,
-    writer: BinaryWriter = new BinaryWriter(),
-  ): BinaryWriter {
+  encode(message: GetStatementResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.transactions) {
       TransactionRecord.encode(v!, writer.uint32(10).fork()).join();
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number,
-  ): GetStatementResponse {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): GetStatementResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetStatementResponse();
     while (reader.pos < end) {
@@ -831,9 +787,7 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
             break;
           }
 
-          message.transactions.push(
-            TransactionRecord.decode(reader, reader.uint32()),
-          );
+          message.transactions.push(TransactionRecord.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -856,30 +810,180 @@ export const GetStatementResponse: MessageFns<GetStatementResponse> = {
   toJSON(message: GetStatementResponse): unknown {
     const obj: any = {};
     if (message.transactions?.length) {
-      obj.transactions = message.transactions.map((e) =>
-        TransactionRecord.toJSON(e),
-      );
+      obj.transactions = message.transactions.map((e) => TransactionRecord.toJSON(e));
     }
     return obj;
   },
 
-  create(base?: DeepPartial<GetStatementResponse>): GetStatementResponse {
-    return GetStatementResponse.fromPartial(base ?? {});
+  create<I extends Exact<DeepPartial<GetStatementResponse>, I>>(base?: I): GetStatementResponse {
+    return GetStatementResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial(object: DeepPartial<GetStatementResponse>): GetStatementResponse {
+  fromPartial<I extends Exact<DeepPartial<GetStatementResponse>, I>>(object: I): GetStatementResponse {
     const message = createBaseGetStatementResponse();
-    message.transactions =
-      object.transactions?.map((e) => TransactionRecord.fromPartial(e)) || [];
+    message.transactions = object.transactions?.map((e) => TransactionRecord.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseListTransactionsRequest(): ListTransactionsRequest {
+  return { limit: 0, offset: 0 };
+}
+
+export const ListTransactionsRequest: MessageFns<ListTransactionsRequest> = {
+  encode(message: ListTransactionsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.limit !== 0) {
+      writer.uint32(8).uint64(message.limit);
+    }
+    if (message.offset !== 0) {
+      writer.uint32(16).uint64(message.offset);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListTransactionsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListTransactionsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.limit = longToNumber(reader.uint64());
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.offset = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListTransactionsRequest {
+    return {
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+      offset: isSet(object.offset) ? globalThis.Number(object.offset) : 0,
+    };
+  },
+
+  toJSON(message: ListTransactionsRequest): unknown {
+    const obj: any = {};
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    if (message.offset !== 0) {
+      obj.offset = Math.round(message.offset);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListTransactionsRequest>, I>>(base?: I): ListTransactionsRequest {
+    return ListTransactionsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListTransactionsRequest>, I>>(object: I): ListTransactionsRequest {
+    const message = createBaseListTransactionsRequest();
+    message.limit = object.limit ?? 0;
+    message.offset = object.offset ?? 0;
+    return message;
+  },
+};
+
+function createBaseListTransactionsResponse(): ListTransactionsResponse {
+  return { transactions: [], totalCount: 0 };
+}
+
+export const ListTransactionsResponse: MessageFns<ListTransactionsResponse> = {
+  encode(message: ListTransactionsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.transactions) {
+      TransactionRecord.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.totalCount !== 0) {
+      writer.uint32(16).uint64(message.totalCount);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListTransactionsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListTransactionsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.transactions.push(TransactionRecord.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.totalCount = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListTransactionsResponse {
+    return {
+      transactions: globalThis.Array.isArray(object?.transactions)
+        ? object.transactions.map((e: any) => TransactionRecord.fromJSON(e))
+        : [],
+      totalCount: isSet(object.totalCount) ? globalThis.Number(object.totalCount) : 0,
+    };
+  },
+
+  toJSON(message: ListTransactionsResponse): unknown {
+    const obj: any = {};
+    if (message.transactions?.length) {
+      obj.transactions = message.transactions.map((e) => TransactionRecord.toJSON(e));
+    }
+    if (message.totalCount !== 0) {
+      obj.totalCount = Math.round(message.totalCount);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListTransactionsResponse>, I>>(base?: I): ListTransactionsResponse {
+    return ListTransactionsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListTransactionsResponse>, I>>(object: I): ListTransactionsResponse {
+    const message = createBaseListTransactionsResponse();
+    message.transactions = object.transactions?.map((e) => TransactionRecord.fromPartial(e)) || [];
+    message.totalCount = object.totalCount ?? 0;
     return message;
   },
 };
 
 export interface LedgerService {
-  SubmitTransaction(
-    request: SubmitTransactionRequest,
-  ): Promise<SubmitTransactionResponse>;
+  SubmitTransaction(request: SubmitTransactionRequest): Promise<SubmitTransactionResponse>;
   GetBalance(request: GetBalanceRequest): Promise<GetBalanceResponse>;
   GetStatement(request: GetStatementRequest): Promise<GetStatementResponse>;
+  ListTransactions(request: ListTransactionsRequest): Promise<ListTransactionsResponse>;
 }
 
 export const LedgerServiceServiceName = "ledger.LedgerService";
@@ -892,60 +996,59 @@ export class LedgerServiceClientImpl implements LedgerService {
     this.SubmitTransaction = this.SubmitTransaction.bind(this);
     this.GetBalance = this.GetBalance.bind(this);
     this.GetStatement = this.GetStatement.bind(this);
+    this.ListTransactions = this.ListTransactions.bind(this);
   }
-  SubmitTransaction(
-    request: SubmitTransactionRequest,
-  ): Promise<SubmitTransactionResponse> {
+  SubmitTransaction(request: SubmitTransactionRequest): Promise<SubmitTransactionResponse> {
     const data = SubmitTransactionRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "SubmitTransaction", data);
-    return promise.then((data) =>
-      SubmitTransactionResponse.decode(new BinaryReader(data)),
-    );
+    return promise.then((data) => SubmitTransactionResponse.decode(new BinaryReader(data)));
   }
 
   GetBalance(request: GetBalanceRequest): Promise<GetBalanceResponse> {
     const data = GetBalanceRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "GetBalance", data);
-    return promise.then((data) =>
-      GetBalanceResponse.decode(new BinaryReader(data)),
-    );
+    return promise.then((data) => GetBalanceResponse.decode(new BinaryReader(data)));
   }
 
   GetStatement(request: GetStatementRequest): Promise<GetStatementResponse> {
     const data = GetStatementRequest.encode(request).finish();
     const promise = this.rpc.request(this.service, "GetStatement", data);
-    return promise.then((data) =>
-      GetStatementResponse.decode(new BinaryReader(data)),
-    );
+    return promise.then((data) => GetStatementResponse.decode(new BinaryReader(data)));
+  }
+
+  ListTransactions(request: ListTransactionsRequest): Promise<ListTransactionsResponse> {
+    const data = ListTransactionsRequest.encode(request).finish();
+    const promise = this.rpc.request(this.service, "ListTransactions", data);
+    return promise.then((data) => ListTransactionsResponse.decode(new BinaryReader(data)));
   }
 }
 
 interface Rpc {
-  request(
-    service: string,
-    method: string,
-    data: Uint8Array,
-  ): Promise<Uint8Array>;
+  request(service: string, method: string, data: Uint8Array): Promise<Uint8Array>;
 }
 
-type Builtin =
-  | Date
-  | Function
-  | Uint8Array
-  | string
-  | number
-  | boolean
-  | undefined;
+type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 
-export type DeepPartial<T> = T extends Builtin
-  ? T
-  : T extends globalThis.Array<infer U>
-    ? globalThis.Array<DeepPartial<U>>
-    : T extends ReadonlyArray<infer U>
-      ? ReadonlyArray<DeepPartial<U>>
-      : T extends {}
-        ? { [K in keyof T]?: DeepPartial<T[K]> }
-        : Partial<T>;
+export type DeepPartial<T> = T extends Builtin ? T
+  : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
+  : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
+  : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
+  : Partial<T>;
+
+type KeysOfUnion<T> = T extends T ? keyof T : never;
+export type Exact<P, I extends P> = P extends Builtin ? P
+  : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
+}
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;
@@ -956,6 +1059,6 @@ export interface MessageFns<T> {
   decode(input: BinaryReader | Uint8Array, length?: number): T;
   fromJSON(object: any): T;
   toJSON(message: T): unknown;
-  create(base?: DeepPartial<T>): T;
-  fromPartial(object: DeepPartial<T>): T;
+  create<I extends Exact<DeepPartial<T>, I>>(base?: I): T;
+  fromPartial<I extends Exact<DeepPartial<T>, I>>(object: I): T;
 }

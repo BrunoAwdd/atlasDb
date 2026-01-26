@@ -56,10 +56,26 @@ pub async fn build_runtime(
     // 3) Adapter (Libp2p) + spawn
     tracing::info!("🔄 [DEBUG] Initializing P2P Adapter...");
     let peer_manager = Arc::clone(&cluster.peer_manager);
-    let adapter = Libp2pAdapter::new(p2p_cfg, adapter_evt_tx, adapter_cmd_rx, peer_manager)
+    let adapter = Libp2pAdapter::new(p2p_cfg, adapter_evt_tx, adapter_cmd_rx, peer_manager.clone())
         .await
         .map_err(|e| AtlasError::Other(format!("p2p init: {e}")))?;
     tracing::info!("✅ [DEBUG] P2P Adapter initialized.");
+    
+    // CRITICAL FIX: Register Self in PeerManager so Consensus counts our own vote!
+    let local_node_id: atlas_common::utils::NodeId = adapter.peer_id.to_string().into();
+    {
+        let mut pm = peer_manager.write().await;
+        let self_node = atlas_common::env::node::Node::new(
+            local_node_id.clone(), 
+            "127.0.0.1".to_string(), // Placeholder IP, irrelevant for local loopback
+            None, 
+            0.0
+        );
+        // Force register and promote to active
+        pm.handle_command(atlas_p2p::peer_manager::PeerCommand::Register(local_node_id.clone(), self_node));
+        pm.active_peers.insert(local_node_id.clone());
+        tracing::info!("🔥 Self-Registered as Active Peer: {:?}", local_node_id);
+    }
 
     let local_node_id = adapter.peer_id.to_string().into();
     cluster.local_node.write().await.id = local_node_id;

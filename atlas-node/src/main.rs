@@ -42,28 +42,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = std::fs::write("panic.log", err_msg);
     }));
 
-    let log_filename = format!("logs/audit-{}.log", node_name);
-    let file_appender = tracing_appender::rolling::never(".", log_filename);
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let system_filename = format!("logs/system-{}.log", node_name);
+    let system_appender = tracing_appender::rolling::never(".", system_filename);
+    let (system_non_blocking, _guard_sys) = tracing_appender::non_blocking(system_appender);
 
-    let consensus_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
+    let txn_filename = format!("logs/transactions-{}.log", node_name);
+    let txn_appender = tracing_appender::rolling::never(".", txn_filename);
+    let (txn_non_blocking, _guard_txn) = tracing_appender::non_blocking(txn_appender);
+
+    let system_layer = tracing_subscriber::fmt::layer()
+        .with_writer(system_non_blocking)
         .with_ansi(false)
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-            metadata.target() == "consensus" || 
-            metadata.target().starts_with("atlas_ledger") || 
-            metadata.target().starts_with("atlas_node")
+            let target = metadata.target();
+            let module = metadata.module_path().unwrap_or("");
+            
+            // P2P, Common, and Election/Core Consensus
+            target.starts_with("atlas_p2p") || 
+            target.starts_with("atlas_common") ||
+            (target.starts_with("atlas_node") && !module.contains("block_producer")) ||
+            (target.starts_with("atlas_consensus") && module.contains("cluster::core"))
+        }));
+
+    let txn_layer = tracing_subscriber::fmt::layer()
+        .with_writer(txn_non_blocking)
+        .with_ansi(false)
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            let target = metadata.target();
+            let module = metadata.module_path().unwrap_or("");
+
+            // Ledger, Voting, Proposals, Block Producer
+            target.starts_with("atlas_ledger") ||
+            module.contains("block_producer") ||
+            (target == "consensus") || // Explicit target="consensus" used in voting/proposals
+            (target.starts_with("atlas_consensus") && !module.contains("cluster::core"))
         }));
 
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_filter(tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| "info,atlas_node=debug".into()))
+        // Stdout shows system stuff mostly + errors
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
             metadata.target() != "consensus"
         }));
 
     tracing_subscriber::registry()
-        .with(consensus_layer)
+        .with(system_layer)
+        .with(txn_layer)
         .with(stdout_layer)
         .init();
 

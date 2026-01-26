@@ -103,6 +103,8 @@ impl<P: P2pPublisher> ConsensusDriver<P> {
                              if let Err(e) = self.cluster.commit_proposal(result.clone()).await {
                                  error!("Failed to commit proposal: {}", e);
                              } else {
+                                 // Clear Consensus Vote Registry to avoid Self-Equivocation in next View/Height
+                                 self.cluster.local_env.engine.lock().await.clear();
                                  self.clean_mempool(&result.proposal_id).await;
                              }
                         }

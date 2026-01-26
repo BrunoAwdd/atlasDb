@@ -6,6 +6,8 @@ interface SendTransactionFormProps {
   onAddressChange: (val: string) => void;
   amount: string;
   onAmountChange: (val: string) => void;
+  asset: string;
+  onAssetChange: (val: string) => void;
   onSend: () => void;
   status: string;
 }
@@ -15,6 +17,8 @@ export function SendTransactionForm({
   onAddressChange,
   amount,
   onAmountChange,
+  asset,
+  onAssetChange,
   onSend,
   status,
 }: SendTransactionFormProps) {
@@ -32,21 +36,30 @@ export function SendTransactionForm({
             onChange={(e) => onAddressChange(e.target.value)}
           />
         </div>
-        <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Valor
-          </label>
-          <div className="relative">
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-2 space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Valor
+            </label>
             <Input
               placeholder="0.00"
               type="number"
-              className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary pr-12"
+              className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary"
               value={amount}
               onChange={(e) => onAmountChange(e.target.value)}
             />
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">
-              MOX
-            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Ativo
+            </label>
+            <Input
+              placeholder="MOX"
+              className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary font-mono uppercase"
+              value={asset}
+              onChange={(e) => onAssetChange(e.target.value.toUpperCase())}
+            />
           </div>
         </div>
 

@@ -58,7 +58,48 @@ impl<P: P2pPublisher> BlockProducer<P> {
             if self.mempool.len() > 0 {
                  info!("🔍 [BlockProducer] Leader checking mempool. Size: {}", self.mempool.len());
             }
-            let candidates = self.mempool.get_candidates(50); // BATCH_SIZE = 50
+            let mut candidates = self.mempool.get_candidates(50); // BATCH_SIZE = 50
+            
+            // 2.0 State Validation: Filter out transactions already in Ledger
+            // This prevents "Zombie" transactions (already committed) from blocking new blocks.
+            let storage = self.cluster.local_env.storage.read().await;
+            if let Some(ledger) = &storage.ledger {
+                 let state = ledger.state.read().await;
+                 
+                 let initial_count = candidates.len();
+                 candidates.retain(|(_, tx)| {
+                     // Check nonce against ledger state
+                     let sender = &tx.transaction.from;
+                     let ledger_nonce = if let Some(acc) = state.accounts.get(sender) {
+                         acc.nonce
+                     } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", sender)) {
+                         acc.nonce
+                     } else {
+                         0
+                     };
+                     
+                     if tx.transaction.nonce <= ledger_nonce {
+                         tracing::warn!("🗑️ Discarding Stale TX from sender {} (Nonce {} <= Current {})", sender, tx.transaction.nonce, ledger_nonce);
+                         // Optional: Remove from mempool immediately?
+                         // self.mempool.remove_batch(&[hash?]); // Need hash here.
+                         // For now, just exclude from block.
+                         false
+                     } else {
+                         true
+                     }
+                 });
+                 
+                 if candidates.len() < initial_count {
+                     info!("🧹 Filtered {} stale transactions from candidates.", initial_count - candidates.len());
+                 }
+            }
+            drop(storage);
+
+            // Deterministic Sort: Group by Sender, Order by Nonce
+            candidates.sort_by(|a, b| {
+                a.1.transaction.from.cmp(&b.1.transaction.from)
+                    .then(a.1.transaction.nonce.cmp(&b.1.transaction.nonce))
+            });
             
             if candidates.is_empty() {
                 // Optimization: Do not flood network with empty blocks if no txs.

@@ -106,20 +106,46 @@ impl LedgerService for LedgerServiceImpl {
             public_key: pk_bytes,
         };
 
-        // --- Idempotency Check ---
+        // --- Idempotency Check & Nonce Validation ---
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
         hasher.update(atlas_common::transactions::signing_bytes(&signed_tx.transaction));
         hasher.update(&signed_tx.signature);
         let hash = hex::encode(hasher.finalize());
 
-        if self.ledger.exists_transaction(&hash).await.unwrap_or(false) {
+        let (exists, valid_nonce, current_nonce) = {
+             let state = self.ledger.state.read().await;
+             
+             // Check if committed in ledger
+             // We can check if hash exists in some index, but ledger.exists_transaction works too if public
+             let e = self.ledger.exists_transaction(&hash).await.unwrap_or(false);
+             
+             // Check Nonce
+             let acc_nonce = if let Some(acc) = state.accounts.get(&req.from) {
+                 acc.nonce
+             } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", req.from)) {
+                 acc.nonce
+             } else {
+                 0
+             };
+             
+             let v = req.nonce == acc_nonce + 1; // Strict check for API
+             
+             (e, v, acc_nonce)
+        };
+
+        if exists {
             info!("♻️ [LedgerService] Transaction already exists in Ledger: {}", hash);
             return Ok(Response::new(SubmitTransactionResponse {
-                success: true, // It is successful in the sense that it's processed (idempotent success)
+                success: true, 
                 tx_hash: hash,
                 error_message: "Transaction already confirmed (Idempotent)".to_string(),
             }));
+        }
+        
+        if !valid_nonce {
+             warn!("❌ [LedgerService] Invalid Nonce from {}: Received {}, Expected {}", req.from, req.nonce, current_nonce + 1);
+             return Err(Status::invalid_argument(format!("Invalid Nonce. Expected: {}, Got: {}", current_nonce + 1, req.nonce)));
         }
 
         // Add to Mempool
@@ -160,15 +186,19 @@ impl LedgerService for LedgerServiceImpl {
         };
 
         // Lookup account
-        let balance = if let Some(account) = state.accounts.get(&address) {
-            account.get_balance(&req.asset).to_string()
+        let (balance, nonce) = if let Some(account) = state.accounts.get(&address) {
+            let bal = account.get_balance(&req.asset);
+            tracing::info!("🔍 [GetBalance] Key='{}' Asset='{}' Found=true Bal='{}'", address, req.asset, bal);
+            (bal.to_string(), account.nonce)
         } else {
-            "0".to_string()
+            tracing::warn!("❌ [GetBalance] Key='{}' Asset='{}' Found=false (Defaulting to 0)", address, req.asset);
+            ("0".to_string(), 0)
         };
 
         Ok(Response::new(GetBalanceResponse {
             balance,
             asset: req.asset,
+            nonce,
         }))
     }
 
@@ -181,44 +211,45 @@ impl LedgerService for LedgerServiceImpl {
 
        let mut records = Vec::new();
        
-       for p in proposals {
-           // Try parsing the content as a SignedTransaction
-           if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
-               let tx = signed_tx.transaction;
-               
-               // Filter: Check if address matches From or To
-               // Ledger uses "passivo:wallet:addr", but user might send just "addr" or the full path.
-               // We should check if the transaction involves the requested address.
-               // The tx.from/to might be bare addresses or full paths depending on how SubmitTransaction sent them.
-               // In SubmitTransaction we used `req.from` directly.
-               
-               // Normalize check: contains substring?
-               if tx.from.contains(&req.address) || tx.to.contains(&req.address) {
-                   records.push(ledger_proto::TransactionRecord {
-                       tx_hash: p.hash, // Proposal hash is the tx hash
-                       from: tx.from,
-                       to: tx.to,
-                       amount: tx.amount.to_string(),
-                       asset: tx.asset,
-                       timestamp: p.time as u64,
-                       memo: tx.memo.unwrap_or_default(),
-                   });
-               }
-           } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
-               // FALLBACK: Support legacy unsigned transactions (for previous blocks or simulation)
-               if tx.from.contains(&req.address) || tx.to.contains(&req.address) {
-                   records.push(ledger_proto::TransactionRecord {
-                       tx_hash: p.hash, // Proposal hash is the tx hash
-                       from: tx.from,
-                       to: tx.to,
-                       amount: tx.amount.to_string(),
-                       asset: tx.asset,
-                       timestamp: p.time as u64,
-                       memo: tx.memo.unwrap_or_default(),
-                   });
-               }
-           }
-       }
+        info!("📜 [GetStatement] Request Address: '{}'", req.address);
+        
+        for p in proposals {
+            let mut extracted_txs: Vec<atlas_common::transactions::Transaction> = Vec::new();
+
+            // Case 1: Batch of SignedTransactions (Standard)
+            if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&p.content) {
+                for st in batch {
+                    extracted_txs.push(st.transaction);
+                }
+            } 
+            // Case 2: Single SignedTransaction (Legacy)
+            else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
+                extracted_txs.push(signed_tx.transaction);
+            }
+            // Case 3: Single Transaction (Unsigned/Sim)
+            else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
+                extracted_txs.push(tx);
+            }
+
+            for tx in extracted_txs {
+                // Filter: Check if address matches From or To
+                let matches = tx.from.contains(&req.address) || tx.to.contains(&req.address);
+                if matches {
+                    info!("✅ [GetStatement] Match! TxHash={} From={} To={} Amount={}", p.hash, tx.from, tx.to, tx.amount);
+                    records.push(ledger_proto::TransactionRecord {
+                        tx_hash: p.hash.clone(), 
+                        from: tx.from,
+                        to: tx.to,
+                        amount: tx.amount.to_string(),
+                        asset: tx.asset,
+                        timestamp: p.time as u64,
+                        memo: tx.memo.unwrap_or_default(),
+                    });
+                }
+            }
+        }
+
+
        
        // Sort by timestamp desc
        records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));

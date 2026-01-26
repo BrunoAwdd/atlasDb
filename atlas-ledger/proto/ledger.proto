@@ -35,6 +35,7 @@ message GetBalanceRequest {
 message GetBalanceResponse {
   string balance = 1; // u128 as string
   string asset = 2;
+  uint64 nonce = 3;
 }
 
 message GetStatementRequest {

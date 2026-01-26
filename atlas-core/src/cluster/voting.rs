@@ -43,6 +43,7 @@ impl Cluster {
             voter: self.local_node.read().await.id.clone(),
             phase: phase.clone(),
             view: 0, // Default view for now
+            height: proposal.height,
             signature: [0u8; 64],
             public_key: self.auth.read().await.public_key(),
         };

@@ -1,0 +1,61 @@
+{
+  "node_id": "12D3KooWQJX75u9CGtL8vT6P6NMZr5azqHzcNKWQDAeA39d9P6Ks",
+  "address": "127.0.0.1",
+  "port": 4001,
+  "quorum_policy": {
+    "fraction": 0.66,
+    "min_voters": 3
+  },
+  "graph": {
+    "vertices": {},
+    "edges": []
+  },
+  "storage": {
+    "proposals": [],
+    "votes": {},
+    "results": {}
+  },
+  "peer_manager": {
+    "active_peers": [],
+    "reserve_peers": [
+      "12D3KooWNdE9SwVBchnndRBC5ZtePD2mU4k6w2aboKcD2W6oTHXe",
+      "12D3KooWL1rmdA3nJazciNYPcUgGhDCTXmrJDm72eJy4dyUVZhLq",
+      "12D3KooWMWbgECofk4kjoRz9Ta5FXr4DQXDRvx9PNaTFkcMzUTGZ"
+    ],
+    "known_peers": {
+      "12D3KooWL1rmdA3nJazciNYPcUgGhDCTXmrJDm72eJy4dyUVZhLq": {
+        "id": "12D3KooWL1rmdA3nJazciNYPcUgGhDCTXmrJDm72eJy4dyUVZhLq",
+        "address": "/ip4/127.0.0.1/tcp/4004/p2p/12D3KooWL1rmdA3nJazciNYPcUgGhDCTXmrJDm72eJy4dyUVZhLq",
+        "latency": null,
+        "reliability_score": 1.0,
+        "last_seen": {
+          "secs_since_epoch": 1765459799,
+          "nanos_since_epoch": 763365201
+        }
+      },
+      "12D3KooWMWbgECofk4kjoRz9Ta5FXr4DQXDRvx9PNaTFkcMzUTGZ": {
+        "id": "12D3KooWMWbgECofk4kjoRz9Ta5FXr4DQXDRvx9PNaTFkcMzUTGZ",
+        "address": "/ip4/127.0.0.1/tcp/4003/p2p/12D3KooWMWbgECofk4kjoRz9Ta5FXr4DQXDRvx9PNaTFkcMzUTGZ",
+        "latency": null,
+        "reliability_score": 1.0,
+        "last_seen": {
+          "secs_since_epoch": 1765459799,
+          "nanos_since_epoch": 763329875
+        }
+      },
+      "12D3KooWNdE9SwVBchnndRBC5ZtePD2mU4k6w2aboKcD2W6oTHXe": {
+        "id": "12D3KooWNdE9SwVBchnndRBC5ZtePD2mU4k6w2aboKcD2W6oTHXe",
+        "address": "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWNdE9SwVBchnndRBC5ZtePD2mU4k6w2aboKcD2W6oTHXe",
+        "latency": null,
+        "reliability_score": 1.0,
+        "last_seen": {
+          "secs_since_epoch": 1765459799,
+          "nanos_since_epoch": 763248854
+        }
+      }
+    },
+    "max_active": 10,
+    "max_reserve": 5
+  },
+  "data_dir": "example/node1/data"
+}

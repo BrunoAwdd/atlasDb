@@ -5,16 +5,18 @@ import { sing_transfer } from "../pkg/atlas_wallet";
 export function useTransactionSender({
   wallet,
   activeProfile,
-  setStatus,
   refresh,
+  incrementNonce,
 }: {
   wallet: any;
   activeProfile: "exposed" | "hidden";
-  setStatus: (s: string) => void;
   refresh: () => void;
+  incrementNonce: (p: "exposed" | "hidden") => void;
 }) {
+  const [status, setStatus] = useState("");
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
+  const [asset, setAsset] = useState("BRL");
 
   const handleSend = async () => {
     try {
@@ -25,9 +27,25 @@ export function useTransactionSender({
       // Define Memo constant to ensure Signature matches Verification
       const txMemo = "Web Wallet Transfer";
 
+      // 0. Get Current Nonce from Wallet State (Verified against Ledger)
+      const currentNonce = wallet?.[activeProfile]?.nonce
+        ? BigInt(wallet[activeProfile].nonce)
+        : 0n;
+      const nextNonce = currentNonce + 1n;
+
+      console.log(
+        `Using Nonce: ${nextNonce} (Current Account Nonce: ${currentNonce})`,
+      );
+
       // 1. Sign with WASM
       // Result is a Map: { id: "...", transfer: { transaction: {...}, signature: [...], public_key: [...] } }
-      const result = await sing_transfer(toAddress, BigInt(amount), txMemo);
+      const result = await sing_transfer(
+        toAddress,
+        BigInt(amount),
+        asset,
+        txMemo,
+        nextNonce,
+      );
 
       console.log("Assinatura gerada (RAW):", result);
       console.log("Type of result:", result?.constructor?.name);
@@ -51,6 +69,7 @@ export function useTransactionSender({
 
       let sigRaw: any, pkRaw: any; // Keep any to handle various WASM return shapes safely
       let sigIsHex = false;
+      let pkIsHex = false;
 
       // Handle Map (wasm-bindgen default) or Object
       if (result instanceof Map) {
@@ -63,14 +82,16 @@ export function useTransactionSender({
           sigRaw = transfer.signature;
           pkRaw = transfer.public_key;
         }
-        // The new WASM returns signature as Hex String (from sig2)
+        // The new WASM returns signature/pk as Hex String
         if (typeof sigRaw === "string") sigIsHex = true;
+        if (typeof pkRaw === "string") pkIsHex = true;
       } else {
         // Fallback or Object structure
         if (result.transfer) {
           sigRaw = result.transfer.signature;
           pkRaw = result.transfer.public_key;
           if (typeof sigRaw === "string") sigIsHex = true;
+          if (typeof pkRaw === "string") pkIsHex = true;
         }
       }
 
@@ -86,8 +107,12 @@ export function useTransactionSender({
         signatureHex = toHex(sigRaw);
       }
 
-      // Convert Public Key to Hex (it comes as byte array/vector from WASM)
-      const publicKeyHex = toHex(pkRaw);
+      let publicKeyHex = "";
+      if (pkIsHex) {
+        publicKeyHex = pkRaw;
+      } else {
+        publicKeyHex = toHex(pkRaw);
+      }
 
       // console.log("Sending Signature (Hex):", signatureHex);
       // console.log("Sending Public Key (Hex):", publicKeyHex);
@@ -143,12 +168,12 @@ export function useTransactionSender({
         from: currentAddr,
         to: toAddress,
         amount: amount.toString(),
-        asset: "BRL",
+        asset: asset, // Use selected asset
         memo: txMemo, // Use the SAME memo signed by WASM
         signature: signatureHex,
-        public_key: publicKeyHex,
-        nonce: nonceStr,
-        timestamp: timestampStr,
+        publicKey: publicKeyHex, // Correct field name (camelCase)
+        nonce: Number(nonceStr),
+        timestamp: Number(timestampStr),
       });
 
       console.log("Ledger Response:", txResponse);
@@ -157,8 +182,12 @@ export function useTransactionSender({
         setStatus(`Sucesso! TxHash: ${txResponse.txHash}`);
         setAmount("");
         setToAddress("");
-        // Refresh balance immediately
-        setTimeout(() => refresh(), 1000); // Wait a bit for ledger processing?
+
+        // Optimistic update: Increment nonce locally to prevent race conditions
+        incrementNonce(activeProfile);
+
+        // Refresh balance immediately (but data might be stale for a second)
+        setTimeout(() => refresh(), 1000);
       } else {
         setStatus(`Falha: ${txResponse.errorMessage}`);
       }
@@ -168,5 +197,14 @@ export function useTransactionSender({
     }
   };
 
-  return { toAddress, setToAddress, amount, setAmount, handleSend };
+  return {
+    toAddress,
+    setToAddress,
+    amount,
+    setAmount,
+    asset,
+    setAsset,
+    handleSend,
+    status,
+  };
 }

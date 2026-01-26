@@ -17,6 +17,8 @@ pub struct VoteData {
     pub phase: ConsensusPhase,
     #[serde(default)]
     pub view: u64,
+    #[serde(default)]
+    pub height: u64, // New field for Height Awareness
     #[serde(with = "hex::serde")]
     pub signature: [u8; 64],
     pub public_key: Vec<u8>,
@@ -42,6 +44,7 @@ struct VoteSignView<'a> {
     voter:    &'a NodeId,
     phase:    &'a ConsensusPhase,
     view:     u64,
+    height:   u64, // Include in signature
 }
 
 pub fn vote_signing_bytes(v: &VoteData) -> Vec<u8> {
@@ -52,5 +55,6 @@ pub fn vote_signing_bytes(v: &VoteData) -> Vec<u8> {
         voter: &v.voter,
         phase: &v.phase,
         view: v.view,
+        height: v.height,
     }).expect("serialize sign view")
 }

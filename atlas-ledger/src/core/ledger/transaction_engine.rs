@@ -23,7 +23,11 @@ impl Ledger {
 
     /// Executes a transaction batch (proposal content) and updates the state.
     /// Returns the number of executed transactions.
-    pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize> {
+    /// 
+    /// # Arguments
+    /// * `proposal` - The proposal containing transactions
+    /// * `persist_shards` - If true, writes the ledger entry to disk (shards). Set to false during replay.
+    pub async fn execute_transaction(&self, proposal: &Proposal, persist_shards: bool) -> Result<usize> {
         // 1. Try Batch Parsing
         let transactions: Vec<(Transaction, Option<Vec<u8>>, Option<Vec<u8>>)> = 
             if let Ok(batch) = serde_json::from_str::<Vec<SignedTransaction>>(&proposal.content) {
@@ -137,6 +141,9 @@ impl Ledger {
             // If the account doesn't exist yet, we treat nonce as 0.
             let account_nonce = if let Some(acc) = state.accounts.get(&tx.from) {
                 acc.nonce
+            } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", tx.from)) {
+                // Fallback: Check for schema-prefixed account
+                acc.nonce
             } else {
                 0
             };
@@ -187,22 +194,37 @@ impl Ledger {
             tracing::info!("✅ Transfer Complete. New Balance for {}: {} {}", tx.from, post_bal, tx.asset);
             
             // --- PERSISTENCE: Write to Physical Shards ---
-            // Release state lock before IO to maximize throughput
-            drop(state);
-
-            let shards = self.shards.read().await;
-            // Write to every involved account's independent chain
-            let mut involved_accounts = std::collections::HashSet::new();
-            for leg in &entry.legs {
-                involved_accounts.insert(leg.account.clone());
-            }
-
-            for account in involved_accounts {
-                if let Err(e) = shards.append(&account, &entry).await {
-                    tracing::error!("❌ Failed to write shard for {}: {}", account, e);
-                    // Critical: if shard write fails, we have a sync issue.
-                    // Ideally we would rollback or halt. For now, we log error as Monolith is safe.
+            if persist_shards {
+                // Release state lock before IO to maximize throughput
+                drop(state); // Ensure state is dropped if still held, though we dropped it above? 
+                // Wait, line 191 dropped state. 
+                // But wait, the context of this replacement:
+                // I need to be careful about where I insert. 
+                // The original code:
+                // 189: // --- PERSISTENCE: Write to Physical Shards ---
+                // 190: // Release state lock before IO to maximize throughput
+                // 191: drop(state);
+                // 192: 
+                // 193: let shards = self.shards.read().await;
+                // ...
+                
+                let shards = self.shards.read().await;
+                // Write to every involved account's independent chain
+                let mut involved_accounts = std::collections::HashSet::new();
+                for leg in &entry.legs {
+                    involved_accounts.insert(leg.account.clone());
                 }
+
+                for account in involved_accounts {
+                    if let Err(e) = shards.append(&account, &entry).await {
+                        tracing::error!("❌ Failed to write shard for {}: {}", account, e);
+                        // Critical: if shard write fails, we have a sync issue.
+                        // Ideally we would rollback or halt. For now, we log error as Monolith is safe.
+                    }
+                }
+            } else {
+                 drop(state);
+                 tracing::info!("⏩ Replay Mode: Skipping shard write for tx {}", entry.tx_hash);
             }
             
             count += 1;

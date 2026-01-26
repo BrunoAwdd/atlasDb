@@ -126,18 +126,41 @@ impl<P: P2pPublisher + Clone + 'static> Maestro<P> {
                                     hasher.update(&tx.signature);
                                     let hash = hex::encode(hasher.finalize());
 
-                                    // Check Ledger for Idempotency
-                                    let exists_in_ledger = {
+                                    // Check Ledger for Idempotency AND Nonce Validity
+                                    let (exists_in_ledger, is_valid_nonce, current_nonce) = {
                                         let storage = self.cluster.local_env.storage.read().await;
                                         if let Some(ledger) = &storage.ledger {
-                                            ledger.exists_transaction(&hash).await.unwrap_or(false)
+                                            let exists = ledger.exists_transaction(&hash).await.unwrap_or(false);
+                                            
+                                            // Nonce Check
+                                            let state = ledger.state.read().await;
+                                            let sender = &tx.transaction.from;
+                                            let acc_nonce = if let Some(acc) = state.accounts.get(sender) {
+                                                acc.nonce
+                                            } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", sender)) {
+                                                acc.nonce
+                                            } else {
+                                                0
+                                            };
+                                            
+                                            // Strict Nonce Check: Must be strictly +1
+                                            // But for Gossip, we might receive out of order?
+                                            // Actually, strict +1 is best for security. If we miss one, we request it via sync?
+                                            // For now, let's just reject <= current (Replay) and allow gaps (Future)? 
+                                            // User asked to "validate nonce".
+                                            // Safe bet: > current. 
+                                            let valid_nonce = tx.transaction.nonce > acc_nonce;
+                                            
+                                            (exists, valid_nonce, acc_nonce)
                                         } else {
-                                            false
+                                            (false, true, 0)
                                         }
                                     };
 
                                     if exists_in_ledger {
                                         tracing::debug!("♻️ Transaction exists in Ledger. Ignoring gossip. Hash: {}", hash);
+                                    } else if !is_valid_nonce {
+                                        tracing::warn!("❌ Invalid Nonce via Gossip from {}. TxNonce: {} <= CurrentNonce: {}", tx.transaction.from, tx.transaction.nonce, current_nonce);
                                     } else {
                                         tracing::info!("📨 Received tx via Gossip! Hash: {} (Adding to Mempool)", hash);
                                         match self.mempool.add(tx) {

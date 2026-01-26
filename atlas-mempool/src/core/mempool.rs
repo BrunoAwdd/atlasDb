@@ -11,6 +11,10 @@ pub struct Mempool {
     transactions: Arc<RwLock<HashMap<String, SignedTransaction>>>,
     // Store timestamp (u64) of when it was marked pending
     pending: Arc<RwLock<HashMap<String, u64>>>,
+    // Cache of committed transaction hashes to prevent replay/idempotency
+    committed_cache: Arc<RwLock<std::collections::HashSet<String>>>,
+    // Order of commitment for pruning
+    committed_order: Arc<RwLock<std::collections::VecDeque<String>>>,
 }
 
 impl Mempool {
@@ -18,17 +22,42 @@ impl Mempool {
         Self {
             transactions: Arc::new(RwLock::new(HashMap::new())),
             pending: Arc::new(RwLock::new(HashMap::new())),
+            committed_cache: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            committed_order: Arc::new(RwLock::new(std::collections::VecDeque::new())),
         }
     }
 
     /// Adds a transaction to the mempool.
-    /// Returns Ok(true) if added, Ok(false) if duplicate, Err if invalid signature.
+    /// Returns Ok(true) if added, Ok(false) if duplicate, Err if invalid signature or timestamp.
     pub fn add(&self, tx: SignedTransaction) -> Result<bool, String> {
         // 1. Verify Stateless (Signature, Address Derivation, Formats)
         tx.validate_stateless()?;
 
-        // 2. Add to Pool
+        // 2. Timestamp Validation (Time Window)
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let timestamp = tx.transaction.timestamp;
+        
+        // Reject if older than 60 seconds
+        if timestamp < now.saturating_sub(60) {
+            return Err(format!("Transaction too old. Timestamp: {}, Threshold: {}", timestamp, now - 60));
+        }
+        
+        // Reject if in the future (> 30s drift)
+        if timestamp > now + 30 {
+             return Err(format!("Transaction from the future. Timestamp: {}, Now: {}", timestamp, now));
+        }
+
+        // 3. Add to Pool
         let tx_hash = self.hash_signed_tx(&tx);
+        
+        // 4. Idempotency Check (Committed Cache)
+        {
+            let committed = self.committed_cache.read().unwrap();
+            if committed.contains(&tx_hash) {
+                return Err(format!("Transaction already committed (Idempotency Rejection): {}", tx_hash));
+            }
+        }
+
         let mut pool = self.transactions.write().unwrap();
         if pool.contains_key(&tx_hash) {
             return Ok(false);
@@ -66,13 +95,30 @@ impl Mempool {
     }
 
     /// Removes a list of transactions (e.g., after they are included in a block).
+    /// Moves them to committed_cache for idempotency.
     pub fn remove_batch(&self, tx_hashes: &[String]) {
         println!("Removing {} transactions from mempool", tx_hashes.len());
         let mut pool = self.transactions.write().unwrap();
         let mut pending = self.pending.write().unwrap();
+        
+        let mut committed = self.committed_cache.write().unwrap();
+        let mut order = self.committed_order.write().unwrap();
+        
         for hash in tx_hashes {
             pool.remove(hash);
             pending.remove(hash);
+            
+            // Add to Idempotency Cache
+            if committed.insert(hash.clone()) {
+                order.push_back(hash.clone());
+            }
+        }
+        
+        // Cache Pruning (Keep Max 50,000 hashes ~ 3MB RAM)
+        while order.len() > 50_000 {
+            if let Some(old_hash) = order.pop_front() {
+                committed.remove(&old_hash);
+            }
         }
     }
 

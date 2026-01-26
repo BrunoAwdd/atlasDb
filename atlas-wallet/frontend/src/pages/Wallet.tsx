@@ -19,17 +19,29 @@ function WalletView() {
     activeProfile,
     switchProfile,
     refresh,
+    incrementNonce,
   } = useWalletData();
-  const { toAddress, setToAddress, amount, setAmount, handleSend } =
-    useTransactionSender({
-      wallet,
-      activeProfile,
-      setStatus,
-      refresh,
-    });
+  const {
+    toAddress,
+    setToAddress,
+    amount,
+    setAmount,
+    asset,
+    setAsset,
+    handleSend,
+    status: txStatus,
+  } = useTransactionSender({
+    wallet,
+    activeProfile,
+    refresh,
+    incrementNonce,
+  });
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground animate-in fade-in duration-500">
+      <div className="bg-primary/10 text-[10px] text-center py-1 font-mono text-muted-foreground">
+        {status}
+      </div>
       <WalletHeader
         onLogout={() => {
           // Force reload to clear WASM memory completely
@@ -58,7 +70,6 @@ function WalletView() {
           <>
             <Tabs
               defaultValue="exposed"
-              value={activeProfile}
               className="w-full"
               onValueChange={switchProfile}
             >
@@ -104,8 +115,10 @@ function WalletView() {
               onAddressChange={setToAddress}
               amount={amount}
               onAmountChange={setAmount}
+              asset={asset}
+              onAssetChange={setAsset}
               onSend={handleSend}
-              status={status}
+              status={txStatus}
             />
 
             <TransactionHistory

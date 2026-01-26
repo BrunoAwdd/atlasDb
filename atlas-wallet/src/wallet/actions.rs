@@ -19,15 +19,19 @@ pub(super) fn sing_transfer(
     wallet: &mut Wallet,
     to_address: String,
     amount: u64,
+    asset: String,
     memo: Option<String>,
+    nonce: u64,
 ) -> Result<(String, TransferRequest, Vec<u8>), String> {
     let session = wallet.session.as_mut().ok_or_else(|| "Sessão não carregada".to_string())?;
     
-    let nonce = (wallet.transfer_map.lock().map_err(|_| "Erro ao acessar mapa".to_string())?.len() as u64) + 1;
+    // Nonce is now provided by the caller (Frontend -> Ledger Source of Truth)
+    // let nonce = (wallet.transfer_map.lock().map_err(|_| "Erro ao acessar mapa".to_string())?.len() as u64) + 1;
 
     let request = session.create_signed_transfer(
         to_address,
         amount,
+        asset,
         memo,
         nonce,
     ).map_err(|e| format!("Erro ao criar transferência: {:?}", e))?;

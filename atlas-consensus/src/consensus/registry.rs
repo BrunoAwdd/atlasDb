@@ -13,8 +13,9 @@ pub struct VoteRegistry {
     // ProposalID -> Phase -> NodeID -> VoteData
     votes: HashMap<String, HashMap<ConsensusPhase, HashMap<NodeId, VoteData>>>,
     
-    // View -> Phase -> NodeID -> VoteData (For detecting different proposals in same view)
-    votes_by_view: HashMap<u64, HashMap<ConsensusPhase, HashMap<NodeId, VoteData>>>,
+    // (Height, View) -> Phase -> NodeID -> VoteData 
+    // Key is (Height, View)
+    votes_by_height_view: HashMap<(u64, u64), HashMap<ConsensusPhase, HashMap<NodeId, VoteData>>>,
 }
 
 impl VoteRegistry {
@@ -22,7 +23,7 @@ impl VoteRegistry {
     pub fn new() -> Self {
         Self {
             votes: HashMap::new(),
-            votes_by_view: HashMap::new(),
+            votes_by_height_view: HashMap::new(),
         }
     }
 
@@ -36,14 +37,15 @@ impl VoteRegistry {
     pub fn register_vote(&mut self, vote_data: VoteData) -> Result<Option<EquivocationEvidence>, String> {
         let node = vote_data.voter.clone();
         let view = vote_data.view;
+        let height = vote_data.height; // New
         let phase = vote_data.phase.clone();
         let proposal_id = vote_data.proposal_id.clone();
         let vote = vote_data.vote.clone();
 
         // 1. Check Equivocation (Double Voting on different proposals OR same proposal different value)
         
-        let phase_view_votes = self.votes_by_view
-            .entry(view)
+        let phase_view_votes = self.votes_by_height_view
+            .entry((height, view))
             .or_default()
             .entry(phase.clone())
             .or_default();
@@ -117,24 +119,31 @@ impl VoteRegistry {
     //     self.votes = new_votes;
     // }
 
-    pub fn has_voted(&self, view: u64, phase: &ConsensusPhase, node: &NodeId) -> bool {
-        self.votes_by_view
-            .get(&view)
+    pub fn has_voted(&self, height: u64, view: u64, phase: &ConsensusPhase, node: &NodeId) -> bool {
+        self.votes_by_height_view
+            .get(&(height, view))
             .and_then(|phases| phases.get(phase))
             .map(|nodes| nodes.contains_key(node))
             .unwrap_or(false)
     }
 
-    pub fn get_vote_by_view(&self, view: u64, phase: &ConsensusPhase, node: &NodeId) -> Option<&VoteData> {
-        self.votes_by_view
-            .get(&view)
+    pub fn get_vote(&self, height: u64, view: u64, phase: &ConsensusPhase, node: &NodeId) -> Option<&VoteData> {
+        self.votes_by_height_view
+            .get(&(height, view))
             .and_then(|phases| phases.get(phase))
             .and_then(|nodes| nodes.get(node))
     }
 
-    /// Returns the highest view number observed in registered votes.
+    /// Returns the highest view number observed in registered votes (across all heights).
+    /// Used for catch-up/sync mostly.
     pub fn get_highest_view(&self) -> Option<u64> {
-        self.votes_by_view.keys().max().copied()
+        self.votes_by_height_view.keys().map(|(_, v)| *v).max()
+    }
+
+    /// Clears all votes. Should be called after a successful commit to reset state for the next Height.
+    pub fn clear(&mut self) {
+        self.votes.clear();
+        self.votes_by_height_view.clear();
     }
 }
 

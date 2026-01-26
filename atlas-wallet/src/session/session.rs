@@ -77,6 +77,7 @@ impl Session {
         &mut self,
         to_address: String,
         amount: u64,
+        asset: String,
         memo: Option<String>,
         nonce: u64,
     ) -> Result<TransferRequest, NimbleError> {
@@ -90,7 +91,7 @@ impl Session {
             from: self.profile.address().as_str().to_string(),
             to: to_address.clone(),
             amount: amount as u128,
-            asset: "BRL".to_string(),
+            asset: asset.clone(),
             nonce,
             timestamp,
             memo: memo.clone(),

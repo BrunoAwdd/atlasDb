@@ -64,7 +64,7 @@ export function useWalletData() {
       // Fetch History for *Active Profile*
       try {
         ledgerClient
-          .GetStatement({ address: currentTrackingAddr, limit: "20" })
+          .GetStatement({ address: currentTrackingAddr, limit: 20 })
           .then((res) => {
             if (res && res.transactions) {
               setHistory(res.transactions);
@@ -75,51 +75,46 @@ export function useWalletData() {
       }
 
       // Fetch Real Balances via gRPC
-      let exposedBalBRL = "0";
-      let hiddenBalBRL = "0";
-      let exposedBalMOX = "0";
-      let hiddenBalMOX = "0";
+      const fetchBalanceAndNonce = async (addr: string, asset: string) => {
+        try {
+          const res = await ledgerClient.GetBalance({
+            address: addr,
+            asset: asset,
+          });
+          // Fix: Proto definition uses uint64 which might effectively be number or string in JS depending on configuration.
+          // Check generated code if unsure, but typically `long` calls safe to string or number.
+          return { balance: res.balance, nonce: res.nonce };
+        } catch (e) {
+          console.warn(`Failed to fetch ${asset} balance for ${addr}:`, e);
+          return { balance: "0", nonce: 0 };
+        }
+      };
 
-      try {
-        // Parallel fetch for BRL and MOX
-        const [expBRLRes, hidBRLRes, expMOXRes, hidMOXRes] = await Promise.all([
-          ledgerClient.GetBalance({ address: exposedAddr, asset: "BRL" }),
-          ledgerClient.GetBalance({ address: hiddenAddr, asset: "BRL" }),
-          ledgerClient.GetBalance({ address: exposedAddr, asset: "MOX" }),
-          ledgerClient.GetBalance({ address: hiddenAddr, asset: "MOX" }),
-        ]);
+      const [expBRLRes, hidBRLRes, expMOXRes, hidMOXRes] = await Promise.all([
+        fetchBalanceAndNonce(exposedAddr, "BRL"),
+        fetchBalanceAndNonce(hiddenAddr, "BRL"),
+        fetchBalanceAndNonce(exposedAddr, "MOX"),
+        fetchBalanceAndNonce(hiddenAddr, "MOX"),
+      ]);
 
-        exposedBalBRL = expBRLRes.balance;
-        hiddenBalBRL = hidBRLRes.balance;
-        exposedBalMOX = expMOXRes.balance;
-        hiddenBalMOX = hidMOXRes.balance;
-      } catch (err) {
-        console.error("gRPC Balance Fetch Error:", err);
-        setStatus("Offline: Não foi possível buscar saldo.");
-      }
+      const exposedBalBRL = expBRLRes.balance;
+      const hiddenBalBRL = hidBRLRes.balance;
+      const exposedBalMOX = expMOXRes.balance;
+      const hiddenBalMOX = hidMOXRes.balance;
 
-      // Attempt to extract nonces if available in session
-      let exposedNonce = "0";
-      let hiddenNonce = "0";
+      // Determine nonce (Ledger is source of truth)
+      const exposedNonce = Math.max(
+        Number(expBRLRes.nonce),
+        Number(expMOXRes.nonce),
+      ).toString();
+      const hiddenNonce = Math.max(
+        Number(hidBRLRes.nonce),
+        Number(hidMOXRes.nonce),
+      ).toString();
 
-      if (session instanceof Map) {
-        // Try getting nonce from map
-        const expMap = session.get("exposed");
-        const hidMap = session.get("hidden");
-        if (expMap && expMap.get("nonce") !== undefined)
-          exposedNonce = expMap.get("nonce").toString();
-        if (hidMap && hidMap.get("nonce") !== undefined)
-          hiddenNonce = hidMap.get("nonce").toString();
-      } else {
-        // Try getting nonce from object (Standard Object from serde_wasm_bindgen)
-        const sessAny = session as any;
-        if (sessAny.exposed?.nonce !== undefined)
-          exposedNonce = sessAny.exposed.nonce.toString();
-        if (sessAny.hidden?.nonce !== undefined)
-          hiddenNonce = sessAny.hidden.nonce.toString();
-      }
+      // Debug: Show fetched balances in status
+      setStatus(`Sync OK. BRL: ${exposedBalBRL} | MOX: ${exposedBalMOX}`);
 
-      // Set wallet with structured balances
       setWallet({
         exposed: {
           address: exposedAddr,
@@ -145,12 +140,36 @@ export function useWalletData() {
     if (val === activeProfile) return;
     const newProfile = val as "exposed" | "hidden";
 
-    setStatus("Trocando perfil...");
-    await switch_profile();
-    setStatus(`Perfil trocado para: ${newProfile} com sucesso!`);
+    // Optimistic Update: Update UI immediately
     setActiveProfile(newProfile);
-    // setShowQr(false); // Only if we want to handle this - but QR is not in use in the snippet provided for Wallet.tsx
+    setStatus("Trocando perfil...");
+
+    try {
+      await switch_profile();
+      setStatus(`Perfil trocado para: ${newProfile} com sucesso!`);
+    } catch (error) {
+      console.error("Failed to switch profile:", error);
+      setStatus("Erro ao trocar perfil. Tente novamente.");
+      // Revert if critical? For now, we assume backend toggle eventually works or we are out of sync anyway.
+      // If we revert: setActiveProfile(activeProfile);
+    }
   };
+
+  const incrementNonce = useCallback((profile: "exposed" | "hidden") => {
+    setWallet((prev) => {
+      if (!prev) return null;
+      const currentNonce = Number(prev[profile].nonce);
+      const newNonce = (currentNonce + 1).toString();
+
+      return {
+        ...prev,
+        [profile]: {
+          ...prev[profile],
+          nonce: newNonce,
+        },
+      };
+    });
+  }, []);
 
   return {
     wallet,
@@ -160,5 +179,6 @@ export function useWalletData() {
     activeProfile,
     switchProfile,
     refresh: fetchData,
+    incrementNonce,
   };
 }

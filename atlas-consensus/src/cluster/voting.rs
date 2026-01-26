@@ -40,24 +40,27 @@ impl Cluster {
         };
 
         // SAFETY CHECK: Prevent Double Voting (Self-Equivocation)
-        // We must check if we already voted for this View & Phase.
+        // We must check if we already voted for this Height & View & Phase.
+        let view = proposal.round;
+        let height = proposal.height;
+
         {
             let eng = self.local_env.engine.lock().await;
             let reg = eng.get_all_votes();
             let my_id = self.local_node.read().await.id.clone();
             
-            let voted = reg.has_voted(0, &phase, &my_id);
+            let voted = reg.has_voted(height, view, &phase, &my_id);
             if voted {
-                 if let Some(existing) = reg.get_vote_by_view(0, &phase, &my_id) {
+                 if let Some(existing) = reg.get_vote(height, view, &phase, &my_id) {
                      if existing.proposal_id != proposal_id {
-                         warn!("🛑 Prevented Self-Equivocation! Already voted for {} in View 0/{:?}, refusing to vote for {}.", existing.proposal_id, phase, proposal_id);
+                         warn!("🛑 Prevented Self-Equivocation! Already voted for {} in Height {}/View {}/{:?}, refusing to vote for {}.", existing.proposal_id, height, view, phase, proposal_id);
                          return Ok(None);
                      } else {
                          info!("🔄 Idempotent retry: Already voted for this proposal. Re-broadcasting/Re-returning.");
                      }
                  }
             } else {
-                info!("🟢 No previous vote found for View 0/{:?}. Proceeding to vote on {}.", phase, proposal_id);
+                info!("🟢 No previous vote found for Height {}/View {}/{:?}. Proceeding to vote on {}.", height, view, phase, proposal_id);
             }
         }
 
@@ -81,7 +84,8 @@ impl Cluster {
             vote: vote.clone(),
             voter: self.local_node.read().await.id.clone(),
             phase: phase.clone(),
-            view: 0, // Default view for now
+            view,
+            height,
             signature: [0u8; 64],
             public_key: self.auth.read().await.public_key(),
         };

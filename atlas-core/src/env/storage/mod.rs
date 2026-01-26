@@ -67,10 +67,21 @@ impl Storage {
 
         println!("📦 Loaded {} proposals from storage.", loaded_proposals.len());
 
+        let mut results = HashMap::new();
+        for proposal in &loaded_proposals {
+            // Assume any proposal in the Binlog is effectively committed/executed during replay
+            results.insert(proposal.id.clone(), ConsensusResult {
+                proposal_id: proposal.id.clone(),
+                approved: true,
+                votes_received: 1, // Placeholder
+                phase: ConsensusPhase::Commit,
+            });
+        }
+
         Self {
             proposals: loaded_proposals,
             votes: HashMap::new(),
-            results: HashMap::new(),
+            results,
             ledger: Some(Arc::new(ledger)),
         }
     }
@@ -80,16 +91,32 @@ impl Storage {
     /// This allows the system to retain proposal metadata for future auditing.
     pub fn log_proposal(&mut self, proposal: Proposal) {
         println!("📝 Storing proposal [{}]", proposal.id);
+        // Idempotency Check: Don't duplicate
+        if self.proposals.iter().any(|p| p.id == proposal.id) {
+            return;
+        }
+
         self.proposals.push(proposal.clone());
-        
-        // Persist to Ledger
         if let Some(ledger) = &self.ledger {
-            let ledger = ledger.clone();
-            let prop = proposal.clone();
-            tokio::spawn(async move {
-                if let Err(e) = ledger.append_proposal(&prop).await {
-                    eprintln!("❌ Failed to append proposal to ledger: {}", e);
-                }
+            // Append to WAL
+            // Note: Since Ledger is behind IoLock, we trust the in-memory check above for uniqueness within this session.
+            // On restart, the loop logic prevents re-execution.
+            let _ = tokio::task::block_in_place(|| {
+                 tokio::runtime::Handle::current().block_on(async {
+                     if !ledger.exists_proposal(&proposal.id).await {
+                         // Last Mile Protection: Deep Validation
+                         if let Err(e) = ledger.validate_proposal_hard(&proposal).await {
+                             println!("⛔ Proposal {} rejected by Ledger Validation: {}", proposal.id, e);
+                             Ok((0,0,0)) // Return match compatible with append
+                         } else {
+                             ledger.binlog.write().await.append(&proposal).await
+                         }
+                     } else {
+                         // Duplicate detected in Ledger
+                         println!("♻️ Proposal {} already in Ledger (Binlog), skipping write.", proposal.id);
+                         Ok((0,0,0)) // Mock success
+                     }
+                 })
             });
         } else {
             eprintln!("⚠️ Ledger not initialized, proposal not persisted to disk!");
@@ -183,7 +210,7 @@ impl Storage {
 
     pub async fn execute_transaction(&self, proposal: &Proposal) -> Result<usize, String> {
         if let Some(ledger) = &self.ledger {
-            ledger.execute_transaction(proposal).await.map_err(|e| e.to_string())
+            ledger.execute_transaction(proposal, true).await.map_err(|e| e.to_string())
         } else {
             Err("Ledger not initialized".to_string())
         }

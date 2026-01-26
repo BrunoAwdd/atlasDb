@@ -31,9 +31,11 @@ impl Wallet {
         &mut self,
         to_address: String,
         amount: u64,
+        asset: String,
         memo: Option<String>,
+        nonce: u64,
     ) -> Result<(String, TransferRequest, Vec<u8>), String> {
-        actions::sing_transfer(self, to_address, amount, memo)
+        actions::sing_transfer(self, to_address, amount, asset, memo, nonce)
     }
 
     pub fn sign_message(&mut self, message: Vec<u8>) -> Result<String, String> {

@@ -38,7 +38,7 @@ impl Ledger {
         drop(binlog);
         drop(index);
 
-        match self.execute_transaction(proposal).await {
+        match self.execute_transaction(proposal, true).await {
             Ok(_) => tracing::info!("✅ State updated for proposal {}", proposal.id),
             Err(e) => tracing::error!("❌ Failed to update state for proposal {}: {}", proposal.id, e),
         }

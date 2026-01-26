@@ -59,7 +59,7 @@ fn main() {
 
         // Execute! 
         println!("   ... Executing Proposal ...");
-        match ledger.execute_transaction(&proposal).await {
+        match ledger.execute_transaction(&proposal, true).await {
             Ok(count) => println!("   ✅ Success! Executed {} transaction(s).", count),
             Err(e) => panic!("   ❌ Execution Failed: {}", e),
         }

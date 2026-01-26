@@ -78,6 +78,12 @@ impl ConsensusEngine {
         }
     }
 
+    /// Resets the consensus state (clears votes).
+    pub fn clear(&mut self) {
+        info!("🧹 Clearing Consensus Engine State (Votes)...");
+        self.registry.clear();
+    }
+
     /// Avalia todas as propostas e retorna os resultados.
     pub(crate) async fn evaluate_proposals(&mut self, ledger: &atlas_ledger::Ledger) -> Vec<ConsensusResult> {
         // 1. Process Pending Evidence (Slashing)
