@@ -101,3 +101,5 @@ This project welcomes exploratory ideas and improvements. PRs and discussions ar
 ## 📖 License
 
 MIT — use it, fork it, learn from it.
+
+6wR8xmn5wo
