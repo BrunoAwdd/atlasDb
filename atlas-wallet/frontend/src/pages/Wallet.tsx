@@ -105,7 +105,7 @@ function WalletView() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background px-2 text-muted-foreground font-medium">
-                  Transferir
+                  Transfer
                 </span>
               </div>
             </div>
@@ -144,9 +144,9 @@ function WalletView() {
                 <path d="M12 16h.01" />
               </svg>
             </div>
-            <p className="text-sm font-medium">Nenhuma carteira carregada</p>
+            <p className="text-sm font-medium">No wallets found</p>
             <Button variant="outline" size="sm" onClick={() => navigate("/")}>
-              Voltar ao Início
+              Back to Home
             </Button>
           </div>
         )}

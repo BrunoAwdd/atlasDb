@@ -19,7 +19,7 @@ export function TransactionHistory({
     <div className="space-y-4 pt-4">
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Histórico Recente
+          Recent Transactions
         </h3>
         <Button
           variant="link"
@@ -27,7 +27,7 @@ export function TransactionHistory({
           className="h-auto p-0 text-[10px] text-primary"
           onClick={() => navigate("/history")}
         >
-          Ver tudo
+          See all
         </Button>
       </div>
 
@@ -91,7 +91,7 @@ export function TransactionHistory({
                       {tx.amount} {tx.asset}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
-                      Confirmado
+                      Confirmed
                     </p>
                   </div>
                 </div>
@@ -99,7 +99,7 @@ export function TransactionHistory({
             })
           ) : (
             <div className="text-center py-8 opacity-50 text-xs">
-              Sem transações recentes
+              No recent transactions
             </div>
           )}
         </div>

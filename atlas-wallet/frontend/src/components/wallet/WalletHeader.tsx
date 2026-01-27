@@ -19,7 +19,7 @@ export function WalletHeader({ onLogout, onOpenSidePanel }: WalletHeaderProps) {
         <LogOut className="h-5 w-5" />
       </Button>
 
-      <h1 className="text-xl font-bold tracking-tight">Carteira</h1>
+      <h1 className="text-xl font-bold tracking-tight">Wallet</h1>
 
       <Button
         variant="ghost"

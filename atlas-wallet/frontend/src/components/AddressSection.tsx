@@ -34,7 +34,7 @@ export function AddressSection({ type, data }: AddressSectionProps) {
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex flex-col items-center justify-center py-6 bg-secondary/20 rounded-2xl border border-border/50 space-y-2">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-1">
-          Saldo {type === "exposed" ? "Total" : "Oculto"}
+          Balance {type === "exposed" ? "Total" : "Hidden"}
         </span>
         <div className="flex flex-col items-center">
           <h2 className="text-3xl font-bold tracking-tight">
@@ -53,7 +53,7 @@ export function AddressSection({ type, data }: AddressSectionProps) {
       <div className="bg-secondary/40 p-4 rounded-xl border border-border/50 space-y-3">
         <div className="flex justify-between items-center">
           <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            Endereço {type === "exposed" ? "Público" : "Privado"}
+            {type === "exposed" ? "Public" : "Private"} Address
           </label>
           <div className="flex gap-1">
             <Button
