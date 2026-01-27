@@ -63,6 +63,25 @@ impl Ledger {
         Ok(0)
     }
 
+    pub async fn get_account(&self, address: &str) -> Option<crate::core::ledger::account::AccountState> {
+        let state = self.state.read().await;
+
+        // 1. Try Direct Lookup
+        if let Some(account) = state.accounts.get(address) {
+            return Some(account.clone());
+        }
+
+        // 2. Try Prefix Lookup (Legacy/Schema Compat)
+        if !address.contains(':') {
+            let prefixed = format!("passivo:wallet:{}", address);
+            if let Some(account) = state.accounts.get(&prefixed) {
+                return Some(account.clone());
+            }
+        }
+
+        None
+    }
+
     pub async fn exists_proposal(&self, id: &str) -> bool {
         let index = self.index.read().await;
         // Check if we can locate it in the index

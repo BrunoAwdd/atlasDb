@@ -46,6 +46,7 @@ struct BalanceResponse {
     address: String,
     asset: String,
     balance: String,
+    nonce: u64,
 }
 
 pub async fn start_rest_api(port: u16, state: AppState) {
@@ -69,12 +70,16 @@ async fn get_balance_api(
 ) -> Json<BalanceResponse> {
     let address = params.query.unwrap_or_default();
     let asset = "ATLAS";
-    // Ledger::get_balance
-    let balance = state.ledger.get_balance(&address, asset).await.unwrap_or(0);
+    
+    // Fetch full account state to get nonce + balance
+    let account = state.ledger.get_account(&address).await.unwrap_or_default();
+    let balance = account.get_balance(&asset.to_string());
+    
     Json(BalanceResponse {
         address,
         asset: asset.to_string(),
         balance: balance.to_string(),
+        nonce: account.nonce,
     })
 }
 
@@ -88,7 +93,11 @@ async fn list_transactions_api(
      };
      
      let mut records = Vec::new();
-     let query = params.query.as_deref().unwrap_or("").to_lowercase();
+     let raw_query = params.query.as_deref().unwrap_or("").to_lowercase();
+     // Strip prefix if present to match raw addresses in txs
+     let query = raw_query.strip_prefix("passivo:wallet:").unwrap_or(&raw_query);
+     
+     // info!("API: listing transactions query='{}' proposals={}", query, proposals.len());
      
      for p in proposals {
          // Try Batch first (Standard)
@@ -107,9 +116,10 @@ async fn list_transactions_api(
          for (tx, fee_payer) in tx_list {
 
             if !query.is_empty() {
-                 let match_hash = p.hash.to_lowercase().contains(&query);
-                 let match_from = tx.from.to_lowercase().contains(&query);
-                 let match_to = tx.to.to_lowercase().contains(&query);
+                 let match_hash = p.hash.to_lowercase().contains(query);
+                 let match_from = tx.from.to_lowercase().contains(query);
+                 let match_to = tx.to.to_lowercase().contains(query);
+                 
                  if !match_hash && !match_from && !match_to {
                      continue;
                  }
