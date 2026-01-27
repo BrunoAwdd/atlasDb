@@ -147,7 +147,13 @@ async fn list_transactions_api(
 async fn list_mempool_api(
     State(state): State<AppState>,
 ) -> Json<Vec<String>> {
-    Json(state.mempool.get_all())
+    match state.mempool.get_all().await {
+        Ok(txs) => Json(txs),
+        Err(e) => {
+            tracing::error!("Failed to fetch mempool: {}", e);
+            Json(vec![])
+        }
+    }
 }
 
 async fn list_accounts_api(

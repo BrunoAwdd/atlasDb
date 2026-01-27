@@ -32,7 +32,7 @@ impl Ledger {
         if !proposals.is_empty() {
             println!("Replaying {} transactions from WAL...", proposals.len());
             for proposal in proposals {
-                if let Err(e) = ledger.execute_transaction(&proposal, true).await {
+                if let Err(e) = ledger.execute_transaction(&proposal, false).await {
                     eprintln!("Failed to replay transaction {}: {}", proposal.id, e);
                     // Decide if we panic or continue. Warn for now.
                 }

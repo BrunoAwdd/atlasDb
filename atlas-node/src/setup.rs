@@ -21,6 +21,7 @@ pub fn ensure_config(path: &str, listen_addr: &str) -> Result<(), Box<dyn std::e
             storage: atlas_ledger::storage::Storage::new_detached(),
             peer_manager: atlas_p2p::PeerManager::new(10, 10),
             data_dir: "data/db".to_string(),
+            redis_url: None,
         };
         config.save_to_file(path)?;
         info!("✅ Config gerada com sucesso! (IP: {})", ip);
