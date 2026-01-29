@@ -173,7 +173,7 @@ impl LedgerService for LedgerServiceImpl {
         }
 
         // Add to Mempool
-        let new = match self.mempool.add(signed_tx) {
+        let new = match self.mempool.add(signed_tx).await {
             Ok(n) => {
                 info!("✅ [LedgerService] Transaction added to mempool. New? {}", n);
                 n

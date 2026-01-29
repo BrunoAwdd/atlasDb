@@ -15,6 +15,7 @@ fn main() {
         storage: Storage::new("node1/data"),
         peer_manager: PeerManager::new(10, 5),
         data_dir: "node1/data".to_string(),
+        redis_url: None,
     };
     node1_config.save_to_file("node1/config.json").unwrap();
 
@@ -27,6 +28,7 @@ fn main() {
         storage: Storage::new("node2/data"),
         peer_manager: PeerManager::new(10, 5),
         data_dir: "node2/data".to_string(),
+        redis_url: None,
     };
     node2_config.save_to_file("node2/config.json").unwrap();
 }

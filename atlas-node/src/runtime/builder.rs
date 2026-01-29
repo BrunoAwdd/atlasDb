@@ -42,6 +42,7 @@ pub async fn build_runtime(
     let config = Config::load_from_file(config_path)?;
     tracing::info!("🔄 [DEBUG] Config loaded. Building cluster env...");
     
+    let redis_url = config.redis_url.clone();
     let cluster = Arc::new(config.build_cluster_env(auth).await);
     tracing::info!("✅ [DEBUG] Cluster env built (Ledger init success).");
 
@@ -84,8 +85,9 @@ pub async fn build_runtime(
 
     // 4) Porta (publisher) e Maestro
     let publisher = AdapterHandle { cmd_tx: maestro_cmd_tx };
-    // Initialize Mempool
-    let mempool = Arc::new(atlas_mempool::Mempool::default());
+    // Initialize Mempool (Redis or Local based on config)
+    let mempool = Arc::new(atlas_mempool::Mempool::new(redis_url)
+        .map_err(|e| AtlasError::Other(format!("Failed to initialize Mempool: {}", e)))?);
 
     let consensus = ConsensusDriver::new(Arc::clone(&cluster), publisher.clone(), Arc::clone(&mempool));
     let sync = SyncDriver::new(Arc::clone(&cluster), publisher.clone());

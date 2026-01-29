@@ -163,7 +163,7 @@ impl<P: P2pPublisher + Clone + 'static> Maestro<P> {
                                         tracing::warn!("❌ Invalid Nonce via Gossip from {}. TxNonce: {} <= CurrentNonce: {}", tx.transaction.from, tx.transaction.nonce, current_nonce);
                                     } else {
                                         tracing::info!("📨 Received tx via Gossip! Hash: {} (Adding to Mempool)", hash);
-                                        match self.mempool.add(tx) {
+                                        match self.mempool.add(tx).await {
                                             Ok(true) => info!("✅ Transaction added to Mempool (Gossip)"),
                                             Ok(false) => tracing::debug!("Duplicate transaction in Mempool (ignored)"),
                                             Err(e) => tracing::warn!("❌ Invalid transaction via Gossip: {}", e),

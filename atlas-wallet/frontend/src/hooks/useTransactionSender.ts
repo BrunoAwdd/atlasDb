@@ -16,7 +16,7 @@ export function useTransactionSender({
   const [status, setStatus] = useState("");
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
-  const [asset, setAsset] = useState("BRL");
+  const [asset, setAsset] = useState("USD");
 
   const handleSend = async () => {
     try {

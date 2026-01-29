@@ -27,10 +27,10 @@ export function SendTransactionForm({
       <div className="space-y-4">
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Destinatário
+            Recipient
           </label>
           <Input
-            placeholder="Endereço da carteira"
+            placeholder="Wallet address"
             className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary font-mono text-xs"
             value={toAddress}
             onChange={(e) => onAddressChange(e.target.value)}
@@ -40,7 +40,7 @@ export function SendTransactionForm({
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2 space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Valor
+              Amount
             </label>
             <Input
               placeholder="0.00"
@@ -52,10 +52,10 @@ export function SendTransactionForm({
           </div>
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Ativo
+              Asset
             </label>
             <Input
-              placeholder="MOX"
+              placeholder="GBP"
               className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary font-mono uppercase"
               value={asset}
               onChange={(e) => onAssetChange(e.target.value.toUpperCase())}
@@ -67,7 +67,7 @@ export function SendTransactionForm({
           onClick={onSend}
           className="w-full h-11 text-sm font-medium shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all mt-2"
         >
-          Enviar Transação
+          Send Transaction
         </Button>
       </div>
       {status && (

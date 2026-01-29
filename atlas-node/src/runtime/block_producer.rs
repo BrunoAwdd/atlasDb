@@ -25,7 +25,7 @@ impl<P: P2pPublisher> BlockProducer<P> {
 
     /// Gossip pending transactions to ensure propagation
     pub async fn gossip_pending_txs(&self) {
-        let txs = self.mempool.get_candidates(50);
+        let txs = self.mempool.get_candidates(50).await.unwrap_or_default();
         for (_, tx) in txs {
              if let Ok(bytes) = serde_json::to_vec(&tx) {
                  self.p2p.publish("atlas/tx/v1", bytes).await.ok();
@@ -42,23 +42,23 @@ impl<P: P2pPublisher> BlockProducer<P> {
         let am_i_leader = leader_guard.as_ref() == Some(&local_node_id);
         drop(leader_guard);
 
-        tracing::info!("🕵️ [BlockProducer] Check: Leader? {} | Mempool Size: {}", am_i_leader, self.mempool.len());
+        tracing::info!("🕵️ [BlockProducer] Check: Leader? {} | Mempool Size: {}", am_i_leader, self.mempool.len().await.unwrap_or(0));
 
         if am_i_leader {
             // 2. Check Mempool
             // Force release stuck pending transactions (> 20s)
-            let released = self.mempool.cleanup_pending(20);
+            let released = self.mempool.cleanup_pending(20).await.unwrap_or(0);
             if released > 0 {
                 info!("🔓 Released {} zombie transactions back to mempool.", released);
             } else {
-                tracing::info!("🔒 Pending Transactions: {}", self.mempool.pending_len()); 
+                tracing::info!("🔒 Pending Transactions: {}", self.mempool.pending_len().await.unwrap_or(0)); 
                 // Need to expose pending_len helper or use read lock count 
             }
 
-            if self.mempool.len() > 0 {
-                 info!("🔍 [BlockProducer] Leader checking mempool. Size: {}", self.mempool.len());
+            if self.mempool.len().await.unwrap_or(0) > 0 {
+                 info!("🔍 [BlockProducer] Leader checking mempool. Size: {}", self.mempool.len().await.unwrap_or(0));
             }
-            let mut candidates = self.mempool.get_candidates(50); // BATCH_SIZE = 50
+            let mut candidates = self.mempool.get_candidates(50).await.unwrap_or_default(); // BATCH_SIZE = 50
             
             // 2.0 State Validation: Filter out transactions already in Ledger
             // This prevents "Zombie" transactions (already committed) from blocking new blocks.
@@ -156,7 +156,7 @@ impl<P: P2pPublisher> BlockProducer<P> {
                         // 5. Mark as Pending (In-Flight)
                         if !candidates.is_empty() {
                             let hashes: Vec<String> = candidates.iter().map(|(h, _)| h.clone()).collect();
-                            self.mempool.mark_pending(&hashes);
+                            self.mempool.mark_pending(&hashes).await.ok();
                         }
                         return Some(pid);
                     },

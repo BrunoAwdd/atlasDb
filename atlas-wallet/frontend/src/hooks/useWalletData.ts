@@ -6,12 +6,12 @@ export interface WalletData {
   exposed: {
     address: string;
     nonce: string;
-    balances: { BRL: string; MOX: string };
+    balances: Record<string, string>;
   };
   hidden: {
     address: string;
     nonce: string;
-    balances: { BRL: string; MOX: string };
+    balances: Record<string, string>;
   };
 }
 
@@ -74,6 +74,9 @@ export function useWalletData() {
         console.error(e);
       }
 
+      // Define supported assets
+      const ASSETS = ["USD", "BRL", "GBP", "EUR"];
+
       // Fetch Real Balances via gRPC
       const fetchBalanceAndNonce = async (addr: string, asset: string) => {
         try {
@@ -81,39 +84,53 @@ export function useWalletData() {
             address: addr,
             asset: asset,
           });
-          // Fix: Proto definition uses uint64 which might effectively be number or string in JS depending on configuration.
-          // Check generated code if unsure, but typically `long` calls safe to string or number.
-          return { balance: res.balance, nonce: res.nonce };
+          return { asset, balance: res.balance, nonce: Number(res.nonce) || 0 };
         } catch (e) {
           console.warn(`Failed to fetch ${asset} balance for ${addr}:`, e);
-          return { balance: "0", nonce: 0 };
+          return { asset, balance: "0", nonce: 0 };
         }
       };
 
-      const [expBRLRes, hidBRLRes, expMOXRes, hidMOXRes] = await Promise.all([
-        fetchBalanceAndNonce(exposedAddr, "BRL"),
-        fetchBalanceAndNonce(hiddenAddr, "BRL"),
-        fetchBalanceAndNonce(exposedAddr, "MOX"),
-        fetchBalanceAndNonce(hiddenAddr, "MOX"),
+      // Fetch all assets for Exposed and Hidden
+      const exposedPromises = ASSETS.map((a) =>
+        fetchBalanceAndNonce(exposedAddr, a),
+      );
+      const hiddenPromises = ASSETS.map((a) =>
+        fetchBalanceAndNonce(hiddenAddr, a),
+      );
+
+      const [exposedResults, hiddenResults] = await Promise.all([
+        Promise.all(exposedPromises),
+        Promise.all(hiddenPromises),
       ]);
 
-      const exposedBalBRL = expBRLRes.balance;
-      const hiddenBalBRL = hidBRLRes.balance;
-      const exposedBalMOX = expMOXRes.balance;
-      const hiddenBalMOX = hidMOXRes.balance;
+      // Construct Balances Map
+      const exposedBalances: Record<string, string> = {};
+      let maxExposedNonce = 0;
+
+      exposedResults.forEach((r) => {
+        if (Number(r.balance) > 0 || r.asset === "USD") {
+          exposedBalances[r.asset] = r.balance;
+        }
+        if (r.nonce > maxExposedNonce) maxExposedNonce = r.nonce;
+      });
+
+      const hiddenBalances: Record<string, string> = {};
+      let maxHiddenNonce = 0;
+
+      hiddenResults.forEach((r) => {
+        if (Number(r.balance) > 0 || r.asset === "USD") {
+          hiddenBalances[r.asset] = r.balance;
+        }
+        if (r.nonce > maxHiddenNonce) maxHiddenNonce = r.nonce;
+      });
 
       // Determine nonce (Ledger is source of truth)
-      const exposedNonce = Math.max(
-        Number(expBRLRes.nonce),
-        Number(expMOXRes.nonce),
-      ).toString();
-      const hiddenNonce = Math.max(
-        Number(hidBRLRes.nonce),
-        Number(hidMOXRes.nonce),
-      ).toString();
+      const exposedNonce = maxExposedNonce.toString();
+      const hiddenNonce = maxHiddenNonce.toString();
 
       // Debug: Show fetched balances in status
-      setStatus(`Sync OK. BRL: ${exposedBalBRL} | MOX: ${exposedBalMOX}`);
+      setStatus(`Sync OK.`);
 
       setWallet((prev) => {
         // Security: Ensure Nonce never decreases (Handling Race Conditions)
@@ -122,15 +139,9 @@ export function useWalletData() {
 
         if (prev) {
           if (BigInt(prev.exposed.nonce) > BigInt(exposedNonce)) {
-            console.warn(
-              `⚠️ Keeping local nonce ${prev.exposed.nonce} for Exposed (Remote: ${exposedNonce})`,
-            );
             safeExposedNonce = prev.exposed.nonce;
           }
           if (BigInt(prev.hidden.nonce) > BigInt(hiddenNonce)) {
-            console.warn(
-              `⚠️ Keeping local nonce ${prev.hidden.nonce} for Hidden (Remote: ${hiddenNonce})`,
-            );
             safeHiddenNonce = prev.hidden.nonce;
           }
         }
@@ -139,12 +150,12 @@ export function useWalletData() {
           exposed: {
             address: exposedAddr,
             nonce: safeExposedNonce,
-            balances: { BRL: exposedBalBRL, MOX: exposedBalMOX },
+            balances: exposedBalances,
           },
           hidden: {
             address: hiddenAddr,
             nonce: safeHiddenNonce,
-            balances: { BRL: hiddenBalBRL, MOX: hiddenBalMOX },
+            balances: hiddenBalances,
           },
         };
       });

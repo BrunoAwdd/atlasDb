@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Using data directory: {}", data_dir);
     let ledger = Ledger::new(data_dir).await?;
     let ledger = Arc::new(ledger);
-    let mempool = Arc::new(atlas_mempool::Mempool::new());
+    let mempool = Arc::new(atlas_mempool::Mempool::default());
 
     let service = LedgerServiceImpl { ledger: ledger.clone(), mempool };
     

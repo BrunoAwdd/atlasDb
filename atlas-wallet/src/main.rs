@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         from: "alice".into(),
         to: "bob".into(),
         amount: "500".into(),
-        asset: "BRL".into(),
+        asset: "USD".into(),
         memo: Some("Paying for lunch".into()),
         signature: "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into(),
         public_key: "0000000000000000000000000000000000000000000000000000000000000000".into(),

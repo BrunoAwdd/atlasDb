@@ -105,20 +105,21 @@ impl State {
         let mut accounts = HashMap::new();
         let mut mint = AccountState::new();
         mint.balances.insert("USD".to_string(), 1_000_000);
-        mint.balances.insert("BRL".to_string(), 1_000_000); // System Mint BRL
         accounts.insert("mint".to_string(), mint);
 
         // Genesis: User Wallet (Exposed - nbex)
         let mut wallet_alice_exposed = AccountState::new();
-        wallet_alice_exposed.balances.insert("BRL".to_string(), 5_000);
-        wallet_alice_exposed.balances.insert("MOX".to_string(), 10_000);
+        wallet_alice_exposed.balances.insert("USD".to_string(), 5_000);
+        wallet_alice_exposed.balances.insert("GBP".to_string(), 10_000);
+        wallet_alice_exposed.balances.insert("EUR".to_string(), 10_000);
+        wallet_alice_exposed.balances.insert("BRL".to_string(), 10_000);
         wallet_alice_exposed.balances.insert("ATLAS".to_string(), 1_000_000); // Stake Power
         accounts.insert("passivo:wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
 
         // Genesis: User Wallet (Hidden - nbhd)
         let mut wallet_alice_hidden = AccountState::new();
-        wallet_alice_hidden.balances.insert("BRL".to_string(), 5_000);
-        wallet_alice_hidden.balances.insert("MOX".to_string(), 10_000);
+        wallet_alice_hidden.balances.insert("USD".to_string(), 5_000);
+        wallet_alice_hidden.balances.insert("GBP".to_string(), 10_000);
         wallet_alice_hidden.balances.insert("ATLAS".to_string(), 1_000_000); // Stake Power
         accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
 
@@ -133,6 +134,22 @@ impl State {
         tokens.insert("BRL".to_string(), TokenMetadata {
             name: "Brazilian Real".to_string(),
             symbol: "BRL".to_string(),
+            decimals: 2,
+            logo: "".to_string(),
+            issuer: "passivo:wallet:mint".to_string(),
+        });
+
+        tokens.insert("GBP".to_string(), TokenMetadata {
+            name: "British Pound".to_string(),
+            symbol: "GBP".to_string(),
+            decimals: 2,
+            logo: "".to_string(),
+            issuer: "passivo:wallet:mint".to_string(),
+        });
+
+        tokens.insert("EUR".to_string(), TokenMetadata {
+            name: "Euro".to_string(),
+            symbol: "EUR".to_string(),
             decimals: 2,
             logo: "".to_string(),
             issuer: "passivo:wallet:mint".to_string(),

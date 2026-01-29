@@ -137,7 +137,7 @@ export default function Home() {
           {vaults.length > 0 ? (
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Carteira Salva
+                Account
               </label>
               <div className="relative">
                 <select
@@ -169,13 +169,13 @@ export default function Home() {
             </div>
           ) : (
             <div className="text-center py-8 opacity-50">
-              <p className="text-sm">Nenhuma carteira encontrada</p>
+              <p className="text-sm">No wallets found</p>
             </div>
           )}
 
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Senha
+              Password
             </label>
             <div className="relative">
               <Input
@@ -207,7 +207,7 @@ export default function Home() {
               onClick={handleLoadVault}
               className="w-full h-11 text-sm font-medium shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all"
             >
-              Acessar Carteira
+              Access Wallet
             </Button>
 
             <div className="mt-4 text-center">
@@ -216,7 +216,7 @@ export default function Home() {
                 onClick={handleCreateVault}
                 className="text-xs text-muted-foreground hover:text-primary"
               >
-                Criar nova carteira
+                Create New Wallet
               </Button>
             </div>
           </div>
@@ -242,7 +242,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="p-4 text-center border-t border-border/40">
         <p className="text-[10px] text-muted-foreground/60 font-medium">
-          NIMBLE v1.0 • SECURE ENCLAVE
+          1961 BLOCKCHAIN v1.0 • SECURE ENCLAVE
         </p>
       </footer>
     </div>

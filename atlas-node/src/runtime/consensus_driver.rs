@@ -160,7 +160,7 @@ impl<P: P2pPublisher> ConsensusDriver<P> {
              };
 
              if !tx_hashes.is_empty() {
-                 self.mempool.remove_batch(&tx_hashes);
+                 self.mempool.remove_batch(&tx_hashes).await.ok();
                  tracing::info!("🧹 Removed {} committed txs from mempool", tx_hashes.len());
              } else {
                  info!("🧹 Proposal {} contained no parseable transactions to remove.", proposal_id);

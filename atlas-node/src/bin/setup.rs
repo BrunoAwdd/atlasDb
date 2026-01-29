@@ -87,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             storage: Storage::new(&format!("{}/data", node_dir)),
             peer_manager,
             data_dir: format!("{}/data", node_dir),
+            redis_url: None,
         };
 
         config.save_to_file(&config_path)?;

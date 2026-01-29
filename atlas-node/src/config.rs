@@ -32,6 +32,7 @@ pub struct Config {
     pub storage: Storage,
     pub peer_manager: PeerManager,
     pub data_dir: String,
+    pub redis_url: Option<String>,
 }
 
 impl Config {
