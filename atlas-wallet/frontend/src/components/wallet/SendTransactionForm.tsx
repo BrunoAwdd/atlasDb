@@ -55,7 +55,7 @@ export function SendTransactionForm({
               Asset
             </label>
             <Input
-              placeholder="MOX"
+              placeholder="GBP"
               className="bg-secondary/50 border-0 h-11 focus-visible:ring-primary font-mono uppercase"
               value={asset}
               onChange={(e) => onAssetChange(e.target.value.toUpperCase())}

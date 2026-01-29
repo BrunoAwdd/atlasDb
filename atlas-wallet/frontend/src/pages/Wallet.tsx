@@ -8,6 +8,7 @@ import { useTransactionSender } from "@/hooks/useTransactionSender";
 import { WalletHeader } from "@/components/wallet/WalletHeader";
 import { SendTransactionForm } from "@/components/wallet/SendTransactionForm";
 import { TransactionHistory } from "@/components/wallet/TransactionHistory";
+import { AssetsList } from "@/components/wallet/AssetsList";
 
 function WalletView() {
   const navigate = useNavigate();
@@ -99,33 +100,64 @@ function WalletView() {
               </div>
             </Tabs>
 
-            <div className="relative py-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border/60" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground font-medium">
-                  Transfer
-                </span>
-              </div>
+            <div className="mt-8">
+              <Tabs defaultValue="transfer" className="w-full">
+                <TabsList className="grid w-full grid-cols-3 bg-secondary/40 p-1 h-10 mb-4">
+                  <TabsTrigger
+                    value="transfer"
+                    className="text-[10px] font-semibold uppercase"
+                  >
+                    Transfer
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="assets"
+                    className="text-[10px] font-semibold uppercase"
+                  >
+                    Assets
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="history"
+                    className="text-[10px] font-semibold uppercase"
+                  >
+                    History
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent
+                  value="transfer"
+                  className="space-y-4 animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <SendTransactionForm
+                    toAddress={toAddress}
+                    onAddressChange={setToAddress}
+                    amount={amount}
+                    onAmountChange={setAmount}
+                    asset={asset}
+                    onAssetChange={setAsset}
+                    onSend={handleSend}
+                    status={txStatus}
+                  />
+                </TabsContent>
+
+                <TabsContent
+                  value="assets"
+                  className="animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <AssetsList balances={wallet[activeProfile].balances} />
+                </TabsContent>
+
+                <TabsContent
+                  value="history"
+                  className="animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <TransactionHistory
+                    history={history}
+                    activeProfile={activeProfile}
+                    wallet={wallet}
+                  />
+                </TabsContent>
+              </Tabs>
             </div>
-
-            <SendTransactionForm
-              toAddress={toAddress}
-              onAddressChange={setToAddress}
-              amount={amount}
-              onAmountChange={setAmount}
-              asset={asset}
-              onAssetChange={setAsset}
-              onSend={handleSend}
-              status={txStatus}
-            />
-
-            <TransactionHistory
-              history={history}
-              activeProfile={activeProfile}
-              wallet={wallet}
-            />
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 opacity-50">

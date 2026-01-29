@@ -43,7 +43,7 @@ export default function AddressDetail() {
 
         // Reconstruct AccountState-like object from balance endpoint??
         // Actually, /api/balance returns { address, balance, asset, nonce }.
-        // It only returns ONE asset (ATLAS or BRL default?).
+        // It only returns ONE asset (ATLAS or USD default?).
 
         // To get ALL balances, we might need a new endpoint or scan /api/accounts.
         // For now, let's use /api/balance for at least the main Asset (ATLAS) and Nonce.

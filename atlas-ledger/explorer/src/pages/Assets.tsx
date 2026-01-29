@@ -17,7 +17,7 @@ export default function Assets() {
     fetch("http://localhost:3001/api/tokens")
       .then((res) => res.json())
       .then((data) => {
-        // API returns a Map: { "ATLAS": { ... }, "BRL": { ... } }
+        // API returns a Map: { "ATLAS": { ... }, "USD": { ... } }
         // We convert it to an array of values
         const tokenList = Object.values(data) as TokenMetadata[];
         setTokens(tokenList);

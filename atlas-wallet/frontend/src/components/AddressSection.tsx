@@ -7,10 +7,8 @@ interface AddressSectionProps {
   type: string;
   data: {
     address: string;
-    balances: {
-      BRL: string;
-      MOX: string;
-    };
+
+    balances: Record<string, string>;
     nonce?: string | number;
   };
 }
@@ -30,23 +28,66 @@ export function AddressSection({ type, data }: AddressSectionProps) {
     }
   };
 
+  const balanceEntries = data?.balances ? Object.entries(data.balances) : [];
+  // Prioritize USD if exists to be main, or just take first
+  const mainBalance = balanceEntries[0] || ["USD", "0"];
+  const otherBalances = balanceEntries.slice(1);
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex flex-col items-center justify-center py-6 bg-secondary/20 rounded-2xl border border-border/50 space-y-2">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-1">
           Balance {type === "exposed" ? "Total" : "Hidden"}
         </span>
-        <div className="flex flex-col items-center">
-          <h2 className="text-3xl font-bold tracking-tight">
-            {data?.balances?.BRL || "0"}{" "}
-            <span className="text-sm font-medium text-muted-foreground">
-              BRL
-            </span>
-          </h2>
-          <h2 className="text-xl font-bold tracking-tight text-muted-foreground/80">
-            {data?.balances?.MOX || "0"}{" "}
-            <span className="text-xs font-medium">MOX</span>
-          </h2>
+
+        <div className="flex flex-col items-center w-full px-4">
+          {balanceEntries.length === 0 ? (
+            <div className="text-center py-2">
+              <h2 className="text-4xl font-black tracking-tighter bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
+                0.00
+              </h2>
+              <span className="text-xs font-bold text-muted-foreground/60 tracking-widest uppercase mt-1 block">
+                USD
+              </span>
+            </div>
+          ) : (
+            <>
+              {/* Primary Balance (First One) */}
+              <div className="text-center py-2 mb-4">
+                <h2 className="text-4xl font-black tracking-tighter text-foreground drop-shadow-sm">
+                  {new Intl.NumberFormat("en-US", {
+                    minimumFractionDigits: 2,
+                  }).format(Number(balanceEntries[0][1]))}
+                </h2>
+                <span className="text-xs font-bold text-primary/80 tracking-widest uppercase mt-1 block">
+                  {balanceEntries[0][0]}
+                </span>
+              </div>
+
+              {/* Other Assets Grid */}
+              {balanceEntries.length > 1 && (
+                <div className="grid grid-cols-3 gap-2 w-full max-w-xs animate-in slide-in-from-bottom-2 duration-500">
+                  {balanceEntries.slice(1).map(([asset, amount]) => (
+                    <div
+                      key={asset}
+                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-background/40 border border-border/40 hover:bg-background/60 transition-colors"
+                    >
+                      <span className="text-sm font-bold text-foreground/90">
+                        {new Intl.NumberFormat("en-US", {
+                          notation: "compact",
+                          compactDisplay: "short",
+                          maximumFractionDigits: 1,
+                        }).format(Number(amount))}
+                      </span>
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase">
+                        {asset}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
