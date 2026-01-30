@@ -71,15 +71,17 @@ impl Ledger {
 
              // Double Entry Bypass for Genesis (Creation)
              
-             // 1. Update/Create Wallet Account
-             let wallet_account = state.accounts.entry(account_key.clone()).or_insert_with(crate::core::ledger::account::AccountState::new);
-             let balance = wallet_account.balances.entry(crate::core::ledger::asset::ATLAS_FULL_ID.to_string()).or_insert(0);
-             *balance += *amount as u128; // Credit
+             // 1. Update/Create Wallet Account (ATLAS)
+             {
+                 let wallet_account = state.accounts.entry(account_key.clone()).or_insert_with(crate::core::ledger::account::AccountState::new);
+                 let balance = wallet_account.balances.entry(crate::core::ledger::asset::ATLAS_FULL_ID.to_string()).or_insert(0);
+                 *balance += *amount as u128; // Credit
+             }
              
              // --- DEV/TESTNET: Inject Multi-Asset Allocations for specific addresses ---
              // To fix current testing, we inject these "bonus" assets here AND ensure they are part of the shard structure if we want full persistence.
              
-             let mut extra_legs = Vec::new();
+             let mut extra_legs = Vec::new(); // defined outside scopes
 
              if address.starts_with("nbex1ck") || address.starts_with("nbhd1k") {
                     let mint_issuer = "passivo:wallet:mint";
@@ -91,27 +93,31 @@ impl Ledger {
                         (format!("{}/XAU", mint_issuer), 1_000),
                     ];
 
-                    // Initialize Issuance Account for these assets (Authorized Supply)
-                    let issuance_account = state.accounts.entry("patrimonio:issuance".to_string()).or_insert_with(crate::core::ledger::account::AccountState::new);
-                    
+                    // Phase 1: Update Wallet (Credit User)
+                    {
+                        let wallet_account = state.accounts.entry(account_key.clone()).or_insert_with(crate::core::ledger::account::AccountState::new);
+                         for (asset_id, val) in &extras {
+                             let b = wallet_account.balances.entry(asset_id.clone()).or_insert(0);
+                             *b += *val as u128;
+                         }
+                    }
+
+                    // Phase 2: Update Treasury (Credit System Reserve)
+                    // Instead of Debiting Issuance (which requires pre-fund and creates imbalance),
+                    // We Credit Treasury. This simulates that the System HOLDS the matching asset (Backing)
+                    // or that the "Minted" supply is split between User and Treasury?
+                    // No, to balance "User has 20k" (Right), "System must have 20k" (Left).
+                    // So we give Treasury 20k.
+                    {
+                        let treasury_account = state.accounts.entry("patrimonio:treasury".to_string()).or_insert_with(crate::core::ledger::account::AccountState::new);
+                         for (asset_id, val) in &extras {
+                             let t_bal = treasury_account.balances.entry(asset_id.clone()).or_insert(0);
+                             *t_bal += *val as u128;
+                         }
+                    }
+
+                    // Phase 3: Record Legs
                  for (asset_id, val) in extras {
-                     // 1. Credit User Protocol (Liability)
-                     let b = wallet_account.balances.entry(asset_id.clone()).or_insert(0);
-                     *b += val as u128;
-                     
-                     // 2. Debit Issuance Protocol (Asset/Backing)
-                     // In a Mint model, the Issuer Debits their "Minting Right" or "Reserve".
-                     // Ideally, we should initialize a massive "Authorized Supply" first (Credit Equity), then Debit it.
-                     // For simplicity in this demo, we just Debit it (creating a positive Debit balance if visualized as Asset, or reducing Equity).
-                     // However, to make it show up as POSITIVE ASSET in our Inspector, we simply track it.
-                     
-                     // We authorize a high limit first so we don't go negative if using u128
-                     let iss_bal = issuance_account.balances.entry(asset_id.clone()).or_insert(0);
-                     *iss_bal += 1_000_000_000_000; // Pre-fund Authorized Supply
-                     *iss_bal -= val as u128; // Debit the amount minted
-                     
-                     // Add Legs for Double Entry
-                     // Leg 1: Credit User
                      extra_legs.push(Leg {
                          account: account_key.clone(),
                          asset: asset_id.clone(),
@@ -119,11 +125,10 @@ impl Ledger {
                          amount: val as u128,
                      });
                      
-                     // Leg 2: Debit Issuance
                      extra_legs.push(Leg {
-                         account: "patrimonio:issuance".to_string(),
+                         account: "patrimonio:treasury".to_string(),
                          asset: asset_id,
-                         kind: LegKind::Debit, // Reduces the Authorized Supply
+                         kind: LegKind::Credit, // Credit Treasury (Asset)
                          amount: val as u128,
                      });
                  }

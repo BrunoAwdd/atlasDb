@@ -167,18 +167,18 @@ export default function Inspector() {
       // Left Side (Active) = System Balances (Conceptually the 'Backing' or 'Treasury' or 'Contra-Liability')
       Object.entries(data.system_balances).forEach(([assetId, amount]) => {
         const def = registry[assetId];
-        // Force to Active Group for display on Left
+        // In Consolidated view, System holdings are ALWAYS Active (Assets/Reserves)
+        // regardless of their underlying type (e.g. USD is L2.1, but here it's an Asset of the System)
         const coaCode = def?.asset_type || "A1_1_1";
         const originalGroup = COA_GROUPS[coaCode];
 
-        // If original group is Passive (e.g. L2_1_3 USD), we display it on Active side
-        // as "Contra-Liability" or "Issued Asset"
+        // Create a synthetic group "System Assets" to avoid confusion with "2.1 Liabilities" label
         const effectiveGroup = {
-          ...originalGroup,
-          type: "active",
           label: originalGroup
-            ? `(System) ${originalGroup.label}`
-            : "System Asset",
+            ? `(System Hold) ${originalGroup.label}`
+            : "System Reserve",
+          color: "text-blue-400", // Unified color for System Assets
+          type: "active" as const,
         };
 
         groups["active"].push({
@@ -192,19 +192,23 @@ export default function Inspector() {
       // Right Side (Passive/Equity) = User Balances (The Claims)
       Object.entries(data.user_balances).forEach(([assetId, amount]) => {
         const def = registry[assetId];
+        // In Consolidated View, User Holdings are ALWAYS Passive (Liabilities of the Protocol)
         const coaCode = def?.asset_type || "L2_1_3";
-        const groupInfo = COA_GROUPS[coaCode] || {
-          label: "Unknown",
-          color: "text-gray-400",
-          type: "passive",
-        };
+        const originalGroup = COA_GROUPS[coaCode];
 
-        groups[groupInfo.type].push({
-          id: assetId,
-          amount,
-          def,
-          group: groupInfo,
-        });
+        // Simplify strict typing if needed.
+        // If AssetType says "Active" (e.g. ATLAS might be Equity), we respect it IF it maps to Passive/Equity side.
+        // If AssetType says "Active" but it's held by user -> it's a Liability for us (Claim on Assets).
+        // But for ATLAS (Equity), it stays Equity.
+
+        let type: "passive" | "equity" = "passive";
+        if (originalGroup && originalGroup.type === "equity") type = "equity";
+
+        const effectiveGroup = originalGroup
+          ? { ...originalGroup, type }
+          : { label: "User Holdings", color: "text-red-400", type: "passive" };
+
+        groups[type].push({ id: assetId, amount, def, group: effectiveGroup });
       });
     } else {
       // --- SINGLE ACCOUNT VIEW ---
