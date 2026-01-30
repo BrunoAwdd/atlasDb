@@ -17,6 +17,9 @@ interface AccountState {
   balance: string;
   balances: Record<string, string>;
   nonce: number;
+  // Extended for Consolidated View
+  system_balances?: Record<string, number>; // Left Side (Assets/Contra)
+  user_balances?: Record<string, number>; // Right Side (Liabilities/Equity)
 }
 
 interface AssetDefinition {
@@ -96,32 +99,41 @@ export default function Inspector() {
         // Consolidated Mode: Fetch ALL accounts and sum `patrimonio:*`
         const accountsRes = await fetch("http://localhost:3001/api/accounts");
         if (!accountsRes.ok) throw new Error("Failed to fetch accounts");
-        const accounts: Record<string, { balances: Record<string, string | number> }> = await accountsRes.json();
+        const accounts: Record<
+          string,
+          { balances: Record<string, string | number> }
+        > = await accountsRes.json();
 
-        const aggregatedBalances: Record<string, number> = {};
+        // Split Aggregation
+        const systemMap: Record<string, number> = {};
+        const userMap: Record<string, number> = {};
 
         Object.entries(accounts).forEach(([accAddr, accState]) => {
-          if (accAddr.startsWith("patrimonio:")) {
-            Object.entries(accState.balances).forEach(([asset, amount]) => {
-              const val = Number(amount);
-              aggregatedBalances[asset] =
-                (aggregatedBalances[asset] || 0) + val;
-            });
-          }
+          Object.entries(accState.balances).forEach(([asset, amount]) => {
+            const val = Number(amount);
+
+            // Logic:
+            // Patrimonio (Issuance/Treasury) -> System Side (Left/Assets)
+            // Wallets -> User Side (Right/Liabilities)
+            if (accAddr.startsWith("patrimonio:")) {
+              systemMap[asset] = (systemMap[asset] || 0) + val;
+            } else {
+              userMap[asset] = (userMap[asset] || 0) + val;
+            }
+          });
         });
 
-        // Convert back to string format for compatibility
+        // Create dummy balances map for compatibility
         const balancesStr: Record<string, string> = {};
-        Object.entries(aggregatedBalances).forEach(
-          ([k, v]) => (balancesStr[k] = v.toString()),
-        );
 
         setData({
-          address: "Protocol Consolidated (All patrimonio:*)",
+          address: "Global Protocol Balance Sheet",
           asset: "MULTI",
           balance: "0",
           balances: balancesStr,
           nonce: 0,
+          system_balances: systemMap,
+          user_balances: userMap,
         });
       } else {
         // Single Account Mode
@@ -150,23 +162,70 @@ export default function Inspector() {
       equity: [],
     };
 
-    Object.entries(data.balances).forEach(([assetId, amount]) => {
-      const def = registry[assetId];
-      // Default to "Other" if not found in registry (should not happen if synced)
-      const coaCode = def?.asset_type || "A1_1_1";
-      const groupInfo = COA_GROUPS[coaCode] || {
-        label: "Unknown",
-        color: "text-gray-400",
-        type: "active",
-      };
+    if (isConsolidated && data.system_balances && data.user_balances) {
+      // --- CONSOLIDATED VIEW STRATEGY ---
+      // Left Side (Active) = System Balances (Conceptually the 'Backing' or 'Treasury' or 'Contra-Liability')
+      Object.entries(data.system_balances).forEach(([assetId, amount]) => {
+        const def = registry[assetId];
+        // Force to Active Group for display on Left
+        const coaCode = def?.asset_type || "A1_1_1";
+        const originalGroup = COA_GROUPS[coaCode];
 
-      groups[groupInfo.type].push({
-        id: assetId,
-        amount,
-        def,
-        group: groupInfo,
+        // If original group is Passive (e.g. L2_1_3 USD), we display it on Active side
+        // as "Contra-Liability" or "Issued Asset"
+        const effectiveGroup = {
+          ...originalGroup,
+          type: "active",
+          label: originalGroup
+            ? `(System) ${originalGroup.label}`
+            : "System Asset",
+        };
+
+        groups["active"].push({
+          id: assetId,
+          amount,
+          def,
+          group: effectiveGroup,
+        });
       });
-    });
+
+      // Right Side (Passive/Equity) = User Balances (The Claims)
+      Object.entries(data.user_balances).forEach(([assetId, amount]) => {
+        const def = registry[assetId];
+        const coaCode = def?.asset_type || "L2_1_3";
+        const groupInfo = COA_GROUPS[coaCode] || {
+          label: "Unknown",
+          color: "text-gray-400",
+          type: "passive",
+        };
+
+        groups[groupInfo.type].push({
+          id: assetId,
+          amount,
+          def,
+          group: groupInfo,
+        });
+      });
+    } else {
+      // --- SINGLE ACCOUNT VIEW ---
+      Object.entries(data.balances).forEach(([assetId, amount]) => {
+        const def = registry[assetId];
+        // Default to "Other" if not found in registry (should not happen if synced)
+        const coaCode = def?.asset_type || "A1_1_1";
+        const groupInfo = COA_GROUPS[coaCode] || {
+          label: "Unknown",
+          color: "text-gray-400",
+          type: "active",
+        };
+
+        groups[groupInfo.type].push({
+          id: assetId,
+          amount,
+          def,
+          group: groupInfo,
+        });
+      });
+    }
 
     return groups;
   };
