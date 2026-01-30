@@ -172,13 +172,13 @@ impl State {
         assets.insert(atlas.id(), atlas);
 
         // Genesis: Mint Account
-        let mut mint = AccountState::new();
         // Mint holds the supply? Or is it a liability?
         // For Liability (L2_1), the Mint account should technically have a Negative balance or be the issuer.
-        // For simplicity in this non-double-entry-enforced-genesis, we give Mint 1M USD.
+        // For simplicity in this non-double-entry-enforced-genesis, we give Mint 0.
         // NOTE: In strict accounting, Mint has 0, creating money debits Cash (Assets) and credits Reserve (Liabilities).
         // Here we just seed balances.
-        mint.balances.insert(format!("{}/USD", mint_issuer), 1_000_000);
+        let mint = AccountState::new();
+        // mint.balances.insert(format!("{}/USD", mint_issuer), 1_000_000); // FIXED: Removed hardcoded 1M
         accounts.insert("mint".to_string(), mint);
 
         // Genesis: User Wallet (Exposed - nbex)
