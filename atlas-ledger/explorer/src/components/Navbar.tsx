@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Activity, Ticket, Users } from "lucide-react";
+import { LayoutDashboard, Activity, Ticket, Users, Code } from "lucide-react";
 
 export default function Navbar() {
   const location = useLocation();
@@ -12,6 +12,7 @@ export default function Navbar() {
     { name: "Assets", path: "/assets", icon: Ticket },
     // { name: "Blocks", path: "/blocks", icon: Box },
     { name: "Accounts", path: "/accounts", icon: Users },
+    { name: "Inspector", path: "/inspector", icon: Code },
     // { name: "Settings", path: "/settings", icon: Settings },
   ];
 

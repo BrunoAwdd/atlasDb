@@ -6,6 +6,7 @@ import TransactionDetail from "./pages/TransactionDetail";
 import Assets from "./pages/Assets";
 import Transactions from "./pages/Transactions";
 import Accounts from "./pages/Accounts";
+import Inspector from "./pages/Inspector";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/assets" element={<Assets />} />
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/accounts" element={<Accounts />} />
+            <Route path="/inspector" element={<Inspector />} />
             {/* Fallback for undefined routes */}
             <Route path="*" element={<Home />} />
           </Routes>
