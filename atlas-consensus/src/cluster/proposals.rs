@@ -152,10 +152,42 @@ impl Cluster {
         // 1. Log result to in-memory storage
         self.local_env.storage.write().await.log_result(&result.proposal_id, result.clone());
 
-        // 2. Remove from proposal pool to stop re-evaluation
+        // 2. Fetch Proposal to persist to Binlog
+        // Needed because Binlog stores the full Proposal, not just the Result/ID
+        let proposal_opt = self.local_env.engine.lock().await.pool.find_by_id(&result.proposal_id).cloned();
+        
+        if let Some(proposal) = proposal_opt {
+             let storage = self.local_env.storage.read().await;
+             if let Some(ledger) = &storage.ledger {
+                 // 3. Append to Binlog (WAL)
+                 if let Err(e) = ledger.binlog.write().await.append(&proposal).await {
+                     tracing::error!("❌ Failed to append proposal {} to Binlog: {}", proposal.id, e);
+                     // Critical failure? Usually yes, but we try to continue.
+                 } else {
+                     info!("📜 Proposal {} written to Binlog (WAL)", proposal.id);
+                 }
+                 
+                 // 4. Synchronization: Execute and Persist to Shards
+                 // We execute immediately after WAL write to ensure consistency.
+                 match ledger.execute_transaction(&proposal, true).await {
+                     Ok(count) => {
+                         info!("✅ Proposal {} Executed. {} transactions applied to Shards/State.", proposal.id, count);
+                     },
+                     Err(e) => {
+                         // If Replay Protection kicks in (Double Execution), we log and ignore.
+                         // Otherwise, it's an error.
+                         tracing::error!("⚠️ Execution validation for {}: {}", proposal.id, e);
+                     }
+                 }
+             }
+        } else {
+             warn!("⚠️ Commit: Proposal {} not found in pool to write to Binlog!", result.proposal_id);
+        }
+
+        // 5. Remove from proposal pool to stop re-evaluation
         self.local_env.engine.lock().await.remove_proposal(&result.proposal_id);
 
-        // 2. Persist to disk (simple audit file)
+        // 6. Persist to disk (simple audit file)
         let node_id = self.local_node.read().await.id.clone();
         let audit_dir = "audits";
         if let Err(e) = std::fs::create_dir_all(audit_dir) {

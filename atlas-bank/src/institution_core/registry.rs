@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use super::institution::Institution;
 use atlas_common::error::Result;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InstitutionRegistry {
     institutions: HashMap<String, Institution>,
 }

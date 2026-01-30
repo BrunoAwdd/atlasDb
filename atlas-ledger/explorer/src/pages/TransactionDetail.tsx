@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { FileText, CheckCircle, Clock } from "lucide-react";
+import { getAssetSymbol } from "../lib/assets";
 
 interface TxDto {
   tx_hash: string;
@@ -102,7 +103,7 @@ export default function TransactionDetail() {
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold">{tx.amount}</span>
-            <span className="badge">{tx.asset}</span>
+            <span className="badge">{getAssetSymbol(tx.asset)}</span>
           </div>
         </div>
 

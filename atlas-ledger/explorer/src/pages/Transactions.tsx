@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import StatusBadge from "../components/StatusBadge";
+import { getAssetSymbol } from "../lib/assets";
 
 interface TxDto {
   tx_hash: string;
@@ -106,7 +107,7 @@ export default function Transactions() {
                 <td className="p-4 font-mono">
                   {tx.amount}{" "}
                   <span className="text-xs text-muted-foreground">
-                    {tx.asset}
+                    {getAssetSymbol(tx.asset)}
                   </span>
                 </td>
                 <td className="p-4 text-xs text-muted-foreground">

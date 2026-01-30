@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Copy, Wallet, ArrowRightLeft } from "lucide-react";
+import { getAssetSymbol } from "../lib/assets";
 
 interface AccountState {
   balances: Record<string, number>;
@@ -55,8 +56,28 @@ export default function AddressDetail() {
         const listJson = await listRes.json();
         setHistory(listJson.transactions);
 
+        // API now returns full balances map in `balances` field (strings)
+        // We need to parse strings to numbers if interface assumes numbers,
+        // OR update interface. Let's cast to number for compatibility or keep as string?
+        // Backend rest.rs sends string values.
+        // Let's update the interface AccountState to use string or handle conversion.
+        // For visual simplicity, keep as string in UI or display directly.
+
+        // But AccountState interface (line 6) defines balances: Record<string, number>.
+        // I should update line 6. For now, parseInt/Float.
+
+        const balancesMap: Record<string, number> = {};
+        if (balJson.balances) {
+          Object.entries(balJson.balances).forEach(([k, v]) => {
+            balancesMap[k] = Number(v);
+          });
+        } else {
+          // Fallback for legacy response?
+          balancesMap[balJson.asset] = parseFloat(balJson.balance);
+        }
+
         setData({
-          balances: { [balJson.asset]: parseFloat(balJson.balance) }, // Approximate
+          balances: balancesMap,
           nonce: balJson.nonce || 0,
         });
       } catch (e) {
@@ -107,9 +128,41 @@ export default function AddressDetail() {
               Primary Balance
             </p>
             <p className="text-2xl font-mono">
-              {Object.entries(data.balances)[0]?.[1] || 0}{" "}
-              {Object.entries(data.balances)[0]?.[0]}
+              {data.balances["passivo:wallet:mint/ATLAS"] ||
+                Object.values(data.balances)[0] ||
+                0}{" "}
+              {data.balances["passivo:wallet:mint/ATLAS"]
+                ? "ATLAS"
+                : getAssetSymbol(Object.keys(data.balances)[0] || "")}
             </p>
+          </div>
+
+          <div className="col-span-1 md:col-span-3 p-4 bg-background/50 rounded-lg border border-border/30">
+            <p className="text-sm text-muted-foreground uppercase font-semibold mb-3">
+              Asset Portfolio
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Object.entries(data.balances)
+                .filter(([assetId]) => assetId !== "passivo:wallet:mint/ATLAS")
+                .map(([assetId, bal]) => (
+                  <div
+                    key={assetId}
+                    className="flex flex-col bg-secondary/20 p-3 rounded border border-border/10"
+                  >
+                    <span className="text-xs text-muted-foreground font-mono mb-1">
+                      {getAssetSymbol(assetId)}
+                    </span>
+                    <span className="font-mono font-bold text-lg">{bal}</span>
+                  </div>
+                ))}
+              {Object.keys(data.balances).filter(
+                (k) => k !== "passivo:wallet:mint/ATLAS",
+              ).length === 0 && (
+                <span className="text-muted-foreground text-sm">
+                  No other assets found
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -178,7 +231,7 @@ export default function AddressDetail() {
                   <td className="p-4 font-mono">{tx.amount}</td>
                   <td className="p-4">
                     <span className="text-xs text-muted-foreground">
-                      {tx.asset}
+                      {getAssetSymbol(tx.asset)}
                     </span>
                   </td>
                   <td className="p-4 text-xs text-muted-foreground">

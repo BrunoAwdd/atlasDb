@@ -9,9 +9,7 @@ impl Ledger {
         let mut binlog = self.binlog.write().await;
         let mut index = self.index.write().await;
 
-        let (file_id, offset, len) = binlog.append(proposal).await?;
-        
-        // Extract inner transaction hash(es) for idempotency index
+        // 1. Calculate Hashes upfront to check for duplicates (Idempotency)
         let tx_hashes: Vec<String> = if let Ok(batch) = serde_json::from_str::<Vec<SignedTransaction>>(&proposal.content) {
              batch.iter().map(|signed_tx| {
                  let mut hasher = Sha256::new();
@@ -29,12 +27,23 @@ impl Ledger {
              vec![proposal.hash.clone()]
         };
 
+        // 2. Check Idempotency
+        for hash in &tx_hashes {
+            if index.exists_tx(hash)? {
+                 tracing::warn!("⚠️ Idempotency Check: Transaction {} already exists. Skipping proposal {}.", hash, proposal.id);
+                 return Ok(());
+            }
+        }
+
+        // 3. Persist to Binlog
+        let (file_id, offset, len) = binlog.append(proposal).await?;
+        
+        // 4. Index Proposal & Transactions
         for hash in tx_hashes {
             index.index_proposal(&proposal.id, &hash, file_id, offset, len)?;
         }
         
-        // CRITICAL FIX: Update State immediately!
-        // Drop locks before executing to avoid potential deadlock issues (though execute takes its own locks)
+        // 5. Update State
         drop(binlog);
         drop(index);
 

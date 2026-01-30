@@ -32,8 +32,8 @@ export default function Accounts() {
         // essentially we'd want a "Rich List" so sorting by main asset balance is better.
         // Assuming 'ATLAS' is the main asset.
         list.sort((a, b) => {
-          const balA = a.balances["ATLAS"] || 0;
-          const balB = b.balances["ATLAS"] || 0;
+          const balA = a.balances["passivo:wallet:mint/ATLAS"] || 0;
+          const balB = b.balances["passivo:wallet:mint/ATLAS"] || 0;
           return balB - balA;
         });
 
@@ -104,7 +104,7 @@ export default function Accounts() {
                   </div>
                 </td>
                 <td className="p-4 font-mono font-bold text-green-400">
-                  {acc.balances["ATLAS"] || 0}
+                  {acc.balances["passivo:wallet:mint/ATLAS"] || 0}
                 </td>
                 <td className="p-4 font-mono text-muted-foreground">
                   {acc.nonce}

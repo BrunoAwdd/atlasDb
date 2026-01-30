@@ -2,7 +2,7 @@ interface Rpc {
   request(
     service: string,
     method: string,
-    data: Uint8Array
+    data: Uint8Array,
   ): Promise<Uint8Array>;
 }
 
@@ -16,7 +16,7 @@ export class GrpcWebRpc implements Rpc {
   async request(
     service: string,
     method: string,
-    data: Uint8Array
+    data: Uint8Array,
   ): Promise<Uint8Array> {
     const url = `${this.host}/${service}/${method}`;
 
@@ -35,8 +35,12 @@ export class GrpcWebRpc implements Rpc {
       headers: {
         "Content-Type": "application/grpc-web+proto",
         "x-grpc-web": "1",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
       },
       body: buf,
+      cache: "no-store", // Ensure Fetch API doesn't cache
     });
 
     if (!response.ok) {
@@ -57,12 +61,12 @@ export class GrpcWebRpc implements Rpc {
       ) {
         throw new Error(
           `gRPC Error Status: ${response.headers.get(
-            "grpc-status"
-          )} Message: ${response.headers.get("grpc-message")}`
+            "grpc-status",
+          )} Message: ${response.headers.get("grpc-message")}`,
         );
       }
       throw new Error(
-        `Invalid response: too short (len=${responseBuffer.length}). Status: ${response.status}`
+        `Invalid response: too short (len=${responseBuffer.length}). Status: ${response.status}`,
       );
     }
 

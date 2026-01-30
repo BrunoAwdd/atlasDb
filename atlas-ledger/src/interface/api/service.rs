@@ -212,10 +212,12 @@ impl LedgerService for LedgerServiceImpl {
         // Lookup account
         let (balance, nonce) = if let Some(account) = state.accounts.get(&address) {
             let bal = account.get_balance(&req.asset);
-            tracing::info!("🔍 [GetBalance] Key='{}' Asset='{}' Found=true Bal='{}'", address, req.asset, bal);
+            tracing::info!("🔍 [GetBalance] Key='{}' Asset='{}' Found=true Bal='{}' Nonce={}", address, req.asset, bal, account.nonce);
             (bal.to_string(), account.nonce)
         } else {
             tracing::warn!("❌ [GetBalance] Key='{}' Asset='{}' Found=false (Defaulting to 0)", address, req.asset);
+            // DEBUG: Check if we have any accounts
+            tracing::warn!("DEBUG: Total accounts in state: {}", state.accounts.len());
             ("0".to_string(), 0)
         };
 

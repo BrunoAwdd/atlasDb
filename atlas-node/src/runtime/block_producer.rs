@@ -67,7 +67,9 @@ impl<P: P2pPublisher> BlockProducer<P> {
                  let state = ledger.state.read().await;
                  
                  let initial_count = candidates.len();
-                 candidates.retain(|(_, tx)| {
+                 let mut stale_hashes = Vec::new();
+
+                 candidates.retain(|(hash, tx)| {
                      // Check nonce against ledger state
                      let sender = &tx.transaction.from;
                      let ledger_nonce = if let Some(acc) = state.accounts.get(sender) {
@@ -77,18 +79,27 @@ impl<P: P2pPublisher> BlockProducer<P> {
                      } else {
                          0
                      };
+
+                     // tracing::error!("sender_nonce {} ledger_nonce {}",  tx.transaction.nonce, ledger_nonce);
                      
                      if tx.transaction.nonce <= ledger_nonce {
                          tracing::warn!("🗑️ Discarding Stale TX from sender {} (Nonce {} <= Current {})", sender, tx.transaction.nonce, ledger_nonce);
-                         // Optional: Remove from mempool immediately?
-                         // self.mempool.remove_batch(&[hash?]); // Need hash here.
-                         // For now, just exclude from block.
+                         stale_hashes.push(hash.clone());
                          false
                      } else {
                          true
                      }
                  });
                  
+                 if !stale_hashes.is_empty() {
+                     info!("🧹 Cleaning up {} stale transactions from mempool.", stale_hashes.len());
+                     // We must drop the state lock before calling mempool (though local mempool uses weird locking, better safe)
+                     drop(state); 
+                     self.mempool.remove_batch(&stale_hashes).await.ok();
+                 } else {
+                     drop(state);
+                 }
+
                  if candidates.len() < initial_count {
                      info!("🧹 Filtered {} stale transactions from candidates.", initial_count - candidates.len());
                  }

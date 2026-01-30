@@ -1,6 +1,28 @@
 import { useState } from "react";
 import { ledgerClient } from "@/lib/client";
 import { sing_transfer } from "../pkg/atlas_wallet";
+import { getFullAssetId } from "@/lib/assets";
+import type { WalletData } from "./useWalletData";
+
+interface TransactionData {
+  from: string;
+  nonce: bigint | number;
+  timestamp: bigint | number;
+  [key: string]: any;
+}
+
+interface TransferData {
+  transaction: TransactionData | Map<string, any>;
+  signature: string | Uint8Array;
+  public_key: string | Uint8Array;
+  [key: string]: any;
+}
+
+interface WasmResult {
+  transfer?: TransferData;
+  get?: (key: string) => any;
+  [key: string]: any;
+}
 
 export function useTransactionSender({
   wallet,
@@ -8,7 +30,7 @@ export function useTransactionSender({
   refresh,
   incrementNonce,
 }: {
-  wallet: any;
+  wallet: WalletData | null;
   activeProfile: "exposed" | "hidden";
   refresh: () => void;
   incrementNonce: (p: "exposed" | "hidden") => void;
@@ -21,8 +43,7 @@ export function useTransactionSender({
   const handleSend = async () => {
     try {
       setStatus("Assinando (WASM)...");
-
-      // await init(wasmUrl); // Don't reset state!
+      const fullAssetId = getFullAssetId(asset);
 
       // Define Memo constant to ensure Signature matches Verification
       const txMemo = "Web Wallet Transfer";
@@ -39,47 +60,43 @@ export function useTransactionSender({
 
       // 1. Sign with WASM
       // Result is a Map: { id: "...", transfer: { transaction: {...}, signature: [...], public_key: [...] } }
-      const result = await sing_transfer(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const result: WasmResult | Map<string, any> = await sing_transfer(
         toAddress,
         BigInt(amount),
-        asset,
+        fullAssetId,
         txMemo,
         nextNonce,
       );
 
       console.log("Assinatura gerada (RAW):", result);
-      console.log("Type of result:", result?.constructor?.name);
-      if (result instanceof Map) {
-        console.log("Result keys:", Array.from(result.keys()));
-        const transfer = result.get("transfer");
-        console.log("Transfer object:", transfer);
-        if (transfer instanceof Map)
-          console.log("Transfer keys:", Array.from(transfer.keys()));
-      } else {
-        console.log("Result keys (Object):", Object.keys(result));
-        console.log("Transfer object:", result?.transfer);
-      }
 
       // Helper function for bytes to hex
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toHex = (bytes: any) => {
         if (!bytes) return "";
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         const arr = Array.from(bytes) as number[];
         return arr.map((b) => b.toString(16).padStart(2, "0")).join("");
       };
 
-      let sigRaw: any, pkRaw: any; // Keep any to handle various WASM return shapes safely
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let sigRaw: any, pkRaw: any;
       let sigIsHex = false;
       let pkIsHex = false;
 
       // Handle Map (wasm-bindgen default) or Object
       if (result instanceof Map) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const transfer = result.get("transfer");
         if (transfer instanceof Map) {
           sigRaw = transfer.get("signature");
           pkRaw = transfer.get("public_key");
         } else {
           // WASM might return struct with direct fields
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
           sigRaw = transfer.signature;
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
           pkRaw = transfer.public_key;
         }
         // The new WASM returns signature/pk as Hex String
@@ -102,6 +119,7 @@ export function useTransactionSender({
 
       let signatureHex = "";
       if (sigIsHex) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         signatureHex = sigRaw;
       } else {
         signatureHex = toHex(sigRaw);
@@ -109,46 +127,55 @@ export function useTransactionSender({
 
       let publicKeyHex = "";
       if (pkIsHex) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         publicKeyHex = pkRaw;
       } else {
         publicKeyHex = toHex(pkRaw);
       }
 
-      // console.log("Sending Signature (Hex):", signatureHex);
-      // console.log("Sending Public Key (Hex):", publicKeyHex);
-
       setStatus("Enviando (gRPC)...");
 
       // 2. Submit to Ledger
       // CRITICAL: Use the 'from' address that was ACTUALLY signed by the WASM module.
-      // Relying on 'wallet.exposed.address' or 'activeProfile' here is risky because
-      // the WASM internal state might be different (e.g. if switch_profile failed or desynced).
       let currentAddr = "";
       let nonceStr = "0";
       let timestampStr = "0";
 
       if (result instanceof Map) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const transfer = result.get("transfer");
         // Check if transaction is a Map or Object
         const transaction =
           transfer instanceof Map
             ? transfer.get("transaction")
-            : transfer.transaction;
+            : // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              transfer.transaction;
 
         if (transaction instanceof Map) {
           currentAddr = transaction.get("from");
           nonceStr = transaction.get("nonce").toString();
           timestampStr = transaction.get("timestamp").toString();
         } else {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
           currentAddr = transaction.from;
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
           nonceStr = transaction.nonce.toString();
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
           timestampStr = transaction.timestamp.toString();
         }
       } else {
         // Object structure
-        currentAddr = result.transfer.transaction.from;
-        nonceStr = result.transfer.transaction.nonce.toString();
-        timestampStr = result.transfer.transaction.timestamp.toString();
+        const tx = result.transfer!.transaction;
+
+        if (tx instanceof Map) {
+          currentAddr = tx.get("from");
+          nonceStr = tx.get("nonce").toString();
+          timestampStr = tx.get("timestamp").toString();
+        } else {
+          currentAddr = (tx as TransactionData).from;
+          nonceStr = (tx as TransactionData).nonce.toString();
+          timestampStr = (tx as TransactionData).timestamp.toString();
+        }
       }
 
       if (!currentAddr) {
@@ -158,8 +185,10 @@ export function useTransactionSender({
         );
         currentAddr =
           activeProfile === "exposed"
-            ? wallet.exposed.address
-            : wallet.hidden.address;
+            ? // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+              wallet?.exposed.address!
+            : // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+              wallet?.hidden.address!;
       }
 
       console.log("Submitting Transaction FROM:", currentAddr);
@@ -168,7 +197,7 @@ export function useTransactionSender({
         from: currentAddr,
         to: toAddress,
         amount: amount.toString(),
-        asset: asset, // Use selected asset
+        asset: fullAssetId, // Use selected asset
         memo: txMemo, // Use the SAME memo signed by WASM
         signature: signatureHex,
         publicKey: publicKeyHex, // Correct field name (camelCase)

@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { ledgerClient } from "@/lib/client";
-import { get_data, switch_profile } from "../pkg/atlas_wallet"; // Adjust import path as needed
+import { get_data, switch_profile } from "../pkg/atlas_wallet";
+import { ASSET_MAP } from "@/lib/assets";
+
+interface WalletBalance {
+  asset: string;
+  balance: string;
+  nonce: number;
+}
 
 export interface WalletData {
   exposed: {
@@ -15,17 +22,24 @@ export interface WalletData {
   };
 }
 
+interface WasmSession {
+  exposed?: { address: string };
+  hidden?: { address: string };
+  get?: (key: string) => any;
+}
+
 export function useWalletData() {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [status, setStatus] = useState("");
   const [activeProfile, setActiveProfile] = useState<"exposed" | "hidden">(
     "exposed",
   );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [history, setHistory] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     // --- gRPC Integration ---
-    let session;
+    let session: WasmSession | Map<string, any>;
     try {
       console.log("Fetching data from WASM...");
       session = await get_data();
@@ -40,15 +54,18 @@ export function useWalletData() {
     }
 
     if (session) {
-      let exposedAddr, hiddenAddr;
+      let exposedAddr: string | undefined;
+      let hiddenAddr: string | undefined;
 
       if (session instanceof Map) {
-        exposedAddr = session.get("exposed").get("address");
-        hiddenAddr = session.get("hidden").get("address");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        exposedAddr = session.get("exposed")?.get("address");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        hiddenAddr = session.get("hidden")?.get("address");
       } else {
         // Standard Object from serde_wasm_bindgen
-        exposedAddr = session.exposed?.address;
-        hiddenAddr = session.hidden?.address;
+        exposedAddr = (session as WasmSession).exposed?.address;
+        hiddenAddr = (session as WasmSession).hidden?.address;
       }
 
       if (!exposedAddr || !hiddenAddr) {
@@ -75,10 +92,13 @@ export function useWalletData() {
       }
 
       // Define supported assets
-      const ASSETS = ["USD", "BRL", "GBP", "EUR"];
+      const ASSETS = Object.values(ASSET_MAP);
 
       // Fetch Real Balances via gRPC
-      const fetchBalanceAndNonce = async (addr: string, asset: string) => {
+      const fetchBalanceAndNonce = async (
+        addr: string,
+        asset: string,
+      ): Promise<WalletBalance> => {
         try {
           const res = await ledgerClient.GetBalance({
             address: addr,
@@ -93,10 +113,10 @@ export function useWalletData() {
 
       // Fetch all assets for Exposed and Hidden
       const exposedPromises = ASSETS.map((a) =>
-        fetchBalanceAndNonce(exposedAddr, a),
+        fetchBalanceAndNonce(exposedAddr!, a),
       );
       const hiddenPromises = ASSETS.map((a) =>
-        fetchBalanceAndNonce(hiddenAddr, a),
+        fetchBalanceAndNonce(hiddenAddr!, a),
       );
 
       const [exposedResults, hiddenResults] = await Promise.all([
@@ -109,7 +129,7 @@ export function useWalletData() {
       let maxExposedNonce = 0;
 
       exposedResults.forEach((r) => {
-        if (Number(r.balance) > 0 || r.asset === "USD") {
+        if (Number(r.balance) > 0 || r.asset === ASSET_MAP["USD"]) {
           exposedBalances[r.asset] = r.balance;
         }
         if (r.nonce > maxExposedNonce) maxExposedNonce = r.nonce;
@@ -119,7 +139,7 @@ export function useWalletData() {
       let maxHiddenNonce = 0;
 
       hiddenResults.forEach((r) => {
-        if (Number(r.balance) > 0 || r.asset === "USD") {
+        if (Number(r.balance) > 0 || r.asset === ASSET_MAP["USD"]) {
           hiddenBalances[r.asset] = r.balance;
         }
         if (r.nonce > maxHiddenNonce) maxHiddenNonce = r.nonce;
@@ -132,28 +152,20 @@ export function useWalletData() {
       // Debug: Show fetched balances in status
       setStatus(`Sync OK.`);
 
-      setWallet((prev) => {
-        // Security: Ensure Nonce never decreases (Handling Race Conditions)
-        let safeExposedNonce = exposedNonce;
-        let safeHiddenNonce = hiddenNonce;
-
-        if (prev) {
-          if (BigInt(prev.exposed.nonce) > BigInt(exposedNonce)) {
-            safeExposedNonce = prev.exposed.nonce;
-          }
-          if (BigInt(prev.hidden.nonce) > BigInt(hiddenNonce)) {
-            safeHiddenNonce = prev.hidden.nonce;
-          }
-        }
+      setWallet((_prev) => {
+        // Source of Truth: The Chain (ledgerClient results)
+        // We do NOT preserve local nonce if chain is lower (e.g. after a reset/wipe).
+        const safeExposedNonce = exposedNonce;
+        const safeHiddenNonce = hiddenNonce;
 
         return {
           exposed: {
-            address: exposedAddr,
+            address: exposedAddr!,
             nonce: safeExposedNonce,
             balances: exposedBalances,
           },
           hidden: {
-            address: hiddenAddr,
+            address: hiddenAddr!,
             nonce: safeHiddenNonce,
             balances: hiddenBalances,
           },
@@ -182,8 +194,6 @@ export function useWalletData() {
     } catch (error) {
       console.error("Failed to switch profile:", error);
       setStatus("Erro ao trocar perfil. Tente novamente.");
-      // Revert if critical? For now, we assume backend toggle eventually works or we are out of sync anyway.
-      // If we revert: setActiveProfile(activeProfile);
     }
   };
 

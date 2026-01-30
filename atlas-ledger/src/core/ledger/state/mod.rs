@@ -1,8 +1,9 @@
-
 use std::collections::HashMap;
 use sha2::{Digest, Sha256};
 use atlas_common::entry::{LedgerEntry, LegKind};
 use crate::core::ledger::account::AccountState;
+use crate::core::ledger::asset::{AssetDefinition, AssetType};
+
 
 /// Stores delegation information.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -89,7 +90,7 @@ impl DelegationStore {
     }
 }
 
-use crate::core::ledger::token::TokenMetadata;
+
 
 /// Represents the global state of the application.
 /// Now follows FIP-02: Double-Entry Accounting.
@@ -97,68 +98,102 @@ use crate::core::ledger::token::TokenMetadata;
 pub struct State {
     pub accounts: HashMap<String, AccountState>,
     pub delegations: DelegationStore,
-    pub tokens: HashMap<String, TokenMetadata>,
+    pub assets: HashMap<String, AssetDefinition>, // Key: "Issuer/Symbol"
+    pub institutions: atlas_bank::institution_core::registry::InstitutionRegistry,
 }
 
 impl State {
     pub fn new() -> Self {
         let mut accounts = HashMap::new();
+        let mut assets = HashMap::new();
+        
+        // Define Central Mint Issuer
+        let mint_issuer = crate::core::ledger::asset::SYSTEM_MINT_ISSUER.to_string();
+
+        // Register default assets
+        let usd = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            "US Dollar".to_string(),
+            "USD".to_string(),
+            2,
+            Some("ISO4217:USD".to_string()),
+        );
+        assets.insert(usd.id(), usd);
+
+        let brl = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            "Brazilian Real".to_string(),
+            "BRL".to_string(),
+            2,
+            Some("ISO4217:BRL".to_string()),
+        );
+        assets.insert(brl.id(), brl);
+
+        let gbp = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::L2_1_3,
+            "British Pound".to_string(),
+            "GBP".to_string(),
+            2,
+            Some("ISO4217:GBP".to_string()),
+        );
+        assets.insert(gbp.id(), gbp);
+
+        let eur = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::L2_1_3,
+            "Euro".to_string(),
+            "EUR".to_string(),
+            2,
+            Some("ISO4217:EUR".to_string()),
+        );
+        assets.insert(eur.id(), eur);
+
+        let gold = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::A1_2_3, 
+            "Physical Gold (99.9%)".to_string(),
+            "XAU".to_string(),
+            4, 
+            Some("Commodity:XAU".to_string()), 
+        );
+        assets.insert(gold.id(), gold);
+
+        let atlas = AssetDefinition::new(
+            mint_issuer.clone(),
+            AssetType::EQ3_1, // Equity / Governance
+            "Atlas Token".to_string(),
+            crate::core::ledger::asset::ATLAS_SYMBOL.to_string(),
+            8,
+            None,
+        );
+        assets.insert(atlas.id(), atlas);
+
+        // Genesis: Mint Account
         let mut mint = AccountState::new();
-        mint.balances.insert("USD".to_string(), 1_000_000);
+        // Mint holds the supply? Or is it a liability?
+        // For Liability (L2_1), the Mint account should technically have a Negative balance or be the issuer.
+        // For simplicity in this non-double-entry-enforced-genesis, we give Mint 1M USD.
+        // NOTE: In strict accounting, Mint has 0, creating money debits Cash (Assets) and credits Reserve (Liabilities).
+        // Here we just seed balances.
+        mint.balances.insert(format!("{}/USD", mint_issuer), 1_000_000);
         accounts.insert("mint".to_string(), mint);
 
         // Genesis: User Wallet (Exposed - nbex)
-        let mut wallet_alice_exposed = AccountState::new();
-        wallet_alice_exposed.balances.insert("USD".to_string(), 5_000);
-        wallet_alice_exposed.balances.insert("GBP".to_string(), 10_000);
-        wallet_alice_exposed.balances.insert("EUR".to_string(), 10_000);
-        wallet_alice_exposed.balances.insert("BRL".to_string(), 10_000);
-        wallet_alice_exposed.balances.insert("ATLAS".to_string(), 1_000_000); // Stake Power
+        let wallet_alice_exposed = AccountState::new();
         accounts.insert("passivo:wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
 
         // Genesis: User Wallet (Hidden - nbhd)
-        let mut wallet_alice_hidden = AccountState::new();
-        wallet_alice_hidden.balances.insert("USD".to_string(), 5_000);
-        wallet_alice_hidden.balances.insert("GBP".to_string(), 10_000);
-        wallet_alice_hidden.balances.insert("ATLAS".to_string(), 1_000_000); // Stake Power
+        let wallet_alice_hidden = AccountState::new();
         accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
-
-        let mut tokens = HashMap::new();
-        tokens.insert("USD".to_string(), TokenMetadata {
-            name: "US Dollar".to_string(),
-            symbol: "USD".to_string(),
-            decimals: 2,
-            logo: "".to_string(),
-            issuer: "passivo:wallet:mint".to_string(),
-        });
-        tokens.insert("BRL".to_string(), TokenMetadata {
-            name: "Brazilian Real".to_string(),
-            symbol: "BRL".to_string(),
-            decimals: 2,
-            logo: "".to_string(),
-            issuer: "passivo:wallet:mint".to_string(),
-        });
-
-        tokens.insert("GBP".to_string(), TokenMetadata {
-            name: "British Pound".to_string(),
-            symbol: "GBP".to_string(),
-            decimals: 2,
-            logo: "".to_string(),
-            issuer: "passivo:wallet:mint".to_string(),
-        });
-
-        tokens.insert("EUR".to_string(), TokenMetadata {
-            name: "Euro".to_string(),
-            symbol: "EUR".to_string(),
-            decimals: 2,
-            logo: "".to_string(),
-            issuer: "passivo:wallet:mint".to_string(),
-        });
 
         Self {
             accounts,
             delegations: DelegationStore::new(),
-            tokens,
+            assets,
+            institutions: atlas_bank::institution_core::registry::InstitutionRegistry::new(),
         }
     }
 
@@ -171,6 +206,13 @@ impl State {
     pub fn apply_entry(&mut self, entry: LedgerEntry) -> Result<(), String> {
         // --- PHASE 1: Validation (ReadOnly) ---
         
+        // 1.0 Validate Asset Existence
+        for leg in &entry.legs {
+            if !self.assets.contains_key(&leg.asset) {
+                return Err(format!("Asset currently not registered in Ledger: '{}'. Assets must be strictly defined before usage.", leg.asset));
+            }
+        }
+
         // 1.1 Validate Double-Entry Rule (Debits == Credits)
         let mut asset_totals: HashMap<String, i128> = HashMap::new();
         for leg in &entry.legs {
@@ -227,7 +269,7 @@ impl State {
             if let Some(account) = self.accounts.get_mut(&acc_id) {
                 account.last_entry_id = Some(entry.entry_id.clone());
                 account.last_transaction_hash = Some(entry.tx_hash.clone());
-                account.nonce += 1;
+                // Nonce update is handled by Transaction Engine for the Sender only.
             }
         }
 

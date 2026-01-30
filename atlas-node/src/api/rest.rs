@@ -46,6 +46,7 @@ struct BalanceResponse {
     address: String,
     asset: String,
     balance: String,
+    balances: HashMap<String, String>, // Full Portfolio
     nonce: u64,
 }
 
@@ -69,16 +70,22 @@ async fn get_balance_api(
     Query(params): Query<ListParams>,
 ) -> Json<BalanceResponse> {
     let address = params.query.unwrap_or_default();
-    let asset = "ATLAS";
+    let asset = atlas_ledger::core::ledger::asset::ATLAS_FULL_ID;
     
     // Fetch full account state to get nonce + balance
     let account = state.ledger.get_account(&address).await.unwrap_or_default();
     let balance = account.get_balance(&asset.to_string());
     
+    // Convert all balances to string map
+    let all_balances: HashMap<String, String> = account.balances.iter()
+        .map(|(k, v)| (k.clone(), v.to_string()))
+        .collect();
+
     Json(BalanceResponse {
         address,
         asset: asset.to_string(),
         balance: balance.to_string(),
+        balances: all_balances,
         nonce: account.nonce,
     })
 }
@@ -164,6 +171,6 @@ async fn list_accounts_api(
 
 async fn list_tokens_api(
     State(state): State<AppState>,
-) -> Json<HashMap<String, atlas_ledger::core::ledger::token::TokenMetadata>> {
-   Json(state.ledger.get_all_tokens().await)
+) -> Json<HashMap<String, atlas_ledger::core::ledger::asset::AssetDefinition>> {
+   Json(state.ledger.get_all_assets().await)
 }

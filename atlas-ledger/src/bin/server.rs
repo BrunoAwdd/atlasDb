@@ -74,8 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Query(params): Query<ListParams>,
         ) -> Json<BalanceResponse> {
             let address = params.query.unwrap_or_default();
-            // Default to ATLAS
-            let asset = "ATLAS"; 
+            // Default to ATLAS Native Token (Strict ID)
+            let asset = crate::core::ledger::asset::ATLAS_FULL_ID; 
             
             // Ledger::get_balance signature: async fn get_balance(&self, address: &str, asset: &str) -> Result<u64>
             let balance = ledger.get_balance(&address, asset).await.unwrap_or(0);

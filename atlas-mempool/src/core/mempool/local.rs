@@ -29,7 +29,7 @@ impl LocalMempool {
         let timestamp = tx.transaction.timestamp;
         
         if timestamp < now.saturating_sub(60) || timestamp > now + 30 {
-             return Err(atlas_common::error::AtlasError::Other(format!("Timestamp invalid: {}", timestamp)));
+             return Err(atlas_common::error::AtlasError::Other(format!("Timestamp invalid (Memory): {}", timestamp)));
         }
 
         let tx_hash = self.hash_signed_tx(&tx);

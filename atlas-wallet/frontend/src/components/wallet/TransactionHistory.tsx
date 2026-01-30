@@ -1,11 +1,23 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { getAssetSymbol } from "@/lib/assets";
+import type { WalletData } from "@/hooks/useWalletData";
+
+export interface Transaction {
+  txHash: string;
+  from: string;
+  to: string;
+  amount: string;
+  asset: string;
+  nonce: number | string;
+  timestamp: number | string;
+}
 
 interface TransactionHistoryProps {
-  history: any[];
+  history: Transaction[];
   activeProfile: "exposed" | "hidden";
-  wallet: any;
+  wallet: WalletData | null;
 }
 
 export function TransactionHistory({
@@ -34,15 +46,16 @@ export function TransactionHistory({
       <div className="space-y-3">
         <div className="space-y-3">
           {history.length > 0 ? (
-            history.map((tx: any) => {
+            history.map((tx) => {
               const currentAddress =
                 activeProfile === "exposed"
-                  ? wallet.exposed.address
-                  : wallet.hidden.address;
+                  ? wallet?.exposed.address
+                  : wallet?.hidden.address;
               // Determine direction based on current active profile
               // Note: If tx is internal, it might be relevant to both.
               const isSender =
-                tx.from.includes(currentAddress) || tx.from === currentAddress;
+                (currentAddress && tx.from.includes(currentAddress)) ||
+                tx.from === currentAddress;
 
               return (
                 <div
@@ -88,7 +101,7 @@ export function TransactionHistory({
                       }`}
                     >
                       {!isSender ? "+" : "-"}
-                      {tx.amount} {tx.asset}
+                      {tx.amount} {getAssetSymbol(tx.asset)}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
                       Confirmed
