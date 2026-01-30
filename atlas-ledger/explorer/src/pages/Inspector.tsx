@@ -78,10 +78,10 @@ export default function Inspector() {
   const [registry, setRegistry] = useState<Record<string, AssetDefinition>>({});
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "json">("table");
+  const [isConsolidated, setIsConsolidated] = useState(false);
   const [error, setError] = useState("");
 
   const handleSearch = async () => {
-    if (!address) return;
     setLoading(true);
     setError("");
     setData(null);
@@ -92,13 +92,47 @@ export default function Inspector() {
         setRegistry(await tokensRes.json());
       }
 
-      // 2. Fetch Balances
-      const res = await fetch(
-        `http://localhost:3001/api/balance?query=${encodeURIComponent(address)}`,
-      );
-      if (!res.ok) throw new Error("Failed to fetch data");
-      const json = await res.json();
-      setData(json);
+      if (isConsolidated) {
+        // Consolidated Mode: Fetch ALL accounts and sum `patrimonio:*`
+        const accountsRes = await fetch("http://localhost:3001/api/accounts");
+        if (!accountsRes.ok) throw new Error("Failed to fetch accounts");
+        const accounts: Record<string, { balances: Record<string, string | number> }> = await accountsRes.json();
+
+        const aggregatedBalances: Record<string, number> = {};
+
+        Object.entries(accounts).forEach(([accAddr, accState]) => {
+          if (accAddr.startsWith("patrimonio:")) {
+            Object.entries(accState.balances).forEach(([asset, amount]) => {
+              const val = Number(amount);
+              aggregatedBalances[asset] =
+                (aggregatedBalances[asset] || 0) + val;
+            });
+          }
+        });
+
+        // Convert back to string format for compatibility
+        const balancesStr: Record<string, string> = {};
+        Object.entries(aggregatedBalances).forEach(
+          ([k, v]) => (balancesStr[k] = v.toString()),
+        );
+
+        setData({
+          address: "Protocol Consolidated (All patrimonio:*)",
+          asset: "MULTI",
+          balance: "0",
+          balances: balancesStr,
+          nonce: 0,
+        });
+      } else {
+        // Single Account Mode
+        if (!address) return;
+        const res = await fetch(
+          `http://localhost:3001/api/balance?query=${encodeURIComponent(address)}`,
+        );
+        if (!res.ok) throw new Error("Failed to fetch data");
+        const json = await res.json();
+        setData(json);
+      }
     } catch (e) {
       console.error(e);
       setError("Could not fetch account data. Is the node running?");
@@ -152,7 +186,7 @@ export default function Inspector() {
 
       {/* Search Bar */}
       <div className="card p-6 bg-secondary/10 border border-border/50 rounded-xl">
-        <div className="flex gap-4">
+        <div className="flex gap-4 mb-4">
           <div className="flex-1 relative">
             <Search
               className="absolute left-3 top-3 text-muted-foreground"
@@ -163,7 +197,10 @@ export default function Inspector() {
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Enter Account Address (e.g., patrimonio:issuance)"
-              className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+              disabled={isConsolidated}
+              className={`w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono transition-opacity ${
+                isConsolidated ? "opacity-50" : ""
+              }`}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             />
           </div>
@@ -175,6 +212,26 @@ export default function Inspector() {
             {loading ? "Loading..." : "Inspect"}
           </button>
         </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="consolidate"
+            checked={isConsolidated}
+            onChange={(e) => setIsConsolidated(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+          />
+          <label
+            htmlFor="consolidate"
+            className="text-sm text-gray-300 select-none cursor-pointer"
+          >
+            Consolidated Protocol View{" "}
+            <span className="text-xs text-muted-foreground">
+              (Sums all 'patrimonio:*' accounts)
+            </span>
+          </label>
+        </div>
+
         {error && <p className="text-red-400 mt-2 text-sm">{error}</p>}
       </div>
 
