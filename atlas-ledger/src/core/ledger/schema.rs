@@ -13,7 +13,7 @@ use std::fmt;
 pub enum AccountClass {
     Ativo,            // 1
     Passivo,          // 2
-    PatrimonioLiquido,// 3
+    vaultLiquido,// 3
     Resultado,        // 4
     Compensacao,      // 5
     Unknown,
@@ -31,7 +31,7 @@ impl fmt::Display for AccountClass {
         match self {
             AccountClass::Ativo => write!(f, "1 - Ativo"),
             AccountClass::Passivo => write!(f, "2 - Passivo"),
-            AccountClass::PatrimonioLiquido => write!(f, "3 - PL"),
+            AccountClass::vaultLiquido => write!(f, "3 - PL"),
             AccountClass::Resultado => write!(f, "4 - Resultado"),
             AccountClass::Compensacao => write!(f, "5 - Compensacao"),
             AccountClass::Unknown => write!(f, "? - Unknown"),
@@ -51,7 +51,7 @@ impl AccountSchema {
         // Check strict prefixes
         if address.starts_with("1.") { return AccountClass::Ativo; }
         if address.starts_with("2.") { return AccountClass::Passivo; }
-        if address.starts_with("3.") { return AccountClass::PatrimonioLiquido; }
+        if address.starts_with("3.") { return AccountClass::vaultLiquido; }
         if address.starts_with("4.") { return AccountClass::Resultado; }
         if address.starts_with("5.") { return AccountClass::Compensacao; }
 

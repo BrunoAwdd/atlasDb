@@ -53,7 +53,7 @@ impl Ledger {
 
         // 2. Try Prefix Lookup (Legacy/Schema Compat)
         if !address.contains(':') {
-            let prefixed = format!("passivo:wallet:{}", address);
+            let prefixed = format!("wallet:{}", address);
             if let Some(account) = state.accounts.get(&prefixed) {
                 let bal = *account.balances.get(asset).unwrap_or(&0);
                 return Ok(bal.try_into().unwrap_or(u64::MAX));
@@ -73,7 +73,7 @@ impl Ledger {
 
         // 2. Try Prefix Lookup (Legacy/Schema Compat)
         if !address.contains(':') {
-            let prefixed = format!("passivo:wallet:{}", address);
+            let prefixed = format!("wallet:{}", address);
             if let Some(account) = state.accounts.get(&prefixed) {
                 return Some(account.clone());
             }

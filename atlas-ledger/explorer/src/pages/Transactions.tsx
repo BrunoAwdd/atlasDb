@@ -93,7 +93,7 @@ export default function Transactions() {
                     to={`/address/${tx.from}`}
                     className="font-mono text-xs text-muted-foreground hover:text-white transition-colors"
                   >
-                    {tx.from.replace("passivo:wallet:", "").substring(0, 10)}...
+                    {tx.from.replace("wallet:", "").substring(0, 10)}...
                   </Link>
                 </td>
                 <td className="p-4">
@@ -101,7 +101,7 @@ export default function Transactions() {
                     to={`/address/${tx.to}`}
                     className="font-mono text-xs text-muted-foreground hover:text-white transition-colors"
                   >
-                    {tx.to.replace("passivo:wallet:", "").substring(0, 10)}...
+                    {tx.to.replace("wallet:", "").substring(0, 10)}...
                   </Link>
                 </td>
                 <td className="p-4 font-mono">

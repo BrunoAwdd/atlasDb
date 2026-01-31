@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use sha2::{Digest, Sha256};
 use atlas_common::entry::{LedgerEntry, LegKind};
 use crate::core::ledger::account::AccountState;
-use crate::core::ledger::asset::{AssetDefinition, AssetType};
+use crate::core::ledger::asset::AssetDefinition;
 
 
 /// Stores delegation information.
@@ -113,7 +113,7 @@ impl State {
         // Register default assets
         let usd = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            // AssetType::L2_1_3, // REMOVED
             "US Dollar".to_string(),
             "USD".to_string(),
             2,
@@ -123,7 +123,7 @@ impl State {
 
         let brl = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            // AssetType::L2_1_3, // REMOVED
             "Brazilian Real".to_string(),
             "BRL".to_string(),
             2,
@@ -133,7 +133,7 @@ impl State {
 
         let gbp = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3,
+            // AssetType::L2_1_3,
             "British Pound".to_string(),
             "GBP".to_string(),
             2,
@@ -143,7 +143,7 @@ impl State {
 
         let eur = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3,
+            // AssetType::L2_1_3,
             "Euro".to_string(),
             "EUR".to_string(),
             2,
@@ -153,7 +153,7 @@ impl State {
 
         let gold = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::A1_2_3, 
+            // AssetType::A1_2_3, 
             "Physical Gold (99.9%)".to_string(),
             "XAU".to_string(),
             4, 
@@ -163,7 +163,7 @@ impl State {
 
         let atlas = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::EQ3_1, // Equity / Governance
+            // AssetType::EQ3_1, // Equity
             "Atlas Token".to_string(),
             crate::core::ledger::asset::ATLAS_SYMBOL.to_string(),
             8,
@@ -181,13 +181,25 @@ impl State {
         // mint.balances.insert(format!("{}/USD", mint_issuer), 1_000_000); // FIXED: Removed hardcoded 1M
         accounts.insert("mint".to_string(), mint);
 
+        // Genesis: Issuance Vault (Authorized Capital)
+        // Needs balance to allow Debits (Distribution)
+        let mut issuance = AccountState::new();
+        issuance.balances.insert(crate::core::ledger::asset::ATLAS_FULL_ID.to_string(), 1_000_000_000_000_000); // 1B ATLAS
+        accounts.insert("vault:issuance".to_string(), issuance);
+
+        // Genesis: Treasury Vault
+        accounts.insert("vault:treasury".to_string(), AccountState::new());
+
         // Genesis: User Wallet (Exposed - nbex)
-        let wallet_alice_exposed = AccountState::new();
-        accounts.insert("passivo:wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
+        // RENAMED: wallet:nbex -> wallet:nbex
+        let mut wallet_alice_exposed = AccountState::new();
+        wallet_alice_exposed.balances.insert(crate::core::ledger::asset::ATLAS_FULL_ID.to_string(), 100_000_000_000_000);
+        accounts.insert("wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
 
         // Genesis: User Wallet (Hidden - nbhd)
+        // RENAMED: wallet:nbhd -> wallet:nbhd
         let wallet_alice_hidden = AccountState::new();
-        accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
+        accounts.insert("wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
 
         Self {
             accounts,

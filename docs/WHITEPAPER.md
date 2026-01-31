@@ -83,7 +83,7 @@ Every address in AtlasDB is classified into one of five root classes, enforced b
 
 1.  **Ativo (Assets)** (`1.x`)
 2.  **Passivo (Liabilities)** (`2.x` & Wallets `0x...`)
-3.  **Patrimonio Liquido (Equity)** (`3.x`)
+3.  **vault Liquido (Equity)** (`3.x`)
 4.  **Resultado (Revenue/Expense)** (`4.x`)
 5.  **Compensacao (Compensation)** (`5.x`)
 
@@ -114,7 +114,7 @@ AtlasDB utilizes a proposal-based consensus engine. Nodes collect transactions i
 To prevent "Nothing-at-Stake" problems and Equivocation (Double Voting), the protocol implements automated slashing.
 If a node is caught modifying history or voting for two conflicting proposals in the same view, a **Slashing Transaction** is automatically generated.
 
-- **Validator Penalty:** A significant portion of their stake is burned (Moved to `Patrimonio:Slashing`).
+- **Validator Penalty:** A significant portion of their stake is burned (Moved to `vault:Slashing`).
 - **Shared Risk:** Delegators share a % of the penalty, encouraging careful selection of validators.
 
 ## 7. Future Roadmap

@@ -74,7 +74,7 @@ impl<P: P2pPublisher> BlockProducer<P> {
                      let sender = &tx.transaction.from;
                      let ledger_nonce = if let Some(acc) = state.accounts.get(sender) {
                          acc.nonce
-                     } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", sender)) {
+                     } else if let Some(acc) = state.accounts.get(&format!("wallet:{}", sender)) {
                          acc.nonce
                      } else {
                          0

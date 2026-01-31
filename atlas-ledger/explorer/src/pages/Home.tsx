@@ -11,7 +11,7 @@ export default function Home() {
     if (!query) return;
 
     // Basic heuristic detection
-    if (query.startsWith("nbex") || query.startsWith("passivo:")) {
+    if (query.startsWith("nbex") || query.startsWith("")) {
       navigate(`/address/${query}`);
     } else if (query.length >= 64 || query.length === 44) {
       // Hex or Base64 (approx)

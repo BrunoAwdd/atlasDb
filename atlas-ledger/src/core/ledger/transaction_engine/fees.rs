@@ -30,10 +30,10 @@ impl FeeHandler {
         // 3. Legs
         
         // Payer (Debit)
-        let payer_account = if fee_payer.starts_with("passivo:wallet:") {
+        let payer_account = if fee_payer.starts_with("wallet:") {
             fee_payer.clone()
         } else {
-            format!("passivo:wallet:{}", fee_payer)
+            format!("wallet:{}", fee_payer)
         };
 
         entry.legs.push(Leg {
@@ -58,10 +58,10 @@ impl FeeHandler {
              proposer_id.to_string()
         };
 
-        let validator_account = if proposer_addr.starts_with("passivo:wallet:") {
+        let validator_account = if proposer_addr.starts_with("wallet:") {
             proposer_addr
         } else {
-            format!("passivo:wallet:{}", proposer_addr)
+            format!("wallet:{}", proposer_addr)
         };
 
         entry.legs.push(Leg {
@@ -73,7 +73,7 @@ impl FeeHandler {
 
         // System Revenue (Credit)
         entry.legs.push(Leg {
-            account: "patrimonio:fees".to_string(),
+            account: "vault:fees".to_string(),
             asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
             kind: LegKind::Credit,
             amount: system_revenue as u128,

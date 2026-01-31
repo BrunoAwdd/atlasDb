@@ -147,7 +147,7 @@ impl LedgerService for LedgerServiceImpl {
              // Check Nonce
              let acc_nonce = if let Some(acc) = state.accounts.get(&req.from) {
                  acc.nonce
-             } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", req.from)) {
+             } else if let Some(acc) = state.accounts.get(&format!("wallet:{}", req.from)) {
                  acc.nonce
              } else {
                  0
@@ -203,10 +203,12 @@ impl LedgerService for LedgerServiceImpl {
         let state = self.ledger.state.read().await;
         
         // Handle address prefix if missing
-        let address = if req.address.starts_with("passivo:wallet:") {
-            req.address.clone()
+        let address = if req.address.contains(':') {
+             // Trust the provided address if it has a prefix (wallet:..., vault:...)
+             req.address.clone()
         } else {
-            format!("passivo:wallet:{}", req.address)
+             // Default to wallet: for implicit addresses
+             format!("wallet:{}", req.address)
         };
 
         // Lookup account

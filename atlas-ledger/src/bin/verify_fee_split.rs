@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let payer_sk = SigningKey::generate(&mut csprng);
     let payer_pk = payer_sk.verifying_key();
     let payer_addr = atlas_common::address::address::Address::address_from_pk(&payer_pk, "nbex").unwrap();
-    let payer_account_key = format!("passivo:wallet:{}", payer_addr);
+    let payer_account_key = format!("wallet:{}", payer_addr);
 
     // Sender (can be same as payer, but let's make them different to be sure)
     let sender_sk = SigningKey::generate(&mut csprng);
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validator_sk = SigningKey::generate(&mut csprng);
     let validator_pk = validator_sk.verifying_key();
     let validator_addr = atlas_common::address::address::Address::address_from_pk(&validator_pk, "nbex").unwrap();
-    let validator_account_key = format!("passivo:wallet:{}", validator_addr);
+    let validator_account_key = format!("wallet:{}", validator_addr);
 
     println!("Payer: {}", payer_addr);
     println!("Validator: {}", validator_addr);
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // Fund Sender (Transfer Amount)
         // Note: Sender key usually wrapped too if standard
-        let sender_account_key = format!("passivo:wallet:{}", sender_addr);
+        let sender_account_key = format!("wallet:{}", sender_addr);
         let sender_acc = state.accounts.entry(sender_account_key).or_insert_with(atlas_ledger::core::ledger::account::AccountState::new);
         sender_acc.balances.insert("ATLAS".to_string(), 1_000_000);
 
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Validator Balance: {}", validator_bal);
 
     // Check System Balance
-    let system_bal = state.accounts.get("patrimonio:fees").map(|a| a.balances.get("ATLAS").unwrap_or(&0)).unwrap_or(&0);
+    let system_bal = state.accounts.get("vault:fees").map(|a| a.balances.get("ATLAS").unwrap_or(&0)).unwrap_or(&0);
     println!("System Balance: {}", system_bal);
 
     // Assertions

@@ -12,8 +12,8 @@ impl Ledger {
         let mut state = self.state.write().await;
         
         // Fix: 'State::new' populates hardcoded Mint/Alice, so is_empty() is always false.
-        // We check if "patrimonio:genesis" exists to know if Genesis was applied.
-        if state.accounts.contains_key("patrimonio:genesis") {
+        // We check if "vault:genesis" exists to know if Genesis was applied.
+        if state.accounts.contains_key("vault:genesis") {
             return Ok(());
         }
         
@@ -22,14 +22,14 @@ impl Ledger {
 
               // 1. Debit Equity (Issuance)
               let debit_leg = Leg {
-                  account: "patrimonio:genesis".to_string(), // Equity
+                  account: "vault:genesis".to_string(), // Equity/Vault
                   asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
-                  kind: LegKind::Debit, // Reduces Equity (Technically Equity is Credit normal, so Debit reduces it to create Liability)
+                  kind: LegKind::Debit, 
                   amount: *amount as u128,
               };
 
              // 2. Credit Liability (User Wallet)
-             let account_key = format!("passivo:wallet:{}", final_address);
+             let account_key = format!("wallet:{}", final_address);
 
              let credit_leg = Leg {
                  account: account_key.clone(),
@@ -51,7 +51,7 @@ impl Ledger {
                      Self::update_account_balance(&mut state, &account_key, &asset_id, val);
 
                      // Phase 2: Update Treasury (Credit System Reserve)
-                     Self::update_account_balance(&mut state, "patrimonio:treasury", &asset_id, val);
+                     Self::update_account_balance(&mut state, "vault:treasury", &asset_id, val);
 
                      // Phase 3: Record Legs
                      extra_legs.push(Leg {
@@ -62,7 +62,7 @@ impl Ledger {
                      });
                      
                      extra_legs.push(Leg {
-                         account: "patrimonio:treasury".to_string(),
+                         account: "vault:treasury".to_string(),
                          asset: asset_id,
                          kind: LegKind::Credit, // Credit Treasury (Asset)
                          amount: val,
@@ -72,7 +72,7 @@ impl Ledger {
              // --------------------------------------------------------------------------
              
              // 2. Update/Create Equity Account (The Source)
-             Self::update_account_balance(&mut state, "patrimonio:genesis", crate::core::ledger::asset::ATLAS_FULL_ID, *amount as u128);
+             Self::update_account_balance(&mut state, "vault:genesis", crate::core::ledger::asset::ATLAS_FULL_ID, *amount as u128);
 
               // 3. Create Genesis Entry for Persistence
               let mut genesis_legs = vec![debit_leg, credit_leg]; 
@@ -103,9 +103,9 @@ impl Ledger {
         let issuance_reserve: u128 = 100_000_000u128 * 1_000_000u128; // 100M units * 6 decimals
         
         // 1. Credit Issuance (Equity side - Authorization)
-        Self::update_account_balance(&mut state, "patrimonio:issuance", crate::core::ledger::asset::ATLAS_FULL_ID, issuance_reserve);
+        Self::update_account_balance(&mut state, "vault:issuance", crate::core::ledger::asset::ATLAS_FULL_ID, issuance_reserve);
         let issuance_credit = Leg {
-              account: "patrimonio:issuance".to_string(),
+              account: "vault:issuance".to_string(),
               asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
               kind: LegKind::Credit, // Increase Authorized Supply
               amount: issuance_reserve,
@@ -113,9 +113,9 @@ impl Ledger {
 
         // 2. Debit Unissued (Asset side - Potential)
         // This balances the equation: Ativo (Unissued) = PL (Capital Social Autorizado)
-        Self::update_account_balance(&mut state, "ativo:unissued", crate::core::ledger::asset::ATLAS_FULL_ID, issuance_reserve);
+        Self::update_account_balance(&mut state, "vault:unissued", crate::core::ledger::asset::ATLAS_FULL_ID, issuance_reserve);
         let issuance_debit = Leg {
-              account: "ativo:unissued".to_string(),
+              account: "vault:unissued".to_string(),
               asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
               kind: LegKind::Debit, // Increase Asset
               amount: issuance_reserve,
@@ -132,14 +132,14 @@ impl Ledger {
         );
 
         let shards = self.shards.read().await;
-        if let Err(e) = shards.append("patrimonio:issuance", &issuance_entry).await {
+        if let Err(e) = shards.append("vault:issuance", &issuance_entry).await {
             tracing::error!("❌ Failed to write Genesis Issuance shard: {}", e);
         } else {
             tracing::info!("💾 Persisted Genesis Issuance Shard");
         }
         
         // Also init Treasury just in case
-        let _treasury_account = state.accounts.entry("patrimonio:treasury".to_string()).or_insert_with(crate::core::ledger::account::AccountState::new);
+        let _treasury_account = state.accounts.entry("vault:treasury".to_string()).or_insert_with(crate::core::ledger::account::AccountState::new);
 
         
         Ok(())
@@ -176,7 +176,7 @@ impl Ledger {
     /// Returns development/testnet allocations for specific addresses.
     fn get_dev_allocations(address: &str) -> Option<Vec<(String, u128)>> {
         if address.starts_with("nbex1ck") || address.starts_with("nbhd1k") {
-            let mint_issuer = "passivo:wallet:mint";
+            let mint_issuer = "wallet:mint";
             Some(vec![
                 (format!("{}/USD", mint_issuer), 5_000),
                 (format!("{}/EUR", mint_issuer), 10_000),

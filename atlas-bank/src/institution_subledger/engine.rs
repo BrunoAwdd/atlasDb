@@ -28,19 +28,18 @@ impl AccountingEngine {
         memo: Option<String>,
     ) -> Result<LedgerEntry, String> {
         // 1. Derive Accounts
-        // For a standard transfer between users in a bank ledger:
-        // Sender: "passivo:wallet:<sender>" (Liability) unless it's a raw code (starts with digit) or hash (0x)
-        let sender_account = if sender.chars().next().map_or(false, |c| c.is_ascii_digit()) || sender.starts_with("0x") {
+        // Logic: specific prefix provided ? Use it : Assume "wallet:"
+        let sender_account = if sender.contains(':') {
             Account::new(sender.to_string())?
         } else {
-            Account::new(format!("passivo:wallet:{}", sender))?
+            Account::new(format!("wallet:{}", sender))?
         };
 
-        // Receiver: "passivo:wallet:<receiver>" (Liability) unless it's a raw code or hash
-        let receiver_account = if receiver.chars().next().map_or(false, |c| c.is_ascii_digit()) || receiver.starts_with("0x") {
+        // Receiver: Same logic
+        let receiver_account = if receiver.contains(':') {
             Account::new(receiver.to_string())?
         } else {
-            Account::new(format!("passivo:wallet:{}", receiver))?
+            Account::new(format!("wallet:{}", receiver))?
         };
 
         // 2. Create Legs
@@ -99,9 +98,9 @@ mod tests {
         let debit = entry.legs.iter().find(|l| l.kind == LegKind::Debit).unwrap();
         let credit = entry.legs.iter().find(|l| l.kind == LegKind::Credit).unwrap();
 
-        assert_eq!(debit.account, "passivo:wallet:alice");
+        assert_eq!(debit.account, "wallet:alice");
         assert_eq!(debit.amount, 100);
-        assert_eq!(credit.account, "passivo:wallet:bob");
+        assert_eq!(credit.account, "wallet:bob");
         assert_eq!(credit.amount, 100);
     }
 }

@@ -44,6 +44,12 @@ impl Index {
         let write_txn = self.db.begin_write().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         {
             let mut table = write_txn.open_table(PROPOSALS_TABLE).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            
+            // Check existence (Idempotency)
+            if table.get(id).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?.is_some() {
+                 return Ok(()); // Already indexed
+            }
+
             table.insert(id, value.as_slice()).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
             let mut table_hashes = write_txn.open_table(TX_HASHES_TABLE).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

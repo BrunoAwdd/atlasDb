@@ -104,6 +104,7 @@ export function useWalletData() {
             address: addr,
             asset: asset,
           });
+
           return { asset, balance: res.balance, nonce: Number(res.nonce) || 0 };
         } catch (e) {
           console.warn(`Failed to fetch ${asset} balance for ${addr}:`, e);

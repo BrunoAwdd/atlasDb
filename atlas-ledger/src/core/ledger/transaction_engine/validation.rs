@@ -35,7 +35,7 @@ impl ValidationHandler {
              }
 
              // 1.1 SYSTEM ACCOUNT PROTECTION
-             if tx.from.starts_with("patrimonio:") {
+             if tx.from.starts_with("vault:") {
                  let provided_pk_hex = hex::encode(st.public_key.clone());
                  if provided_pk_hex != GENESIS_ADMIN_PK {
                      tracing::error!("❌ Unauthorized Treasury Spend! PK {} != Admin {}", provided_pk_hex, GENESIS_ADMIN_PK);
@@ -95,7 +95,7 @@ impl ValidationHandler {
         
         let account_nonce = if let Some(acc) = state.accounts.get(&tx.from) {
             acc.nonce
-        } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", tx.from)) {
+        } else if let Some(acc) = state.accounts.get(&format!("wallet:{}", tx.from)) {
             acc.nonce
         } else {
             0

@@ -128,10 +128,10 @@ export default function AddressDetail() {
               Primary Balance
             </p>
             <p className="text-2xl font-mono">
-              {data.balances["passivo:wallet:mint/ATLAS"] ||
+              {data.balances["wallet:mint/ATLAS"] ||
                 Object.values(data.balances)[0] ||
                 0}{" "}
-              {data.balances["passivo:wallet:mint/ATLAS"]
+              {data.balances["wallet:mint/ATLAS"]
                 ? "ATLAS"
                 : getAssetSymbol(Object.keys(data.balances)[0] || "")}
             </p>
@@ -143,7 +143,7 @@ export default function AddressDetail() {
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {Object.entries(data.balances)
-                .filter(([assetId]) => assetId !== "passivo:wallet:mint/ATLAS")
+                .filter(([assetId]) => assetId !== "wallet:mint/ATLAS")
                 .map(([assetId, bal]) => (
                   <div
                     key={assetId}
@@ -156,7 +156,7 @@ export default function AddressDetail() {
                   </div>
                 ))}
               {Object.keys(data.balances).filter(
-                (k) => k !== "passivo:wallet:mint/ATLAS",
+                (k) => k !== "wallet:mint/ATLAS",
               ).length === 0 && (
                 <span className="text-muted-foreground text-sm">
                   No other assets found
@@ -199,8 +199,8 @@ export default function AddressDetail() {
           <tbody className="divide-y divide-border/30">
             {history.map((tx) => {
               const isIn =
-                tx.to.replace("passivo:wallet:", "").toLowerCase() ===
-                (address || "").replace("passivo:wallet:", "").toLowerCase();
+                tx.to.replace("wallet:", "").toLowerCase() ===
+                (address || "").replace("wallet:", "").toLowerCase();
               return (
                 <tr
                   key={tx.tx_hash}
@@ -221,10 +221,8 @@ export default function AddressDetail() {
                   <td className="p-4">
                     <span className="font-mono text-muted-foreground">
                       {isIn
-                        ? tx.from
-                            .replace("passivo:wallet:", "")
-                            .substring(0, 12)
-                        : tx.to.replace("passivo:wallet:", "").substring(0, 12)}
+                        ? tx.from.replace("wallet:", "").substring(0, 12)
+                        : tx.to.replace("wallet:", "").substring(0, 12)}
                       ...
                     </span>
                   </td>

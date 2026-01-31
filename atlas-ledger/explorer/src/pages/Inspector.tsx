@@ -17,6 +17,12 @@ interface AccountState {
   balance: string;
   balances: Record<string, string>;
   nonce: number;
+  view?: {
+    type: string;
+    assets: Record<string, string>;
+    liabilities: Record<string, string>;
+    equity: Record<string, string>;
+  };
   // Extended for Consolidated View
   system_balances?: Record<string, number>; // Left Side (Assets/Contra)
   user_balances?: Record<string, number>; // Right Side (Liabilities/Equity)
@@ -24,59 +30,59 @@ interface AccountState {
 
 interface AssetDefinition {
   issuer: string;
-  asset_type: string; // "A1_1_1", "L2_1_3", etc.
+  // asset_type removed
   name: string;
   symbol: string;
   decimals: number;
   asset_standard?: string;
 }
 
-// COA Groupings for Demo
-const COA_GROUPS: Record<
-  string,
-  { label: string; color: string; type: "active" | "passive" | "equity" }
-> = {
-  // ATIVO
-  A1_1_1: {
-    label: "1.1.1 Caixa e Equivalentes",
-    color: "text-green-400",
-    type: "active",
+// Fixed Group Definitions (Heuristic Targets)
+const GROUPS = {
+  // EQUITY
+  CAPITAL: {
+    label: "3.1 Capital Social (Equity)",
+    color: "text-blue-300",
+    type: "equity" as const,
   },
-  A1_1_2: {
-    label: "1.1.2 Contas a Receber",
-    color: "text-emerald-400",
-    type: "active",
+  RESERVES: {
+    label: "3.2 Reservas",
+    color: "text-indigo-300",
+    type: "equity" as const,
   },
-  A1_2_3: {
-    label: "1.2.3 Imobilizado (Real Assets)",
-    color: "text-teal-400",
-    type: "active",
+  NET_WORTH: {
+    label: "3.4 Patrimônio Líquido (Net Worth)",
+    color: "text-purple-300",
+    type: "equity" as const,
   },
 
-  // PASSIVO
-  L2_1_1: {
-    label: "2.1.1 Fornecedores",
-    color: "text-red-400",
-    type: "passive",
-  },
-  L2_1_3: {
+  // LIABILITIES
+  DEPOSITS: {
     label: "2.1.3 Obrigações com Clientes (Deposits)",
     color: "text-rose-400",
-    type: "passive",
+    type: "passive" as const,
+  },
+  PAYABLES: {
+    label: "2.1.1 Fornecedores",
+    color: "text-red-400",
+    type: "passive" as const,
   },
 
-  // PATRIMÔNIO
-  EQ3_1: {
-    label: "3.1 Capital Social",
-    color: "text-blue-300",
-    type: "equity",
+  // ASSETS
+  CASH: {
+    label: "1.1.1 Caixa e Equivalentes",
+    color: "text-green-400",
+    type: "active" as const,
   },
-  EQ3_2: { label: "3.2 Reservas", color: "text-indigo-300", type: "equity" },
-  EQ3_3: { label: "3.3 Ajustes", color: "text-violet-300", type: "equity" },
+  SYSTEM_RESERVE: {
+    label: "System Reserves / Treasury",
+    color: "text-teal-400",
+    type: "active" as const,
+  },
 };
 
 export default function Inspector() {
-  const [address, setAddress] = useState("patrimonio:issuance");
+  const [address, setAddress] = useState("vault:issuance");
   const [data, setData] = useState<AccountState | null>(null);
   const [registry, setRegistry] = useState<Record<string, AssetDefinition>>({});
   const [loading, setLoading] = useState(false);
@@ -96,7 +102,7 @@ export default function Inspector() {
       }
 
       if (isConsolidated) {
-        // Consolidated Mode: Fetch ALL accounts and sum `patrimonio:*`
+        // Consolidated Mode: Fetch ALL accounts
         const accountsRes = await fetch("http://localhost:3001/api/accounts");
         if (!accountsRes.ok) throw new Error("Failed to fetch accounts");
         const accounts: Record<
@@ -113,9 +119,17 @@ export default function Inspector() {
             const val = Number(amount);
 
             // Logic:
-            // Patrimonio (Issuance/Treasury) -> System Side (Left/Assets)
-            // Wallets -> User Side (Right/Liabilities)
-            if (accAddr.startsWith("patrimonio:")) {
+            // 1. vault:issuance -> Equity (Right Side / user_balances bucket for now)
+            // 2. Other vault:* / wallet:mint -> System Assets (Left Side)
+            // 3. User Wallets -> Liabilities (Right Side)
+
+            if (accAddr === "vault:issuance") {
+              // Special case: This is the Equity Source. Treat as "Right Side" (displayed as Equity)
+              userMap[asset] = (userMap[asset] || 0) + val;
+            } else if (
+              accAddr.startsWith("vault:") ||
+              accAddr.startsWith("wallet:mint")
+            ) {
               systemMap[asset] = (systemMap[asset] || 0) + val;
             } else {
               userMap[asset] = (userMap[asset] || 0) + val;
@@ -123,7 +137,6 @@ export default function Inspector() {
           });
         });
 
-        // Create dummy balances map for compatibility
         const balancesStr: Record<string, string> = {};
 
         setData({
@@ -154,7 +167,8 @@ export default function Inspector() {
   };
 
   const groupedAssets = () => {
-    if (!data || !data.balances) return { active: {}, passive: {}, equity: {} };
+    if (!data || (!data.balances && !data.view))
+      return { active: {}, passive: {}, equity: {} };
 
     const sections: Record<
       "active" | "passive" | "equity",
@@ -165,69 +179,100 @@ export default function Inspector() {
       equity: {},
     };
 
+    // 1. Backend-Driven Classification (Single Account View)
+    if (data.view) {
+      const processViewMap = (
+        map: Record<string, string>,
+        section: "active" | "passive" | "equity",
+      ) => {
+        Object.entries(map).forEach(([assetId, amtStr]) => {
+          const amount = Number(amtStr);
+          const def = registry[assetId];
+          const symbol = def?.symbol || getAssetSymbol(assetId);
+
+          // Allow group to be active, passive or equity
+          let group: {
+            label: string;
+            color: string;
+            type: "active" | "passive" | "equity";
+          } = GROUPS.CASH;
+
+          if (section === "active") {
+            if (symbol === "ATLAS" && data.view?.type === "user") {
+              group = {
+                ...GROUPS.CAPITAL,
+                label: "Atlas Token (Equity Share)",
+                type: "active" as const,
+              };
+            } else if (symbol === "ATLAS") {
+              group = GROUPS.SYSTEM_RESERVE;
+            } else {
+              group = GROUPS.CASH;
+            }
+          } else if (section === "passive") {
+            group = GROUPS.DEPOSITS;
+          } else if (section === "equity") {
+            if (symbol === "ATLAS") {
+              group = GROUPS.CAPITAL;
+            } else {
+              group = GROUPS.NET_WORTH;
+            }
+          }
+
+          if (!sections[section][group.label]) {
+            sections[section][group.label] = { group, items: [] };
+          }
+          sections[section][group.label].items.push({
+            id: assetId,
+            amount,
+            def,
+          });
+        });
+      };
+
+      processViewMap(data.view.assets, "active");
+      processViewMap(data.view.liabilities, "passive");
+      processViewMap(data.view.equity, "equity");
+
+      return sections;
+    }
+
+    // 2. Client-Side Heuristic (Consolidated View Fallback)
     const processItem = (
       assetId: string,
       amount: number,
-      sourceMap: Record<string, number>,
       isSystem: boolean,
     ) => {
       const def = registry[assetId];
-      let coaCode = def?.asset_type;
+      const symbol = def?.symbol || getAssetSymbol(assetId);
 
-      // Fallback/Logic
-      if (isConsolidated) {
-        if (isSystem) {
-          // System holds = Active
-          coaCode = coaCode || "A1_1_1";
+      // Heuristic Classification
+      let effectiveGroup;
+
+      if (isSystem) {
+        // System Side (Assets / Treasury / Backing)
+        // If it's ATLAS, it's Unissued Equity (Contra-Equity or just Treasury)
+        // If it's USD, it's Backing Asset (if Real) or Unissued Liability?
+        // Consolidated View Convention: System Holdings are Active (Reserves)
+        if (symbol === "ATLAS") {
+          // Special case: ATLAS held by system could be "Authorized Capital" (Asset for offsetting Equity)
+          effectiveGroup = GROUPS.SYSTEM_RESERVE;
         } else {
-          // User holds = Passive (usually)
-          coaCode = coaCode || "L2_1_3";
+          effectiveGroup = GROUPS.CASH;
         }
       } else {
-        coaCode = coaCode || "A1_1_1";
-      }
-
-      const originalGroup = COA_GROUPS[coaCode];
-      let type: "active" | "passive" | "equity" = "active";
-      let effectiveGroup = originalGroup;
-
-      if (isConsolidated) {
-        if (isSystem) {
-          type = "active";
-          effectiveGroup = {
-            label: originalGroup
-              ? `(System Hold) ${originalGroup.label}`
-              : "System Reserve",
-            color: "text-blue-400",
-            type: "active",
-          };
+        // User Side (Liabilities / Equity Claims)
+        if (symbol === "ATLAS") {
+          effectiveGroup = GROUPS.CAPITAL;
         } else {
-          // User Side
-          if (originalGroup?.type === "equity") {
-            type = "equity";
-            effectiveGroup = originalGroup;
-          } else {
-            type = "passive";
-            effectiveGroup = originalGroup
-              ? { ...originalGroup, type: "passive" }
-              : {
-                  label: "User Holdings",
-                  color: "text-red-400",
-                  type: "passive",
-                };
-          }
+          // Generally Deposits
+          effectiveGroup = GROUPS.DEPOSITS;
         }
-      } else {
-        // Single Account View
-        type = originalGroup?.type || "active";
-        effectiveGroup = originalGroup || {
-          label: "Unknown",
-          color: "text-gray-400",
-          type: "active",
-        };
       }
 
+      const type = effectiveGroup.type;
       const groupKey = effectiveGroup.label;
+
       if (!sections[type][groupKey]) {
         sections[type][groupKey] = { group: effectiveGroup, items: [] };
       }
@@ -236,14 +281,17 @@ export default function Inspector() {
 
     if (isConsolidated && data.system_balances && data.user_balances) {
       Object.entries(data.system_balances).forEach(([id, amt]) =>
-        processItem(id, amt, data.system_balances!, true),
+        processItem(id, amt, true),
       );
       Object.entries(data.user_balances).forEach(([id, amt]) =>
-        processItem(id, amt, data.user_balances!, false),
+        processItem(id, amt, false),
       );
     } else {
       Object.entries(data.balances).forEach(([id, amtStr]) => {
-        processItem(id, Number(amtStr), {}, false); // isSystem arg ignored for single view logic mainly
+        // Fallback for failed view fetch
+        const isSystemAccount =
+          address.startsWith("vault:") || address.startsWith("wallet:mint");
+        processItem(id, Number(amtStr), isSystemAccount);
       });
     }
 
@@ -338,7 +386,7 @@ export default function Inspector() {
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Enter Account Address (e.g., patrimonio:issuance)"
+              placeholder="Enter Account Address (e.g., vault:issuance)"
               disabled={isConsolidated}
               className={`w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono transition-opacity ${
                 isConsolidated ? "opacity-50" : ""
@@ -369,7 +417,7 @@ export default function Inspector() {
           >
             Consolidated Protocol View{" "}
             <span className="text-xs text-muted-foreground">
-              (Sums all 'patrimonio:*' accounts)
+              (Sums all 'vault:*' and 'wallet:mint*' accounts)
             </span>
           </label>
         </div>

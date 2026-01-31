@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::net::TcpListener;
 use axum::{
-    routing::get,
+    routing::{get, post},
     Router,
     extract::{State, Query},
     Json
@@ -42,17 +42,43 @@ struct ListResponse {
 }
 
 #[derive(Serialize)]
+struct AccountView {
+    r#type: String, // "user", "system", "issuance"
+    assets: HashMap<String, String>,
+    liabilities: HashMap<String, String>,
+    equity: HashMap<String, String>,
+}
+
+#[derive(Serialize)]
 struct BalanceResponse {
     address: String,
     asset: String,
     balance: String,
     balances: HashMap<String, String>, // Full Portfolio
     nonce: u64,
+    view: AccountView,
+}
+
+#[derive(Deserialize)]
+struct CreateTxRequest {
+    transaction: atlas_common::transactions::Transaction,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+    fee_payer: Option<String>,
+    fee_payer_signature: Option<Vec<u8>>,
+    fee_payer_pk: Option<Vec<u8>>,
+}
+
+#[derive(Serialize)]
+struct CreateTxResponse {
+    id: String,
+    status: String,
 }
 
 pub async fn start_rest_api(port: u16, state: AppState) {
     let app = Router::new()
         .route("/api/transactions", get(list_transactions_api))
+        .route("/api/transaction", post(create_transaction_api))
         .route("/api/mempool", get(list_mempool_api))
         .route("/api/balance", get(get_balance_api))
         .route("/api/accounts", get(list_accounts_api))
@@ -69,7 +95,14 @@ async fn get_balance_api(
     State(state): State<AppState>,
     Query(params): Query<ListParams>,
 ) -> Json<BalanceResponse> {
-    let address = params.query.unwrap_or_default();
+    let raw_address = params.query.unwrap_or_default();
+    // Normalize address lookup
+    let address = if raw_address.contains(':') {
+        raw_address.clone()
+    } else {
+        format!("wallet:{}", raw_address)
+    };
+
     let asset = atlas_ledger::core::ledger::asset::ATLAS_FULL_ID;
     
     // Fetch full account state to get nonce + balance
@@ -81,12 +114,51 @@ async fn get_balance_api(
         .map(|(k, v)| (k.clone(), v.to_string()))
         .collect();
 
+    // --- Backend Accounting Classification ---
+    let mut view = AccountView {
+        r#type: "user".to_string(),
+        assets: HashMap::new(),
+        liabilities: HashMap::new(),
+        equity: HashMap::new(),
+    };
+
+    if address == "vault:issuance" {
+        view.r#type = "issuance".to_string();
+        // Issuance Vault: Holds Authorized Capital.
+        // In our model, this is Equity Source.
+        // We map it to EQUITY.
+        for (k, v) in &all_balances {
+            view.equity.insert(k.clone(), v.clone());
+        }
+    } else if address.starts_with("vault:") || address.starts_with("wallet:mint") {
+        view.r#type = "system".to_string();
+        // System Vaults/Mint: Holds unissued assets or reserves.
+        // Treated as ASSETS.
+        for (k, v) in &all_balances {
+            view.assets.insert(k.clone(), v.clone());
+        }
+    } else {
+        view.r#type = "user".to_string();
+        // User Wallet:
+        // 1. All holdings are ASSETS (User perspective).
+        // 2. We apply Double Entry: Assets = Equity (Net Worth).
+        for (k, v) in &all_balances {
+             view.assets.insert(k.clone(), v.clone());
+             
+             // Mirror to Equity (Net Worth)
+             // We can aggregate or just mirror item by item?
+             // Inspector expects items. Let's mirror.
+             view.equity.insert(k.clone(), v.clone());
+        }
+    }
+
     Json(BalanceResponse {
-        address,
+        address, // Return the normalized address
         asset: asset.to_string(),
         balance: balance.to_string(),
         balances: all_balances,
         nonce: account.nonce,
+        view,
     })
 }
 
@@ -102,7 +174,7 @@ async fn list_transactions_api(
      let mut records = Vec::new();
      let raw_query = params.query.as_deref().unwrap_or("").to_lowercase();
      // Strip prefix if present to match raw addresses in txs
-     let query = raw_query.strip_prefix("passivo:wallet:").unwrap_or(&raw_query);
+     let query = raw_query.strip_prefix("wallet:").unwrap_or(&raw_query);
      
      // info!("API: listing transactions query='{}' proposals={}", query, proposals.len());
      
@@ -173,4 +245,23 @@ async fn list_tokens_api(
     State(state): State<AppState>,
 ) -> Json<HashMap<String, atlas_ledger::core::ledger::asset::AssetDefinition>> {
    Json(state.ledger.get_all_assets().await)
+}
+
+async fn create_transaction_api(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateTxRequest>,
+) -> Json<CreateTxResponse> {
+    let st = atlas_common::transactions::SignedTransaction {
+        transaction: payload.transaction,
+        signature: payload.signature,
+        public_key: payload.public_key,
+        fee_payer: payload.fee_payer,
+        fee_payer_signature: payload.fee_payer_signature,
+        fee_payer_pk: payload.fee_payer_pk,
+    };
+    
+    match state.mempool.add(st).await {
+        Ok(id) => Json(CreateTxResponse { id, status: "accepted".to_string() }),
+        Err(e) => Json(CreateTxResponse { id: "".to_string(), status: format!("rejected: {}", e) }),
+    }
 }

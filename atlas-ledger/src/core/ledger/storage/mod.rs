@@ -293,7 +293,7 @@ mod tests {
         // Inject funds so tx succeeds (Atomic Commit requirement!)
         if let Some(ledger) = &store.ledger {
             let mut state = ledger.state.write().await;
-            state.accounts.entry("passivo:wallet:validator_1".to_string())
+            state.accounts.entry("wallet:validator_1".to_string())
                 .or_insert_with(crate::core::ledger::account::AccountState::new)
                 .balances.insert("ATLAS".to_string(), 1000);
         }
@@ -312,12 +312,12 @@ mod tests {
 
         store.log_proposal(proposal).await;
 
-        let shard_path = std::path::Path::new(data_dir).join("accounts").join("passivo:wallet:validator_1.bin");
+        let shard_path = std::path::Path::new(data_dir).join("accounts").join("wallet:validator_1.bin");
         
-        assert!(shard_path.exists(), "Shard file for passivo:wallet:validator_1 should exist");
+        assert!(shard_path.exists(), "Shard file for wallet:validator_1 should exist");
         
         let content = std::fs::read_to_string(shard_path).unwrap();
-        assert!(content.contains("passivo:wallet:validator_1"), "Shard content should contain account name");
+        assert!(content.contains("wallet:validator_1"), "Shard content should contain account name");
         assert!(content.contains("entry-p_shard-0"), "Shard content should contain entry id");
     }
 }

@@ -27,6 +27,7 @@ tower-http-axum = { package = "tower-http", version = "0.6.2", features = ["cors
 uuid = { workspace = true }
 axum = "0.8.7"
 bs58 = "0.5.1"
+reqwest = { version = "0.11", features = ["json"] }
 
 [build-dependencies]
 tonic-build = { workspace = true }
