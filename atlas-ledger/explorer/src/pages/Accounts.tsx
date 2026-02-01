@@ -18,7 +18,7 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:3001/api/accounts")
+    fetch(`${import.meta.env.VITE_NODE_URL}/api/accounts`)
       .then((res) => res.json())
       .then((data: Record<string, AccountState>) => {
         // Convert Map { address: state } to Array [{ address, ...state }]

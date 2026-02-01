@@ -23,6 +23,7 @@ use super::{
 /// Motor de consenso assíncrono e modular.
 #[derive(Debug, Clone)]
 pub struct ConsensusEngine {
+    pub local_node_id: NodeId,
     pub peer_manager: Arc<RwLock<PeerManager>>,
     pub pool: ProposalPool,
     pub registry: VoteRegistry,
@@ -31,8 +32,9 @@ pub struct ConsensusEngine {
 }
 
 impl ConsensusEngine {
-    pub fn new(peer_manager: Arc<RwLock<PeerManager>>, policy: QuorumPolicy) -> Self {
+    pub fn new(local_node_id: NodeId, peer_manager: Arc<RwLock<PeerManager>>, policy: QuorumPolicy) -> Self {
         Self {
+            local_node_id,
             peer_manager,
             pool: ProposalPool::new(),
             registry: VoteRegistry::new(),
@@ -125,9 +127,11 @@ impl ConsensusEngine {
 
     /// Expõe os nós ativos (com leitura protegida).
     async fn get_active_nodes(&self) -> HashSet<NodeId> {
-        self.peer_manager
+        let mut nodes = self.peer_manager
             .read()
             .await
-            .get_active_peers()
+            .get_active_peers();
+        nodes.insert(self.local_node_id.clone());
+        nodes
     }
 }

@@ -84,6 +84,7 @@ export function useWalletData() {
           .GetStatement({ address: currentTrackingAddr, limit: 20 })
           .then((res) => {
             if (res && res.transactions) {
+              console.log("🔍 Wallet History (gRPC Raw):", res.transactions);
               setHistory(res.transactions);
             }
           });

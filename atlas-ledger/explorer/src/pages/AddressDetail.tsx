@@ -38,7 +38,7 @@ export default function AddressDetail() {
         // But we also have /api/balance?query=address
 
         const balRes = await fetch(
-          `http://localhost:3001/api/balance?query=${encodeURIComponent(address)}`,
+          `${import.meta.env.VITE_NODE_URL}/api/balance?query=${encodeURIComponent(address)}`,
         );
         const balJson = await balRes.json();
 
@@ -51,7 +51,7 @@ export default function AddressDetail() {
         // AND also fetch history.
 
         const listRes = await fetch(
-          `http://localhost:3001/api/transactions?query=${encodeURIComponent(address)}&limit=50`,
+          `${import.meta.env.VITE_NODE_URL}/api/transactions?query=${encodeURIComponent(address)}&limit=50`,
         );
         const listJson = await listRes.json();
         setHistory(listJson.transactions);

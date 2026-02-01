@@ -29,7 +29,7 @@ export default function TransactionDetail() {
       try {
         // Query by hash
         const res = await fetch(
-          `http://localhost:3001/api/transactions?query=${encodeURIComponent(hash)}`,
+          `${import.meta.env.VITE_NODE_URL}/api/transactions?query=${encodeURIComponent(hash)}`,
         );
         const json = await res.json();
         if (json.transactions && json.transactions.length > 0) {

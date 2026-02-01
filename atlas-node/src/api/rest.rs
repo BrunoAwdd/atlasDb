@@ -129,6 +129,9 @@ async fn get_balance_api(
         // We map it to EQUITY.
         for (k, v) in &all_balances {
             view.equity.insert(k.clone(), v.clone());
+            // Fix: Map to Assets as well to balance the sheet (Asset = Equity)
+            // The vault holds the actual tokens (Asset) representing the Authorized Capital (Equity).
+            view.assets.insert(k.clone(), v.clone());
         }
     } else if address.starts_with("vault:") || address.starts_with("wallet:mint") {
         view.r#type = "system".to_string();
@@ -172,30 +175,63 @@ async fn list_transactions_api(
      };
      
      let mut records = Vec::new();
+     let mut seen_hashes = std::collections::HashSet::new();
+
      let raw_query = params.query.as_deref().unwrap_or("").to_lowercase();
      // Strip prefix if present to match raw addresses in txs
      let query = raw_query.strip_prefix("wallet:").unwrap_or(&raw_query);
      
      // info!("API: listing transactions query='{}' proposals={}", query, proposals.len());
      
+     use sha2::{Sha256, Digest};
+     use atlas_common::transactions::signing_bytes;
+
      for p in proposals {
          // Try Batch first (Standard)
          let mut tx_list = Vec::new();
          
          if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&p.content) {
-             for st in batch {
-                 tx_list.push((st.transaction, st.fee_payer));
-             }
+             tx_list = batch;
          } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
-             tx_list.push((signed_tx.transaction, signed_tx.fee_payer));
+             tx_list.push(signed_tx);
          } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
-             tx_list.push((tx, None));
+             // Fallback for unsigned (should rare in prod, but exists in tests/legacy)
+             // We wrap it in a SignedTx with empty sig/pk for consistency, or handle separately?
+             // Since we need to hash it, let's treat it as SignedTx with empty sigs to match legacy logic if needed.
+             // BUT, validation checks sigs. If it's stored, it was valid.
+             // Let's create a dummy wrapper just for the specific loop usage, OR just manual hash.
+             // For simplicity, let's construct a partial SignedTransaction (dummy sigs)
+             // WARN: Unique Hash generation depends on sig. If sig missing, hash might collide?
+             // Legacy unsigned txs likely relied on PropHash. 
+             // Let's Skip this branch if possible? No, legacy data.
+             // Let's just create a dummy SignedTransaction with empty sigs.
+             tx_list.push(atlas_common::transactions::SignedTransaction {
+                 transaction: tx,
+                 signature: vec![],
+                 public_key: vec![],
+                 fee_payer: None,
+                 fee_payer_signature: None,
+                 fee_payer_pk: None,
+             });
          }
 
-         for (tx, fee_payer) in tx_list {
+         for st in tx_list {
+            // 1. Calculate Real Hash
+            let mut hasher = Sha256::new();
+            hasher.update(signing_bytes(&st.transaction));
+            hasher.update(&st.signature);
+            let tx_hash = hex::encode(hasher.finalize());
+
+            // 2. Dedup
+            if seen_hashes.contains(&tx_hash) {
+                continue;
+            }
+            seen_hashes.insert(tx_hash.clone());
+
+            let tx = st.transaction;
 
             if !query.is_empty() {
-                 let match_hash = p.hash.to_lowercase().contains(query);
+                 let match_hash = tx_hash.to_lowercase().contains(query);
                  let match_from = tx.from.to_lowercase().contains(query);
                  let match_to = tx.to.to_lowercase().contains(query);
                  
@@ -204,14 +240,14 @@ async fn list_transactions_api(
                  }
             }
             records.push(TxDto {
-                    tx_hash: p.hash.clone(),
+                    tx_hash, // Use REAL Hash
                     from: tx.from,
                     to: tx.to,
                     amount: tx.amount.to_string(),
                     asset: tx.asset,
                     timestamp: p.time as u64,
                     memo: tx.memo.unwrap_or_default(),
-                    fee_payer,
+                    fee_payer: st.fee_payer,
             });
          }
     }
@@ -261,7 +297,7 @@ async fn create_transaction_api(
     };
     
     match state.mempool.add(st).await {
-        Ok(id) => Json(CreateTxResponse { id, status: "accepted".to_string() }),
+        Ok(_) => Json(CreateTxResponse { id: "submitted".to_string(), status: "accepted".to_string() }),
         Err(e) => Json(CreateTxResponse { id: "".to_string(), status: format!("rejected: {}", e) }),
     }
 }

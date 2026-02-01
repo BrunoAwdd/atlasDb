@@ -56,7 +56,9 @@ impl<P: P2pPublisher> BlockProducer<P> {
             }
 
             if self.mempool.len().await.unwrap_or(0) > 0 {
-                 info!("🔍 [BlockProducer] Leader checking mempool. Size: {}", self.mempool.len().await.unwrap_or(0));
+                 info!("🔍 [BlockProducer] Pending txs detected. Waiting 2s for batch accumulation (User Request)...");
+                 tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                 info!("🔍 [BlockProducer] Batch wait done. Snapshotting mempool. Size: {}", self.mempool.len().await.unwrap_or(0));
             }
             let mut candidates = self.mempool.get_candidates(50).await.unwrap_or_default(); // BATCH_SIZE = 50
             

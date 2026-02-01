@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { LogOut, PanelRight } from "lucide-react";
+import { LogOut, PanelRight, Settings } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface WalletHeaderProps {
   onLogout: () => void;
@@ -7,6 +8,7 @@ interface WalletHeaderProps {
 }
 
 export function WalletHeader({ onLogout, onOpenSidePanel }: WalletHeaderProps) {
+  const navigate = useNavigate();
   return (
     <header className="relative flex items-center justify-center p-6 border-b border-border/40">
       <Button
@@ -21,15 +23,26 @@ export function WalletHeader({ onLogout, onOpenSidePanel }: WalletHeaderProps) {
 
       <h1 className="text-xl font-bold tracking-tight">Wallet</h1>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute right-4 top-4 text-muted-foreground hover:text-foreground transition-colors"
-        title="Abrir no painel lateral"
-        onClick={onOpenSidePanel}
-      >
-        <PanelRight className="h-5 w-5" />
-      </Button>
+      <div className="absolute right-4 top-4 flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Configurações"
+          onClick={() => navigate("/settings")}
+        >
+          <Settings className="h-5 w-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Abrir no painel lateral"
+          onClick={onOpenSidePanel}
+        >
+          <PanelRight className="h-5 w-5" />
+        </Button>
+      </div>
     </header>
   );
 }

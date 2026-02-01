@@ -96,14 +96,18 @@ export default function Inspector() {
     setData(null);
     try {
       // 1. Fetch Registry for Metadata
-      const tokensRes = await fetch("http://localhost:3001/api/tokens");
+      const tokensRes = await fetch(
+        `${import.meta.env.VITE_NODE_URL}/api/tokens`,
+      );
       if (tokensRes.ok) {
         setRegistry(await tokensRes.json());
       }
 
       if (isConsolidated) {
         // Consolidated Mode: Fetch ALL accounts
-        const accountsRes = await fetch("http://localhost:3001/api/accounts");
+        const accountsRes = await fetch(
+          `${import.meta.env.VITE_NODE_URL}/api/accounts`,
+        );
         if (!accountsRes.ok) throw new Error("Failed to fetch accounts");
         const accounts: Record<
           string,
@@ -126,6 +130,8 @@ export default function Inspector() {
             if (accAddr === "vault:issuance") {
               // Special case: This is the Equity Source. Treat as "Right Side" (displayed as Equity)
               userMap[asset] = (userMap[asset] || 0) + val;
+              // Fix: Also Treat as "Left Side" (Asset/Reserve) to balance sheet.
+              systemMap[asset] = (systemMap[asset] || 0) + val;
             } else if (
               accAddr.startsWith("vault:") ||
               accAddr.startsWith("wallet:mint")
@@ -152,7 +158,7 @@ export default function Inspector() {
         // Single Account Mode
         if (!address) return;
         const res = await fetch(
-          `http://localhost:3001/api/balance?query=${encodeURIComponent(address)}`,
+          `${import.meta.env.VITE_NODE_URL}/api/balance?query=${encodeURIComponent(address)}`,
         );
         if (!res.ok) throw new Error("Failed to fetch data");
         const json = await res.json();

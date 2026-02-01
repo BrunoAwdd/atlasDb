@@ -37,6 +37,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open(path)?;
     let read_txn = db.begin_read()?;
     
+    println!("--- 📂 Database Structure ---");
+    match read_txn.list_tables() {
+        Ok(tables_iter) => {
+            let tables: Vec<_> = tables_iter.collect();
+            if tables.is_empty() {
+                println!("(No tables found)");
+            } else {
+                for table in tables {
+                    println!("Table: {}", table.name());
+                }
+            }
+        },
+        Err(e) => eprintln!("Failed to list tables: {}", e),
+    }
+    println!("-----------------------------\n");
+
     println!("Opening 'proposals' table...");
     match read_txn.open_table(PROPOSALS_TABLE) {
         Ok(table) => {
@@ -47,7 +63,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for result in table.iter()? {
                 let (key, value) = result?;
                 // Deserialize the value: (file_id, offset, len)
-                // Note: The value in redb is a slice, we need `value.value()` to get &[u8]
                 let location: (u64, u64, u64) = serde_json::from_slice(value.value())
                     .map_err(|e| format!("Failed to deserialize value for key {}: {}", key.value(), e))?;
                 
@@ -62,12 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\nTotal proposals indexed: {}", count);
         }
         Err(e) => {
-            eprintln!("Could not open 'proposals' table: {}. The table might not exist yet.", e);
-            println!("Listing all available tables:");
-            let tables = read_txn.list_tables()?;
-            for t in tables {
-                println!(" - {}", t.name());
-            }
+             eprintln!("⚠️ Could not open 'proposals' table: {}", e);
         }
     }
 

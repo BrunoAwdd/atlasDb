@@ -1,0 +1,58 @@
+[
+  {
+    "content": [
+      {
+        "public_key": "c5af7a055e772bfce6201843d3ed67faded634c01bfb38df7762a4f21df93eb3",
+        "signature": "a38bdb193c90b610e099a533b9a766eeeeb256654a1c7cc982ab87be42dbdf26b0fb999a11107637d2ad43bf05a1236a1fdefc8210480f1b403ee23d155fbe04",
+        "transaction": {
+          "amount": 12,
+          "asset": "wallet:mint/USD",
+          "from": "nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft",
+          "memo": "Web Wallet Transfer",
+          "nonce": 1,
+          "timestamp": 1769965667,
+          "to": "nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps"
+        }
+      }
+    ],
+    "hash": "b638703a1ffc6bb71e03377678515a65bda769352320ef2e8af0dd73cceb8820",
+    "height": 1,
+    "id": "prop-5585563587467328546",
+    "parent": null,
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "proposer": "12D3KooWQJX75u9CGtL8vT6P6NMZr5azqHzcNKWQDAeA39d9P6Ks",
+    "public_key": "d739fc1015412f673670a5f3d96d518d07faaceed69bd2c6136eea3af78cbe6a",
+    "round": 0,
+    "signature": "c73c09d5299895cbd8b6c52b96724036b2c0799fb26dbfbfa0b027c3c4c9551823c1a21cac224b902d795801bdc3b522449f2030f9c21e43cee7cb484e5a5d0b",
+    "state_root": "8e1d59012e47b041bc7215b50e9b6162de43441a9f70f088d2f681ebf3c1535b",
+    "time": 1769965671
+  },
+  {
+    "content": [
+      {
+        "public_key": "c5af7a055e772bfce6201843d3ed67faded634c01bfb38df7762a4f21df93eb3",
+        "signature": "a38bdb193c90b610e099a533b9a766eeeeb256654a1c7cc982ab87be42dbdf26b0fb999a11107637d2ad43bf05a1236a1fdefc8210480f1b403ee23d155fbe04",
+        "transaction": {
+          "amount": 12,
+          "asset": "wallet:mint/USD",
+          "from": "nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft",
+          "memo": "Web Wallet Transfer",
+          "nonce": 1,
+          "timestamp": 1769965667,
+          "to": "nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps"
+        }
+      }
+    ],
+    "hash": "b638703a1ffc6bb71e03377678515a65bda769352320ef2e8af0dd73cceb8820",
+    "height": 1,
+    "id": "prop-5585563587467328546",
+    "parent": null,
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "proposer": "12D3KooWQJX75u9CGtL8vT6P6NMZr5azqHzcNKWQDAeA39d9P6Ks",
+    "public_key": "d739fc1015412f673670a5f3d96d518d07faaceed69bd2c6136eea3af78cbe6a",
+    "round": 0,
+    "signature": "c73c09d5299895cbd8b6c52b96724036b2c0799fb26dbfbfa0b027c3c4c9551823c1a21cac224b902d795801bdc3b522449f2030f9c21e43cee7cb484e5a5d0b",
+    "state_root": "8e1d59012e47b041bc7215b50e9b6162de43441a9f70f088d2f681ebf3c1535b",
+    "time": 1769965671
+  }
+]

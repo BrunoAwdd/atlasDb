@@ -16,8 +16,10 @@ export default function Assets() {
   const [assets, setAssets] = useState<AssetDefinition[]>([]);
   const [loading, setLoading] = useState(true);
 
+  console.log("ASSETS", import.meta.env.VITE_NODE_URL);
+
   useEffect(() => {
-    fetch("http://localhost:3001/api/tokens")
+    fetch(`${import.meta.env.VITE_NODE_URL}/api/tokens`)
       .then((res) => res.json())
       .then((data) => {
         console.log("API Data:", data);

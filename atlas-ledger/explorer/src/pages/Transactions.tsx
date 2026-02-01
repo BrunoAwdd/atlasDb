@@ -19,7 +19,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:3001/api/transactions?limit=20")
+    fetch(`${import.meta.env.VITE_NODE_URL}/api/transactions?limit=20`)
       .then((res) => res.json())
       .then((data) => {
         setTransactions(data.transactions);
