@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Load NVM for npm access (needed when running from desktop shortcut)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 export RUST_LOG=info
 # Prevent Segfaults by using Release mode (Optimized Stack/Heap usage)
 echo "🚀 Starting AtlasDB Cluster with 4 nodes..."

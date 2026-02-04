@@ -295,7 +295,7 @@ mod tests {
             let mut state = ledger.state.write().await;
             state.accounts.entry("wallet:validator_1".to_string())
                 .or_insert_with(crate::core::ledger::account::AccountState::new)
-                .balances.insert("ATLAS".to_string(), 1000);
+                .balances.insert("wallet:mint/ATLAS".to_string(), 1000);
         }
 
         let proposal = sample_proposal("p_shard", "validator_1", r#"

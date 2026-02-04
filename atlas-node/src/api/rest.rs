@@ -115,6 +115,8 @@ async fn get_balance_api(
         .collect();
 
     // --- Backend Accounting Classification ---
+    // Each account should have a balanced view: Assets = Liabilities + Equity
+    // For simplicity in our model: Assets = Equity (Net Worth)
     let mut view = AccountView {
         r#type: "user".to_string(),
         assets: HashMap::new(),
@@ -122,37 +124,27 @@ async fn get_balance_api(
         equity: HashMap::new(),
     };
 
-    if address == "vault:issuance" {
-        view.r#type = "issuance".to_string();
-        // Issuance Vault: Holds Authorized Capital.
-        // In our model, this is Equity Source.
-        // We map it to EQUITY.
-        for (k, v) in &all_balances {
-            view.equity.insert(k.clone(), v.clone());
-            // Fix: Map to Assets as well to balance the sheet (Asset = Equity)
-            // The vault holds the actual tokens (Asset) representing the Authorized Capital (Equity).
-            view.assets.insert(k.clone(), v.clone());
-        }
+    // All accounts follow the same principle:
+    // What they hold = Assets
+    // Net Worth = Equity
+    // Assets = Equity for individual balance sheet equilibrium
+    
+    if address == "vault:issuance" || address == "vault:genesis" {
+        view.r#type = "equity_source".to_string();
+    } else if address == "vault:fees" || address == "vault:treasury" {
+        view.r#type = "equity_retained".to_string();
+    } else if address.starts_with("vault:mint:") || address == "vault:unissued" {
+        view.r#type = "system_asset".to_string();
     } else if address.starts_with("vault:") || address.starts_with("wallet:mint") {
         view.r#type = "system".to_string();
-        // System Vaults/Mint: Holds unissued assets or reserves.
-        // Treated as ASSETS.
-        for (k, v) in &all_balances {
-            view.assets.insert(k.clone(), v.clone());
-        }
     } else {
         view.r#type = "user".to_string();
-        // User Wallet:
-        // 1. All holdings are ASSETS (User perspective).
-        // 2. We apply Double Entry: Assets = Equity (Net Worth).
-        for (k, v) in &all_balances {
-             view.assets.insert(k.clone(), v.clone());
-             
-             // Mirror to Equity (Net Worth)
-             // We can aggregate or just mirror item by item?
-             // Inspector expects items. Let's mirror.
-             view.equity.insert(k.clone(), v.clone());
-        }
+    }
+    
+    // All accounts: Assets = Equity (balanced individual sheet)
+    for (k, v) in &all_balances {
+        view.assets.insert(k.clone(), v.clone());
+        view.equity.insert(k.clone(), v.clone());
     }
 
     Json(BalanceResponse {

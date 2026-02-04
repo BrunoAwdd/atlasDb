@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, Wallet } from "lucide-react";
+import { Users, Wallet, Code } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface AccountState {
@@ -79,6 +79,9 @@ export default function Accounts() {
               <th className="p-4 text-sm font-semibold text-muted-foreground">
                 Nonce
               </th>
+              <th className="p-4 text-sm font-semibold text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/30">
@@ -109,12 +112,21 @@ export default function Accounts() {
                 <td className="p-4 font-mono text-muted-foreground">
                   {acc.nonce}
                 </td>
+                <td className="p-4">
+                  <Link
+                    to={`/inspector?address=${encodeURIComponent(acc.address)}`}
+                    className="p-2 bg-purple-500/10 rounded-lg text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 transition-colors inline-flex"
+                    title="Inspecionar Balance Sheet"
+                  >
+                    <Code size={14} />
+                  </Link>
+                </td>
               </tr>
             ))}
             {accounts.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   className="p-8 text-center text-muted-foreground"
                 >
                   No active accounts found.
