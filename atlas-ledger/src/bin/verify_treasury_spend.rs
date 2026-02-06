@@ -55,16 +55,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut state = ledger.state.write().await;
         // Fund both variants to be sure
-        let acc1 = state.accounts.entry("patrimonio:fees".to_string()).or_insert_with(atlas_ledger::core::ledger::account::AccountState::new);
+        let acc1 = state.accounts.entry("vault:fees".to_string()).or_insert_with(atlas_ledger::core::ledger::account::AccountState::new);
         acc1.balances.insert("ATLAS".to_string(), 1_000_000);
         
-        let acc2 = state.accounts.entry("passivo:wallet:patrimonio:fees".to_string()).or_insert_with(atlas_ledger::core::ledger::account::AccountState::new);
+        let acc2 = state.accounts.entry("wallet:vault:fees".to_string()).or_insert_with(atlas_ledger::core::ledger::account::AccountState::new);
         acc2.balances.insert("ATLAS".to_string(), 1_000_000);
     }
 
-    // 3. Create Transaction FROM 'patrimonio:fees'
+    // 3. Create Transaction FROM 'vault:fees'
     let tx = Transaction {
-        from: "patrimonio:fees".to_string(),
+        from: "vault:fees".to_string(),
         to: "recipient".to_string(),
         amount: 100,
         asset: "ATLAS".to_string(),
@@ -96,9 +96,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // TEST 2: Admin Signs
-    // Admin acts as "Sender" (authorizing spend for patrimonio:fees)
+    // Admin acts as "Sender" (authorizing spend for vault:fees)
     // Note: The public key in the Signature MUST be the Admin Key.
-    // The transaction `from` is `patrimonio:fees`.
+    // The transaction `from` is `vault:fees`.
     let admin_sig = admin_sk.sign(&msg).to_vec();
     let signed_tx_admin = SignedTransaction {
         transaction: tx.clone(),

@@ -210,7 +210,7 @@ export default function Home() {
               Access Wallet
             </Button>
 
-            <div className="mt-4 text-center">
+            <div className="mt-4 text-center space-y-2">
               <Button
                 variant="link"
                 onClick={handleCreateVault}
@@ -218,6 +218,17 @@ export default function Home() {
               >
                 Create New Wallet
               </Button>
+              <div className="pt-1">
+                <Button
+                  variant="link"
+                  onClick={() =>
+                    navigate("/settings", { state: { defaultTab: "import" } })
+                  }
+                  className="text-xs text-muted-foreground/70 hover:text-primary"
+                >
+                  Import Wallet
+                </Button>
+              </div>
             </div>
           </div>
         </div>

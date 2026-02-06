@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Search,
   FileJson,
@@ -17,66 +18,75 @@ interface AccountState {
   balance: string;
   balances: Record<string, string>;
   nonce: number;
+  view?: {
+    type: string;
+    assets: Record<string, string>;
+    liabilities: Record<string, string>;
+    equity: Record<string, string>;
+  };
   // Extended for Consolidated View
   system_balances?: Record<string, number>; // Left Side (Assets/Contra)
-  user_balances?: Record<string, number>; // Right Side (Liabilities/Equity)
+  user_balances?: Record<string, number>; // Right Side (Liabilities)
+  equity_balances?: Record<string, number>; // Equity (Capital + Retained Earnings)
 }
 
 interface AssetDefinition {
   issuer: string;
-  asset_type: string; // "A1_1_1", "L2_1_3", etc.
+  // asset_type removed
   name: string;
   symbol: string;
   decimals: number;
   asset_standard?: string;
 }
 
-// COA Groupings for Demo
-const COA_GROUPS: Record<
-  string,
-  { label: string; color: string; type: "active" | "passive" | "equity" }
-> = {
-  // ATIVO
-  A1_1_1: {
-    label: "1.1.1 Caixa e Equivalentes",
-    color: "text-green-400",
-    type: "active",
+// Fixed Group Definitions (Heuristic Targets)
+const GROUPS = {
+  // EQUITY
+  CAPITAL: {
+    label: "3.1 Capital Social (Equity)",
+    color: "text-blue-300",
+    type: "equity" as const,
   },
-  A1_1_2: {
-    label: "1.1.2 Contas a Receber",
-    color: "text-emerald-400",
-    type: "active",
+  RESERVES: {
+    label: "3.2 Reservas",
+    color: "text-indigo-300",
+    type: "equity" as const,
   },
-  A1_2_3: {
-    label: "1.2.3 Imobilizado (Real Assets)",
-    color: "text-teal-400",
-    type: "active",
+  NET_WORTH: {
+    label: "3.4 Patrimônio Líquido (Net Worth)",
+    color: "text-purple-300",
+    type: "equity" as const,
   },
 
-  // PASSIVO
-  L2_1_1: {
-    label: "2.1.1 Fornecedores",
-    color: "text-red-400",
-    type: "passive",
-  },
-  L2_1_3: {
+  // LIABILITIES
+  DEPOSITS: {
     label: "2.1.3 Obrigações com Clientes (Deposits)",
     color: "text-rose-400",
-    type: "passive",
+    type: "passive" as const,
+  },
+  PAYABLES: {
+    label: "2.1.1 Fornecedores",
+    color: "text-red-400",
+    type: "passive" as const,
   },
 
-  // PATRIMÔNIO
-  EQ3_1: {
-    label: "3.1 Capital Social",
-    color: "text-blue-300",
-    type: "equity",
+  // ASSETS
+  CASH: {
+    label: "1.1.1 Caixa e Equivalentes",
+    color: "text-green-400",
+    type: "active" as const,
   },
-  EQ3_2: { label: "3.2 Reservas", color: "text-indigo-300", type: "equity" },
-  EQ3_3: { label: "3.3 Ajustes", color: "text-violet-300", type: "equity" },
+  SYSTEM_RESERVE: {
+    label: "System Reserves / Treasury",
+    color: "text-teal-400",
+    type: "active" as const,
+  },
 };
 
 export default function Inspector() {
-  const [address, setAddress] = useState("patrimonio:issuance");
+  const [searchParams] = useSearchParams();
+  const initialAddress = searchParams.get("address") || "vault:issuance";
+  const [address, setAddress] = useState(initialAddress);
   const [data, setData] = useState<AccountState | null>(null);
   const [registry, setRegistry] = useState<Record<string, AssetDefinition>>({});
   const [loading, setLoading] = useState(false);
@@ -84,20 +94,26 @@ export default function Inspector() {
   const [isConsolidated, setIsConsolidated] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSearch = async () => {
+  const handleSearch = async (forceConsolidated?: boolean) => {
+    const useConsolidated =
+      forceConsolidated !== undefined ? forceConsolidated : isConsolidated;
     setLoading(true);
     setError("");
     setData(null);
     try {
       // 1. Fetch Registry for Metadata
-      const tokensRes = await fetch("http://localhost:3001/api/tokens");
+      const tokensRes = await fetch(
+        `${import.meta.env.VITE_NODE_URL}/api/tokens`,
+      );
       if (tokensRes.ok) {
         setRegistry(await tokensRes.json());
       }
 
-      if (isConsolidated) {
-        // Consolidated Mode: Fetch ALL accounts and sum `patrimonio:*`
-        const accountsRes = await fetch("http://localhost:3001/api/accounts");
+      if (useConsolidated) {
+        // Consolidated Mode: Fetch ALL accounts
+        const accountsRes = await fetch(
+          `${import.meta.env.VITE_NODE_URL}/api/accounts`,
+        );
         if (!accountsRes.ok) throw new Error("Failed to fetch accounts");
         const accounts: Record<
           string,
@@ -105,26 +121,73 @@ export default function Inspector() {
         > = await accountsRes.json();
 
         // Split Aggregation
+        // systemMap = Assets (Left Side)
+        // userMap = Liabilities (Right Side - what we owe to users)
+        // equityMap = Equity (Right Side - accumulated value / capital)
         const systemMap: Record<string, number> = {};
         const userMap: Record<string, number> = {};
+        const equityMap: Record<string, number> = {};
 
         Object.entries(accounts).forEach(([accAddr, accState]) => {
           Object.entries(accState.balances).forEach(([asset, amount]) => {
             const val = Number(amount);
 
-            // Logic:
-            // Patrimonio (Issuance/Treasury) -> System Side (Left/Assets)
-            // Wallets -> User Side (Right/Liabilities)
-            if (accAddr.startsWith("patrimonio:")) {
+            // Classification Logic for Consolidated View:
+            //
+            // INTERNAL/CONTROL ACCOUNTS (IGNORED):
+            // - vault:unissued = Contra-account (cancels out)
+            // - wallet:mint = Token issuer account (internal)
+            //
+            // REAL BALANCE SHEET:
+            // - vault:mint:*, vault:issuance, vault:genesis = ASSETS (token reserves)
+            // - vault:capital:*, vault:fees, vault:treasury = EQUITY (capital + revenue)
+            // - User wallets (wallet:*) = LIABILITIES (what we owe to users)
+
+            // Skip only truly internal accounts
+            if (
+              accAddr === "vault:unissued" ||
+              accAddr.startsWith("wallet:mint")
+            ) {
+              return;
+            }
+
+            // EQUITY: capital accounts + fees + treasury
+            if (
+              accAddr.startsWith("vault:capital:") ||
+              accAddr === "vault:fees" ||
+              accAddr === "vault:treasury"
+            ) {
+              equityMap[asset] = (equityMap[asset] || 0) + val;
+            }
+            // ASSETS: mint pools + issuance + genesis
+            else if (
+              accAddr.startsWith("vault:mint:") ||
+              accAddr === "vault:issuance" ||
+              accAddr === "vault:genesis" ||
+              accAddr.startsWith("vault:")
+            ) {
               systemMap[asset] = (systemMap[asset] || 0) + val;
-            } else {
+            }
+            // LIABILITIES: user wallets
+            else {
               userMap[asset] = (userMap[asset] || 0) + val;
             }
           });
         });
 
-        // Create dummy balances map for compatibility
         const balancesStr: Record<string, string> = {};
+
+        // Calculate Equity as Assets - Liabilities (ensures A = L + E always balances)
+        const calculatedEquity: Record<string, number> = {};
+        const allAssets = new Set([
+          ...Object.keys(systemMap),
+          ...Object.keys(userMap),
+        ]);
+        allAssets.forEach((asset) => {
+          const assets = systemMap[asset] || 0;
+          const liabilities = userMap[asset] || 0;
+          calculatedEquity[asset] = assets - liabilities;
+        });
 
         setData({
           address: "Global Protocol Balance Sheet",
@@ -134,12 +197,13 @@ export default function Inspector() {
           nonce: 0,
           system_balances: systemMap,
           user_balances: userMap,
+          equity_balances: calculatedEquity,
         });
       } else {
         // Single Account Mode
         if (!address) return;
         const res = await fetch(
-          `http://localhost:3001/api/balance?query=${encodeURIComponent(address)}`,
+          `${import.meta.env.VITE_NODE_URL}/api/balance?query=${encodeURIComponent(address)}`,
         );
         if (!res.ok) throw new Error("Failed to fetch data");
         const json = await res.json();
@@ -153,8 +217,25 @@ export default function Inspector() {
     }
   };
 
+  // Auto-search on mount if address is provided via query params
+  useEffect(() => {
+    // Check for consolidated param
+    const consolidatedParam = searchParams.get("consolidated");
+    const shouldConsolidate = consolidatedParam === "true";
+    if (shouldConsolidate) {
+      setIsConsolidated(true);
+    }
+    // Small delay to ensure UI is ready, then search with correct mode
+    const timer = setTimeout(() => {
+      handleSearch(shouldConsolidate);
+    }, 100);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
   const groupedAssets = () => {
-    if (!data || !data.balances) return { active: {}, passive: {}, equity: {} };
+    if (!data || (!data.balances && !data.view))
+      return { active: {}, passive: {}, equity: {} };
 
     const sections: Record<
       "active" | "passive" | "equity",
@@ -165,69 +246,98 @@ export default function Inspector() {
       equity: {},
     };
 
+    // 1. Backend-Driven Classification (Single Account View)
+    if (data.view) {
+      const processViewMap = (
+        map: Record<string, string>,
+        section: "active" | "passive" | "equity",
+      ) => {
+        Object.entries(map).forEach(([assetId, amtStr]) => {
+          const amount = Number(amtStr);
+          const def = registry[assetId];
+          const symbol = def?.symbol || getAssetSymbol(assetId);
+
+          // Allow group to be active, passive or equity
+          let group: {
+            label: string;
+            color: string;
+            type: "active" | "passive" | "equity";
+          } = GROUPS.CASH;
+
+          if (section === "active") {
+            if (symbol === "ATLAS" && data.view?.type === "user") {
+              group = {
+                ...GROUPS.CAPITAL,
+                label: "Atlas Token (Equity Share)",
+                type: "active" as const,
+              };
+            } else if (symbol === "ATLAS") {
+              group = GROUPS.SYSTEM_RESERVE;
+            } else {
+              group = GROUPS.CASH;
+            }
+          } else if (section === "passive") {
+            group = GROUPS.DEPOSITS;
+          } else if (section === "equity") {
+            if (symbol === "ATLAS") {
+              group = GROUPS.CAPITAL;
+            } else {
+              group = GROUPS.NET_WORTH;
+            }
+          }
+
+          if (!sections[section][group.label]) {
+            sections[section][group.label] = { group, items: [] };
+          }
+          sections[section][group.label].items.push({
+            id: assetId,
+            amount,
+            def,
+          });
+        });
+      };
+
+      processViewMap(data.view.assets, "active");
+      processViewMap(data.view.liabilities, "passive");
+      processViewMap(data.view.equity, "equity");
+
+      return sections;
+    }
+
+    // 2. Client-Side Heuristic (Consolidated View Fallback)
     const processItem = (
       assetId: string,
       amount: number,
-      sourceMap: Record<string, number>,
-      isSystem: boolean,
+      itemType: "system" | "user" | "equity",
     ) => {
       const def = registry[assetId];
-      let coaCode = def?.asset_type;
+      const symbol = def?.symbol || getAssetSymbol(assetId);
 
-      // Fallback/Logic
-      if (isConsolidated) {
-        if (isSystem) {
-          // System holds = Active
-          coaCode = coaCode || "A1_1_1";
+      // Heuristic Classification
+      let effectiveGroup;
+
+      if (itemType === "system") {
+        // System Side (Assets)
+        if (symbol === "ATLAS") {
+          effectiveGroup = GROUPS.SYSTEM_RESERVE;
         } else {
-          // User holds = Passive (usually)
-          coaCode = coaCode || "L2_1_3";
+          effectiveGroup = GROUPS.CASH;
         }
+      } else if (itemType === "user") {
+        // User Side (Liabilities)
+        effectiveGroup = GROUPS.DEPOSITS;
       } else {
-        coaCode = coaCode || "A1_1_1";
+        // Equity
+        if (symbol === "ATLAS") {
+          effectiveGroup = GROUPS.CAPITAL;
+        } else {
+          effectiveGroup = GROUPS.NET_WORTH;
+        }
       }
 
-      const originalGroup = COA_GROUPS[coaCode];
-      let type: "active" | "passive" | "equity" = "active";
-      let effectiveGroup = originalGroup;
-
-      if (isConsolidated) {
-        if (isSystem) {
-          type = "active";
-          effectiveGroup = {
-            label: originalGroup
-              ? `(System Hold) ${originalGroup.label}`
-              : "System Reserve",
-            color: "text-blue-400",
-            type: "active",
-          };
-        } else {
-          // User Side
-          if (originalGroup?.type === "equity") {
-            type = "equity";
-            effectiveGroup = originalGroup;
-          } else {
-            type = "passive";
-            effectiveGroup = originalGroup
-              ? { ...originalGroup, type: "passive" }
-              : {
-                  label: "User Holdings",
-                  color: "text-red-400",
-                  type: "passive",
-                };
-          }
-        }
-      } else {
-        // Single Account View
-        type = originalGroup?.type || "active";
-        effectiveGroup = originalGroup || {
-          label: "Unknown",
-          color: "text-gray-400",
-          type: "active",
-        };
-      }
-
+      const type = effectiveGroup.type;
       const groupKey = effectiveGroup.label;
+
       if (!sections[type][groupKey]) {
         sections[type][groupKey] = { group: effectiveGroup, items: [] };
       }
@@ -236,14 +346,23 @@ export default function Inspector() {
 
     if (isConsolidated && data.system_balances && data.user_balances) {
       Object.entries(data.system_balances).forEach(([id, amt]) =>
-        processItem(id, amt, data.system_balances!, true),
+        processItem(id, amt, "system"),
       );
       Object.entries(data.user_balances).forEach(([id, amt]) =>
-        processItem(id, amt, data.user_balances!, false),
+        processItem(id, amt, "user"),
       );
+      // Process equity_balances if available
+      if (data.equity_balances) {
+        Object.entries(data.equity_balances).forEach(([id, amt]) =>
+          processItem(id, amt, "equity"),
+        );
+      }
     } else {
       Object.entries(data.balances).forEach(([id, amtStr]) => {
-        processItem(id, Number(amtStr), {}, false); // isSystem arg ignored for single view logic mainly
+        // Fallback for failed view fetch
+        const isSystemAccount =
+          address.startsWith("vault:") || address.startsWith("wallet:mint");
+        processItem(id, Number(amtStr), isSystemAccount ? "system" : "user");
       });
     }
 
@@ -338,7 +457,7 @@ export default function Inspector() {
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Enter Account Address (e.g., patrimonio:issuance)"
+              placeholder="Enter Account Address (e.g., vault:issuance)"
               disabled={isConsolidated}
               className={`w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono transition-opacity ${
                 isConsolidated ? "opacity-50" : ""
@@ -347,7 +466,7 @@ export default function Inspector() {
             />
           </div>
           <button
-            onClick={handleSearch}
+            onClick={() => handleSearch()}
             disabled={loading}
             className="btn btn-primary px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-50"
           >
@@ -369,7 +488,7 @@ export default function Inspector() {
           >
             Consolidated Protocol View{" "}
             <span className="text-xs text-muted-foreground">
-              (Sums all 'patrimonio:*' accounts)
+              (Sums all 'vault:*' and 'wallet:mint*' accounts)
             </span>
           </label>
         </div>

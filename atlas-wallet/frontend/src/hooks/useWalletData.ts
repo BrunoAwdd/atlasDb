@@ -84,6 +84,7 @@ export function useWalletData() {
           .GetStatement({ address: currentTrackingAddr, limit: 20 })
           .then((res) => {
             if (res && res.transactions) {
+              console.log("🔍 Wallet History (gRPC Raw):", res.transactions);
               setHistory(res.transactions);
             }
           });
@@ -104,6 +105,7 @@ export function useWalletData() {
             address: addr,
             asset: asset,
           });
+
           return { asset, balance: res.balance, nonce: Number(res.nonce) || 0 };
         } catch (e) {
           console.warn(`Failed to fetch ${asset} balance for ${addr}:`, e);

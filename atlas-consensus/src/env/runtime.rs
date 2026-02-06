@@ -36,6 +36,7 @@ use atlas_ledger::storage::audit::save_audit;
 
 impl AtlasEnv {
     pub fn new(
+        local_node_id: NodeId,
         callback: Callback,
         peer_manager: Arc<RwLock<PeerManager>>,
         data_dir: &str,
@@ -44,7 +45,7 @@ impl AtlasEnv {
             fraction: 0.7,
             min_voters: 1,
         };
-        let engine = ConsensusEngine::new(Arc::clone(&peer_manager), policy);
+        let engine = ConsensusEngine::new(local_node_id, Arc::clone(&peer_manager), policy);
         AtlasEnv {
             graph: Graph::new(),
             storage: Arc::new(RwLock::new(Storage::new(data_dir))),

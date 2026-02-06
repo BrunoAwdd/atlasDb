@@ -70,14 +70,12 @@ export function AddressSection({ type, data }: AddressSectionProps) {
   const balanceEntries = data?.balances ? Object.entries(data.balances) : [];
 
   // 1. Extract Native Token (ATLAS)
-  const atlasEntry = balanceEntries.find(
-    ([id]) => id === "passivo:wallet:mint/ATLAS",
-  );
+  const atlasEntry = balanceEntries.find(([id]) => id === "wallet:mint/ATLAS");
   const atlasAmount = atlasEntry ? Number(atlasEntry[1]) : 0;
 
   // 2. Filter remaining assets for the grid
   const gridEntries = balanceEntries.filter(
-    ([id]) => id !== "passivo:wallet:mint/ATLAS",
+    ([id]) => id !== "wallet:mint/ATLAS",
   );
 
   // Split into Pinned (Highlights)

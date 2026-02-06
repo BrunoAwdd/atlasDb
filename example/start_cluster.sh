@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Load NVM for npm access (needed when running from desktop shortcut)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 export RUST_LOG=info
 # Prevent Segfaults by using Release mode (Optimized Stack/Heap usage)
 echo "🚀 Starting AtlasDB Cluster with 4 nodes..."
@@ -18,7 +22,7 @@ BIN="./target/release/atlas-node"
 # 2. Cleanup Function
 cleanup() {
     echo "🛑 Stopping Cluster..."
-    kill $PID_1 $PID_2 $PID_3 $PID_4 2>/dev/null
+    kill $PID_1 $PID_2 $PID_3 $PID_4 $PID_WALLET $PID_EXPLORER 2>/dev/null
     exit
 }
 trap cleanup SIGINT
@@ -64,6 +68,19 @@ $BIN --listen /ip4/127.0.0.1/tcp/4004 --grpc-port 50054 \
      > example/node4/node.log 2>&1 &
 PID_4=$!
 echo "Node 4 PID: $PID_4"
+
+# 4. Start Frontends
+echo "🚀 Starting Atlas Wallet Frontend..."
+(cd atlas-wallet/frontend && npm run dev:tunnel) > example/wallet_frontend.log 2>&1 &
+PID_WALLET=$!
+echo "Wallet PID: $PID_WALLET"
+
+echo "🚀 Starting Atlas Ledger Explorer..."
+(cd atlas-ledger/explorer && npm run dev:tunnel) > example/explorer.log 2>&1 &
+PID_EXPLORER=$!
+echo "Explorer PID: $PID_EXPLORER"
+
+
 
 echo "✅ Cluster started! Logs are in example/node*/node.log"
 echo "Press Ctrl+C to stop all nodes."

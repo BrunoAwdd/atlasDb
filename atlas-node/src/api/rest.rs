@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::net::TcpListener;
 use axum::{
-    routing::get,
+    routing::{get, post},
     Router,
     extract::{State, Query},
     Json
@@ -42,17 +42,43 @@ struct ListResponse {
 }
 
 #[derive(Serialize)]
+struct AccountView {
+    r#type: String, // "user", "system", "issuance"
+    assets: HashMap<String, String>,
+    liabilities: HashMap<String, String>,
+    equity: HashMap<String, String>,
+}
+
+#[derive(Serialize)]
 struct BalanceResponse {
     address: String,
     asset: String,
     balance: String,
     balances: HashMap<String, String>, // Full Portfolio
     nonce: u64,
+    view: AccountView,
+}
+
+#[derive(Deserialize)]
+struct CreateTxRequest {
+    transaction: atlas_common::transactions::Transaction,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+    fee_payer: Option<String>,
+    fee_payer_signature: Option<Vec<u8>>,
+    fee_payer_pk: Option<Vec<u8>>,
+}
+
+#[derive(Serialize)]
+struct CreateTxResponse {
+    id: String,
+    status: String,
 }
 
 pub async fn start_rest_api(port: u16, state: AppState) {
     let app = Router::new()
         .route("/api/transactions", get(list_transactions_api))
+        .route("/api/transaction", post(create_transaction_api))
         .route("/api/mempool", get(list_mempool_api))
         .route("/api/balance", get(get_balance_api))
         .route("/api/accounts", get(list_accounts_api))
@@ -69,7 +95,14 @@ async fn get_balance_api(
     State(state): State<AppState>,
     Query(params): Query<ListParams>,
 ) -> Json<BalanceResponse> {
-    let address = params.query.unwrap_or_default();
+    let raw_address = params.query.unwrap_or_default();
+    // Normalize address lookup
+    let address = if raw_address.contains(':') {
+        raw_address.clone()
+    } else {
+        format!("wallet:{}", raw_address)
+    };
+
     let asset = atlas_ledger::core::ledger::asset::ATLAS_FULL_ID;
     
     // Fetch full account state to get nonce + balance
@@ -81,12 +114,46 @@ async fn get_balance_api(
         .map(|(k, v)| (k.clone(), v.to_string()))
         .collect();
 
+    // --- Backend Accounting Classification ---
+    // Each account should have a balanced view: Assets = Liabilities + Equity
+    // For simplicity in our model: Assets = Equity (Net Worth)
+    let mut view = AccountView {
+        r#type: "user".to_string(),
+        assets: HashMap::new(),
+        liabilities: HashMap::new(),
+        equity: HashMap::new(),
+    };
+
+    // All accounts follow the same principle:
+    // What they hold = Assets
+    // Net Worth = Equity
+    // Assets = Equity for individual balance sheet equilibrium
+    
+    if address == "vault:issuance" || address == "vault:genesis" {
+        view.r#type = "equity_source".to_string();
+    } else if address == "vault:fees" || address == "vault:treasury" {
+        view.r#type = "equity_retained".to_string();
+    } else if address.starts_with("vault:mint:") || address == "vault:unissued" {
+        view.r#type = "system_asset".to_string();
+    } else if address.starts_with("vault:") || address.starts_with("wallet:mint") {
+        view.r#type = "system".to_string();
+    } else {
+        view.r#type = "user".to_string();
+    }
+    
+    // All accounts: Assets = Equity (balanced individual sheet)
+    for (k, v) in &all_balances {
+        view.assets.insert(k.clone(), v.clone());
+        view.equity.insert(k.clone(), v.clone());
+    }
+
     Json(BalanceResponse {
-        address,
+        address, // Return the normalized address
         asset: asset.to_string(),
         balance: balance.to_string(),
         balances: all_balances,
         nonce: account.nonce,
+        view,
     })
 }
 
@@ -100,30 +167,63 @@ async fn list_transactions_api(
      };
      
      let mut records = Vec::new();
+     let mut seen_hashes = std::collections::HashSet::new();
+
      let raw_query = params.query.as_deref().unwrap_or("").to_lowercase();
      // Strip prefix if present to match raw addresses in txs
-     let query = raw_query.strip_prefix("passivo:wallet:").unwrap_or(&raw_query);
+     let query = raw_query.strip_prefix("wallet:").unwrap_or(&raw_query);
      
      // info!("API: listing transactions query='{}' proposals={}", query, proposals.len());
      
+     use sha2::{Sha256, Digest};
+     use atlas_common::transactions::signing_bytes;
+
      for p in proposals {
          // Try Batch first (Standard)
          let mut tx_list = Vec::new();
          
          if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&p.content) {
-             for st in batch {
-                 tx_list.push((st.transaction, st.fee_payer));
-             }
+             tx_list = batch;
          } else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
-             tx_list.push((signed_tx.transaction, signed_tx.fee_payer));
+             tx_list.push(signed_tx);
          } else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
-             tx_list.push((tx, None));
+             // Fallback for unsigned (should rare in prod, but exists in tests/legacy)
+             // We wrap it in a SignedTx with empty sig/pk for consistency, or handle separately?
+             // Since we need to hash it, let's treat it as SignedTx with empty sigs to match legacy logic if needed.
+             // BUT, validation checks sigs. If it's stored, it was valid.
+             // Let's create a dummy wrapper just for the specific loop usage, OR just manual hash.
+             // For simplicity, let's construct a partial SignedTransaction (dummy sigs)
+             // WARN: Unique Hash generation depends on sig. If sig missing, hash might collide?
+             // Legacy unsigned txs likely relied on PropHash. 
+             // Let's Skip this branch if possible? No, legacy data.
+             // Let's just create a dummy SignedTransaction with empty sigs.
+             tx_list.push(atlas_common::transactions::SignedTransaction {
+                 transaction: tx,
+                 signature: vec![],
+                 public_key: vec![],
+                 fee_payer: None,
+                 fee_payer_signature: None,
+                 fee_payer_pk: None,
+             });
          }
 
-         for (tx, fee_payer) in tx_list {
+         for st in tx_list {
+            // 1. Calculate Real Hash
+            let mut hasher = Sha256::new();
+            hasher.update(signing_bytes(&st.transaction));
+            hasher.update(&st.signature);
+            let tx_hash = hex::encode(hasher.finalize());
+
+            // 2. Dedup
+            if seen_hashes.contains(&tx_hash) {
+                continue;
+            }
+            seen_hashes.insert(tx_hash.clone());
+
+            let tx = st.transaction;
 
             if !query.is_empty() {
-                 let match_hash = p.hash.to_lowercase().contains(query);
+                 let match_hash = tx_hash.to_lowercase().contains(query);
                  let match_from = tx.from.to_lowercase().contains(query);
                  let match_to = tx.to.to_lowercase().contains(query);
                  
@@ -132,14 +232,14 @@ async fn list_transactions_api(
                  }
             }
             records.push(TxDto {
-                    tx_hash: p.hash.clone(),
+                    tx_hash, // Use REAL Hash
                     from: tx.from,
                     to: tx.to,
                     amount: tx.amount.to_string(),
                     asset: tx.asset,
                     timestamp: p.time as u64,
                     memo: tx.memo.unwrap_or_default(),
-                    fee_payer,
+                    fee_payer: st.fee_payer,
             });
          }
     }
@@ -173,4 +273,23 @@ async fn list_tokens_api(
     State(state): State<AppState>,
 ) -> Json<HashMap<String, atlas_ledger::core::ledger::asset::AssetDefinition>> {
    Json(state.ledger.get_all_assets().await)
+}
+
+async fn create_transaction_api(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateTxRequest>,
+) -> Json<CreateTxResponse> {
+    let st = atlas_common::transactions::SignedTransaction {
+        transaction: payload.transaction,
+        signature: payload.signature,
+        public_key: payload.public_key,
+        fee_payer: payload.fee_payer,
+        fee_payer_signature: payload.fee_payer_signature,
+        fee_payer_pk: payload.fee_payer_pk,
+    };
+    
+    match state.mempool.add(st).await {
+        Ok(_) => Json(CreateTxResponse { id: "submitted".to_string(), status: "accepted".to_string() }),
+        Err(e) => Json(CreateTxResponse { id: "".to_string(), status: format!("rejected: {}", e) }),
+    }
 }

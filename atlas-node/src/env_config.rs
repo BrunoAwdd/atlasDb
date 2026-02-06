@@ -30,6 +30,7 @@ use atlas_ledger::{storage::Storage, Ledger};
 
 #[derive(Serialize, Deserialize)]
 pub struct EnvConfig {
+    pub node_id: NodeId,
     pub graph: Graph,
     pub storage: Storage,
 
@@ -46,6 +47,7 @@ pub struct EnvConfig {
 
 impl EnvConfig {
     pub fn new(
+        node_id: NodeId,
         graph: Graph, 
         storage: Storage, 
         peer_manager: PeerManager, 
@@ -57,6 +59,7 @@ impl EnvConfig {
         info!("📝 Criando nova configuração");
 
         EnvConfig {
+            node_id,
             graph,
             storage,
             peer_manager,
@@ -82,7 +85,7 @@ impl EnvConfig {
 
     pub fn build_env(mut self) -> AtlasEnv {
         let peer_manager = Arc::new(RwLock::new(self.peer_manager));
-        let engine = ConsensusEngine::new(Arc::clone(&peer_manager), self.quorum_policy);
+        let engine = ConsensusEngine::new(self.node_id.clone(), Arc::clone(&peer_manager), self.quorum_policy);
 
         // Initialize Ledger
         // Initialize Ledger

@@ -44,12 +44,21 @@ impl Index {
         let write_txn = self.db.begin_write().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         {
             let mut table = write_txn.open_table(PROPOSALS_TABLE).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            
+            // Check existence (Idempotency)
+            if table.get(id).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?.is_some() {
+                 return Ok(()); // Already indexed
+            }
+
             table.insert(id, value.as_slice()).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
             let mut table_hashes = write_txn.open_table(TX_HASHES_TABLE).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             table_hashes.insert(hash, id).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         }
+        
+        let start = std::time::Instant::now();
         write_txn.commit().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        metrics::histogram!("redb_commit_duration_seconds", start.elapsed().as_secs_f64());
         
         Ok(())
     }

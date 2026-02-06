@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use sha2::{Digest, Sha256};
 use atlas_common::entry::{LedgerEntry, LegKind};
 use crate::core::ledger::account::AccountState;
-use crate::core::ledger::asset::{AssetDefinition, AssetType};
+use crate::core::ledger::asset::AssetDefinition;
 
 
 /// Stores delegation information.
@@ -113,7 +113,7 @@ impl State {
         // Register default assets
         let usd = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            // AssetType::L2_1_3, // REMOVED
             "US Dollar".to_string(),
             "USD".to_string(),
             2,
@@ -123,7 +123,7 @@ impl State {
 
         let brl = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3, // Liability (Deposit) - Corrected to 2.1.3
+            // AssetType::L2_1_3, // REMOVED
             "Brazilian Real".to_string(),
             "BRL".to_string(),
             2,
@@ -133,7 +133,7 @@ impl State {
 
         let gbp = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3,
+            // AssetType::L2_1_3,
             "British Pound".to_string(),
             "GBP".to_string(),
             2,
@@ -143,7 +143,7 @@ impl State {
 
         let eur = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::L2_1_3,
+            // AssetType::L2_1_3,
             "Euro".to_string(),
             "EUR".to_string(),
             2,
@@ -153,7 +153,7 @@ impl State {
 
         let gold = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::A1_2_3, 
+            // AssetType::A1_2_3, 
             "Physical Gold (99.9%)".to_string(),
             "XAU".to_string(),
             4, 
@@ -163,7 +163,7 @@ impl State {
 
         let atlas = AssetDefinition::new(
             mint_issuer.clone(),
-            AssetType::EQ3_1, // Equity / Governance
+            // AssetType::EQ3_1, // Equity
             "Atlas Token".to_string(),
             crate::core::ledger::asset::ATLAS_SYMBOL.to_string(),
             8,
@@ -181,13 +181,21 @@ impl State {
         // mint.balances.insert(format!("{}/USD", mint_issuer), 1_000_000); // FIXED: Removed hardcoded 1M
         accounts.insert("mint".to_string(), mint);
 
-        // Genesis: User Wallet (Exposed - nbex)
-        let wallet_alice_exposed = AccountState::new();
-        accounts.insert("passivo:wallet:nbex1ckhh5p27wu4lee3qrppa8mt8lt0dvdxqr0an3hmhv2j0y80e86esk40mft".to_string(), wallet_alice_exposed);
+        // Genesis: Issuance Vault (Authorized Capital)
+        // FIXED: Start empty. Balances are seeded via apply_genesis_state() with proper double-entry.
+        accounts.insert("vault:issuance".to_string(), AccountState::new());
 
-        // Genesis: User Wallet (Hidden - nbhd)
-        let wallet_alice_hidden = AccountState::new();
-        accounts.insert("passivo:wallet:nbhd1k7magn8v7jpqk96xvdnquwl4xsgmnnknkqsgrrk35g6ascx7fqks893gps".to_string(), wallet_alice_hidden);
+        // Genesis: Treasury Vault
+        accounts.insert("vault:treasury".to_string(), AccountState::new());
+        
+        // Genesis: Fees Vault (System Revenue)
+        accounts.insert("vault:fees".to_string(), AccountState::new());
+        
+        // Genesis: Unissued Vault (Authorized but Unissued Capital)
+        accounts.insert("vault:unissued".to_string(), AccountState::new());
+
+        // Genesis: User Wallets are created on-demand or via apply_genesis_state()
+        // REMOVED: Hardcoded balances that violated double-entry accounting
 
         Self {
             accounts,
@@ -305,14 +313,14 @@ mod tests {
         let mut state = State::new();
         // Setup: Give Alice 100
         state.accounts.entry("Alice".to_string()).or_insert_with(AccountState::new)
-            .balances.insert("USD".to_string(), 100);
+            .balances.insert("wallet:mint/USD".to_string(), 100);
 
         // Transaction: Alice -> Bob 150 (Should fail due to insufficient funds)
         // Leg 1: Debit Alice 150 (Fails Phase 1)
         // Leg 2: Credit Bob 150
         let legs = vec![
-            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 150 },
-            Leg { account: "Bob".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 150 },
+            Leg { account: "Alice".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Debit, amount: 150 },
+            Leg { account: "Bob".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Credit, amount: 150 },
         ];
         let entry = LedgerEntry::new("tx1".to_string(), legs, "hash1".to_string(), 0, 0, None);
 
@@ -321,7 +329,7 @@ mod tests {
         
         // ASSERT ATOMICITY: Alice should still have 100, NOT -50 or 100 but Bob having 150.
         // And Bob should not exist or have 0.
-        let alice_bal = *state.accounts.get("Alice").unwrap().balances.get("USD").unwrap();
+        let alice_bal = *state.accounts.get("Alice").unwrap().balances.get("wallet:mint/USD").unwrap();
         assert_eq!(alice_bal, 100); 
         assert!(state.accounts.get("Bob").is_none());
     }
@@ -331,7 +339,7 @@ mod tests {
         let mut state = State::new();
         // Transaction: Mint 100 USD to Alice but forget to credit liability (Unbalanced)
         let legs = vec![
-            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 100 },
+            Leg { account: "Alice".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Credit, amount: 100 },
         ];
         let entry = LedgerEntry::new("tx2".to_string(), legs, "hash2".to_string(), 0, 0, None);
 
@@ -346,13 +354,13 @@ mod tests {
         
         // Tx 1: Equity -> Alice 100
         let legs = vec![
-            Leg { account: "Equity".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 100 },
-            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 100 },
+            Leg { account: "Equity".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Debit, amount: 100 },
+            Leg { account: "Alice".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Credit, amount: 100 },
         ];
         // Hack: Manually fund Equity for the test or disable balance check for Equity? 
         // Our Phase 1 checks balance. So let's fund Equity first.
         state.accounts.entry("Equity".to_string()).or_insert_with(AccountState::new)
-            .balances.insert("USD".to_string(), 1000);
+            .balances.insert("wallet:mint/USD".to_string(), 1000);
 
         let entry1 = LedgerEntry::new("tx1".to_string(), legs, "params_hash_1".to_string(), 0, 0, None);
         state.apply_entry(entry1).unwrap();
@@ -363,8 +371,8 @@ mod tests {
 
         // Tx 2: Alice -> Bob 50
         let legs2 = vec![
-            Leg { account: "Alice".to_string(), asset: "USD".to_string(), kind: LegKind::Debit, amount: 50 },
-            Leg { account: "Bob".to_string(), asset: "USD".to_string(), kind: LegKind::Credit, amount: 50 },
+            Leg { account: "Alice".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Debit, amount: 50 },
+            Leg { account: "Bob".to_string(), asset: "wallet:mint/USD".to_string(), kind: LegKind::Credit, amount: 50 },
         ];
         let entry2 = LedgerEntry::new("tx2".to_string(), legs2, "params_hash_2".to_string(), 0, 0, None);
         state.apply_entry(entry2).unwrap();

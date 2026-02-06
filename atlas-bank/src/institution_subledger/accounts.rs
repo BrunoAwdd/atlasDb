@@ -17,7 +17,7 @@ impl fmt::Display for AccountType {
         match self {
             AccountType::Asset => write!(f, "ativo"),
             AccountType::Liability => write!(f, "passivo"),
-            AccountType::Equity => write!(f, "patrimonio"),
+            AccountType::Equity => write!(f, "vault"),
             AccountType::Revenue => write!(f, "receita"),
             AccountType::Expense => write!(f, "despesa"),
         }
@@ -27,9 +27,9 @@ impl fmt::Display for AccountType {
 impl AccountType {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "ativo" | "asset" => Some(AccountType::Asset),
-            "passivo" | "liability" => Some(AccountType::Liability),
-            "patrimonio" | "equity" => Some(AccountType::Equity),
+            "ativo" | "asset" | "vault" | "mint" => Some(AccountType::Asset),
+            "passivo" | "liability" | "wallet" => Some(AccountType::Liability),
+            "vault" | "equity" => Some(AccountType::Equity),
             "receita" | "revenue" => Some(AccountType::Revenue),
             "despesa" | "expense" => Some(AccountType::Expense),
             _ => None,

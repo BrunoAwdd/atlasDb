@@ -44,6 +44,7 @@ impl Config {
         fn noop_callback(_: ConsensusResult) {}
 
         let mut engine = ConsensusEngine::new(
+            self.node_id.clone(),
             Arc::clone(&peer_manager),
             self.quorum_policy,
         );
@@ -64,10 +65,19 @@ impl Config {
         storage.proposals = loaded_proposals.clone();
         storage.ledger = Some(Arc::new(ledger));
 
-        // Add loaded proposals to engine
+        // Add loaded proposals to engine AND mark them as committed in storage
         for proposal in &storage.proposals {
             engine.pool.add(proposal.clone());
             engine.registry.register_proposal(&proposal.id);
+            
+            // Fix: Mark historical proposals as Approved so BlockProducer doesn't stall
+            let result = ConsensusResult {
+                proposal_id: proposal.id.clone(),
+                approved: true, 
+                votes_received: 0, // We don't have historical votes, but we don't need them for this check
+                phase: atlas_common::env::consensus::types::ConsensusPhase::Commit,
+            };
+            storage.results.insert(proposal.id.clone(), result);
         }
 
         let env = AtlasEnv {

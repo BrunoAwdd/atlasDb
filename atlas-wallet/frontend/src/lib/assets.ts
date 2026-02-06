@@ -1,10 +1,10 @@
 export const ASSET_MAP: Record<string, string> = {
-  USD: "passivo:wallet:mint/USD",
-  EUR: "passivo:wallet:mint/EUR",
-  GBP: "passivo:wallet:mint/GBP",
-  BRL: "passivo:wallet:mint/BRL",
-  ATLAS: "passivo:wallet:mint/ATLAS",
-  XAU: "passivo:wallet:mint/XAU",
+  USD: "wallet:mint/USD",
+  EUR: "wallet:mint/EUR",
+  GBP: "wallet:mint/GBP",
+  BRL: "wallet:mint/BRL",
+  ATLAS: "wallet:mint/ATLAS",
+  XAU: "wallet:mint/XAU",
 };
 
 export const REVERSE_ASSET_MAP: Record<string, string> = Object.entries(

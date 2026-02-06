@@ -8,6 +8,18 @@ use atlas_common::{
     env::consensus::types::Vote,
 };
 use tracing::{info, warn};
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct VoteAudit {
+    height: u64,
+    peer_id: String,
+    vote_type: String, // phase (prepare/commit -> prevote/precommit logic map)
+    proposal_id: String,
+    result: String, // accepted | rejected
+    reason: Option<String>,
+    unix_ms: u128,
+}
 
 impl Cluster {
     pub async fn create_vote(&self, proposal_id: &str, phase: atlas_common::env::consensus::types::ConsensusPhase) -> Result<Option<VoteData>> {
@@ -124,6 +136,22 @@ impl Cluster {
         info!("📝 Publicando voto ({:?}): {:?}", phase, vote_data);
         tracing::info!(target: "consensus", "EVENT:VOTE proposal_id={} phase={:?} voter={} vote={:?}", vote_data.proposal_id, phase, vote_data.voter, vote_data.vote);
 
+        // AUDIT (RFC-OBS-001 Section 4.2)
+        if std::env::var("ATLAS_AUDIT").unwrap_or_else(|_| "0".into()) == "1" {
+            let audit = VoteAudit {
+                height: vote_data.height,
+                peer_id: vote_data.voter.to_string(),
+                vote_type: format!("{:?}", phase),
+                proposal_id: vote_data.proposal_id.clone(),
+                result: "accepted".into(),
+                reason: None,
+                unix_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
+            };
+            if let Ok(json) = serde_json::to_string(&audit) {
+                 tracing::info!(target: "audit::vote", "{}", json);
+            }
+        }
+
         Ok(Some(vote_data))
     }
         
@@ -154,6 +182,22 @@ impl Cluster {
         drop(engine); 
 
         tracing::info!(target: "consensus", "EVENT:RECEIVE_VOTE proposal_id={} voter={} vote={:?}", vote_data.proposal_id, vote_data.voter, vote_data.vote);
+
+        // AUDIT (RFC-OBS-001 Section 4.2)
+        if std::env::var("ATLAS_AUDIT").unwrap_or_else(|_| "0".into()) == "1" {
+            let audit = VoteAudit {
+                height: vote_data.height,
+                peer_id: vote_data.voter.to_string(),
+                vote_type: format!("{:?}", vote_data.phase),
+                proposal_id: vote_data.proposal_id.clone(),
+                result: "received".into(),
+                reason: if is_valid { None } else { Some("Invalid Signature".into()) },
+                unix_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
+            };
+            if let Ok(json) = serde_json::to_string(&audit) {
+                 tracing::info!(target: "audit::vote", "{}", json);
+            }
+        }
 
         if is_valid {
             self.local_env.storage.write().await.log_vote(

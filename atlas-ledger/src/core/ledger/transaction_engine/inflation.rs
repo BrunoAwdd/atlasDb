@@ -25,7 +25,7 @@ impl InflationHandler {
         
         // 2. Issuance (Debit Equity/Contra)
         entry.legs.push(Leg {
-            account: "patrimonio:issuance".to_string(),
+            account: "vault:issuance".to_string(),
             asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
             kind: LegKind::Debit, // Reduces Equity (New Liability)
             amount: mint_amount,
@@ -33,7 +33,7 @@ impl InflationHandler {
 
         // 3. Treasury (Credit)
         entry.legs.push(Leg {
-            account: "patrimonio:treasury".to_string(),
+            account: "vault:treasury".to_string(),
             asset: crate::core::ledger::asset::ATLAS_FULL_ID.to_string(),
             kind: LegKind::Credit,
             amount: treasury_mint,
@@ -54,10 +54,10 @@ impl InflationHandler {
              proposer_id.to_string()
         };
         
-        let validator_account = if proposer_addr.starts_with("passivo:wallet:") {
+        let validator_account = if proposer_addr.starts_with("wallet:") {
             proposer_addr
         } else {
-            format!("passivo:wallet:{}", proposer_addr)
+            format!("wallet:{}", proposer_addr)
         };
 
         entry.legs.push(Leg {
@@ -68,10 +68,10 @@ impl InflationHandler {
         });
 
         // 5. User Cashback (Credit)
-        let user_reward_account = if fee_payer.starts_with("passivo:wallet:") {
+        let user_reward_account = if fee_payer.starts_with("wallet:") {
             fee_payer.clone()
         } else {
-            format!("passivo:wallet:{}", fee_payer)
+            format!("wallet:{}", fee_payer)
         };
 
         entry.legs.push(Leg {

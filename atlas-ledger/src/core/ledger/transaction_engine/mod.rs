@@ -109,9 +109,23 @@ impl Ledger {
             tx.asset.clone()
         };
 
+        // Normalize addresses: Handle Raw, Wallet, and Legacy Passivo
+        let sanitize = |addr: &str| -> String {
+            if addr.starts_with("wallet:") {
+                addr.replace("wallet:", "wallet:")
+            } else if addr.contains(':') {
+                addr.to_string()
+            } else {
+                format!("wallet:{}", addr)
+            }
+        };
+
+        let from_addr = sanitize(&tx.from);
+        let to_addr = sanitize(&tx.to);
+
         atlas_bank::institution_subledger::engine::AccountingEngine::process_transfer(
-            &tx.from,
-            &tx.to,
+            &from_addr,
+            &to_addr,
             tx.amount as u64,
             &asset_id,
             tx.memo.clone(),
@@ -120,7 +134,6 @@ impl Ledger {
             AtlasError::Other(format!("Accounting Engine Error: {}", e))
         })
     }
-
     fn apply_business_logic(
         &self, 
         entry: &mut LedgerEntry, 
@@ -171,13 +184,12 @@ impl Ledger {
 
         Ok(())
     }
-
     // --- State Helpers ---
     
     fn increment_sender_nonce(state: &mut crate::core::ledger::state::State, tx: &Transaction) -> Result<()> {
         if let Some(acc) = state.accounts.get_mut(&tx.from) {
             acc.nonce += 1;
-        } else if let Some(acc) = state.accounts.get_mut(&format!("passivo:wallet:{}", tx.from)) {
+        } else if let Some(acc) = state.accounts.get_mut(&format!("wallet:{}", tx.from)) {
             acc.nonce += 1;
         } else {
             // Should be impossible if apply_entry created it, unless apply_entry failed?
@@ -191,7 +203,7 @@ impl Ledger {
     fn validate_nonce_stateful(state: &crate::core::ledger::state::State, tx: &Transaction) -> Result<()> {
         let _nonce = if let Some(acc) = state.accounts.get(&tx.from) {
             acc.nonce
-        } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", tx.from)) {
+        } else if let Some(acc) = state.accounts.get(&format!("wallet:{}", tx.from)) {
             acc.nonce
         } else {
             0

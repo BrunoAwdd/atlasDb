@@ -147,7 +147,7 @@ impl LedgerService for LedgerServiceImpl {
              // Check Nonce
              let acc_nonce = if let Some(acc) = state.accounts.get(&req.from) {
                  acc.nonce
-             } else if let Some(acc) = state.accounts.get(&format!("passivo:wallet:{}", req.from)) {
+             } else if let Some(acc) = state.accounts.get(&format!("wallet:{}", req.from)) {
                  acc.nonce
              } else {
                  0
@@ -203,10 +203,12 @@ impl LedgerService for LedgerServiceImpl {
         let state = self.ledger.state.read().await;
         
         // Handle address prefix if missing
-        let address = if req.address.starts_with("passivo:wallet:") {
-            req.address.clone()
+        let address = if req.address.contains(':') {
+             // Trust the provided address if it has a prefix (wallet:..., vault:...)
+             req.address.clone()
         } else {
-            format!("passivo:wallet:{}", req.address)
+             // Default to wallet: for implicit addresses
+             format!("wallet:{}", req.address)
         };
 
         // Lookup account
@@ -236,34 +238,61 @@ impl LedgerService for LedgerServiceImpl {
        let proposals = self.ledger.get_all_proposals().await.map_err(|e| Status::internal(e.to_string()))?;
 
        let mut records = Vec::new();
+       let mut seen_hashes = std::collections::HashSet::new(); // Dedup set
        
         info!("📜 [GetStatement] Request Address: '{}'", req.address);
         
+        use sha2::{Sha256, Digest};
+        use atlas_common::transactions::signing_bytes;
+
         for p in proposals {
-            let mut extracted_txs: Vec<atlas_common::transactions::Transaction> = Vec::new();
+            let mut extracted_txs: Vec<atlas_common::transactions::SignedTransaction> = Vec::new();
 
             // Case 1: Batch of SignedTransactions (Standard)
             if let Ok(batch) = serde_json::from_str::<Vec<atlas_common::transactions::SignedTransaction>>(&p.content) {
-                for st in batch {
-                    extracted_txs.push(st.transaction);
-                }
+                extracted_txs = batch;
             } 
             // Case 2: Single SignedTransaction (Legacy)
             else if let Ok(signed_tx) = serde_json::from_str::<atlas_common::transactions::SignedTransaction>(&p.content) {
-                extracted_txs.push(signed_tx.transaction);
+                extracted_txs.push(signed_tx);
             }
             // Case 3: Single Transaction (Unsigned/Sim)
             else if let Ok(tx) = serde_json::from_str::<atlas_common::transactions::Transaction>(&p.content) {
-                extracted_txs.push(tx);
+                 // Wrap as dummy SignedTx so we can process consistently
+                 extracted_txs.push(atlas_common::transactions::SignedTransaction {
+                     transaction: tx,
+                     signature: vec![],
+                     public_key: vec![],
+                     fee_payer: None,
+                     fee_payer_signature: None,
+                     fee_payer_pk: None,
+                 });
             }
 
-            for tx in extracted_txs {
+            for st in extracted_txs {
+                // 1. Calculate Real Hash
+                let mut hasher = Sha256::new();
+                hasher.update(signing_bytes(&st.transaction));
+                hasher.update(&st.signature);
+                let real_hash = hex::encode(hasher.finalize());
+
+                // 2. Dedup
+                if seen_hashes.contains(&real_hash) {
+                    continue;
+                }
+                seen_hashes.insert(real_hash.clone()); // Insert unique hash
+
+                let tx = st.transaction;
+
                 // Filter: Check if address matches From or To
+                // Note: Address might have "wallet:" prefix in DB but not in Request, or vice versa
+                // Simple contains check usually works if data is consistently formatted.
+                // Improve robustness: normalize?
                 let matches = tx.from.contains(&req.address) || tx.to.contains(&req.address);
                 if matches {
-                    info!("✅ [GetStatement] Match! TxHash={} From={} To={} Amount={}", p.hash, tx.from, tx.to, tx.amount);
+                    // info!("✅ [GetStatement] Match! TxHash={} From={} To={} Amount={}", real_hash, tx.from, tx.to, tx.amount);
                     records.push(ledger_proto::TransactionRecord {
-                        tx_hash: p.hash.clone(), 
+                        tx_hash: real_hash, // Use Real Hash
                         from: tx.from,
                         to: tx.to,
                         amount: tx.amount.to_string(),
@@ -275,8 +304,6 @@ impl LedgerService for LedgerServiceImpl {
             }
         }
 
-
-       
        // Sort by timestamp desc
        records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 

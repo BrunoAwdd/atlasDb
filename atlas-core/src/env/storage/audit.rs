@@ -6,6 +6,7 @@ use crate::{
         proposal::Proposal
     }
 };
+use tracing::{info, warn, error};
 
 use atlas_common::{
     utils::NodeId,
@@ -41,6 +42,7 @@ pub struct AuditData {
 pub fn save_audit(path: &str, data: &AuditData) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(data)?;
     fs::write(path, json)?;
+    tracing::info!(target: "audit::storage", "💾 Saved audit data to {}", path);
     Ok(())
 }
 

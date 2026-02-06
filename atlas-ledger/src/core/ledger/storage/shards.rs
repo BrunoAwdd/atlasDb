@@ -13,6 +13,7 @@ impl ShardStorage {
     pub async fn new(data_dir: &str) -> Result<Self> {
         let base_path = PathBuf::from(data_dir).join("accounts");
         fs::create_dir_all(&base_path).await?;
+        tracing::info!(target: "audit::storage", "📂 ShardStorage initialized at {:?}", base_path);
         Ok(Self { base_path })
     }
 
@@ -37,6 +38,8 @@ impl ShardStorage {
 
         file.write_all(&data).await?;
         file.flush().await?;
+
+        tracing::info!(target: "audit::storage", "💾 Shard append: {} ({} bytes)", safe_filename, data.len());
 
         Ok(())
     }

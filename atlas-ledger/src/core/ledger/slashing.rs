@@ -6,7 +6,7 @@ use crate::Ledger;
 
 impl Ledger {
     /// Puni um validador queimando (confiscando) seus fundos.
-    /// Remove o valor do saldo do endereço e creditar em 'patrimonio:slashing' (balanço contábil).
+    /// Remove o valor do saldo do endereço e creditar em 'vault:slashing' (balanço contábil).
     pub async fn slash_validator(&self, address: &str, amount: u64) -> Result<()> {
         let current_balance = self.get_balance(address, "ATLAS").await?;
         if current_balance == 0 {
@@ -19,7 +19,7 @@ impl Ledger {
 
         // 1. Debit User Liability (Reduzir passivo = Reduzir grana do user)
         let debit_leg = Leg {
-            account: format!("passivo:wallet:{}", address),
+            account: format!("wallet:{}", address),
             asset: "ATLAS".to_string(),
             kind: LegKind::Debit, // Debit em Liability REDUZ o saldo
             amount: slash_amt as u128,
@@ -27,7 +27,7 @@ impl Ledger {
 
         // 2. Credit Equity (Slashing Revenue / Burnt)
         let credit_leg = Leg {
-            account: "patrimonio:slashing".to_string(),
+            account: "vault:slashing".to_string(),
             asset: "ATLAS".to_string(),
             kind: LegKind::Credit, // Credit em Equity AUMENTA (ganho para a rede/queima)
             amount: slash_amt as u128,
@@ -46,13 +46,13 @@ impl Ledger {
                  tracing::info!("⚔️ SLASHING SHARED: Punindo delegadores de {} em {} ATLAS (10%)", address, delegated_penalty);
                  // Burn from Staking Pool
                  legs.push(Leg {
-                     account: "passivo:wallet:system:staking".to_string(), // Reduce Pool Liability
+                     account: "wallet:system:staking".to_string(), // Reduce Pool Liability
                      asset: "ATLAS".to_string(),
                      kind: LegKind::Debit, 
                      amount: delegated_penalty as u128,
                  });
                  legs.push(Leg {
-                     account: "patrimonio:slashing".to_string(), // Increase Burnt
+                     account: "vault:slashing".to_string(), // Increase Burnt
                      asset: "ATLAS".to_string(),
                      kind: LegKind::Credit,
                      amount: delegated_penalty as u128,

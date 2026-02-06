@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  loki:
+    image: grafana/loki:2.9.2
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+       - ./loki-config.yaml:/etc/loki/local-config.yaml
+    networks:
+      - atlas-net
+
+  promtail:
+    image: grafana/promtail:2.9.2
+    volumes:
+      - ../logs:/var/log/atlas-logs # Mounts the project logs directory
+      - ./promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - atlas-net
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - atlas-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+       - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+       - ./dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - atlas-net
+
+networks:
+  atlas-net:
+    driver: bridge

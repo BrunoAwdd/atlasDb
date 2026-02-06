@@ -25,15 +25,15 @@ impl InterceptorHandler {
                   return Err(AtlasError::Other("Insufficient registration fee (100 ATLAS required)".to_string()));
              }
              
-             // Move funds from "system:registry" (where AccountingEngine put them) to "patrimonio:fees"
+             // Move funds from "system:registry" (where AccountingEngine put them) to "vault:fees"
              entry.legs.push(Leg {
-                 account: "passivo:wallet:system:registry".to_string(),
+                 account: "wallet:system:registry".to_string(),
                  asset: "ATLAS".to_string(),
                  kind: LegKind::Debit, 
                  amount: registration_fee as u128,
              });
              entry.legs.push(Leg {
-                 account: "patrimonio:fees".to_string(),
+                 account: "vault:fees".to_string(),
                  asset: "ATLAS".to_string(),
                  kind: LegKind::Credit,
                  amount: registration_fee as u128,
@@ -114,13 +114,13 @@ impl InterceptorHandler {
 
                              // 2. Add Refund Legs (Pool -> User)
                              entry.legs.push(Leg {
-                                 account: "passivo:wallet:system:staking".to_string(), // Debiting Pool (Corrected)
+                                 account: "wallet:system:staking".to_string(), // Debiting Pool (Corrected)
                                  asset: "ATLAS".to_string(),
                                  kind: LegKind::Debit, // Pool pays out
                                  amount: amount as u128,
                              });
                              entry.legs.push(Leg {
-                                 account: format!("passivo:wallet:{}", tx.from),
+                                 account: format!("wallet:{}", tx.from),
                                  asset: "ATLAS".to_string(),
                                  kind: LegKind::Credit, // User receives
                                  amount: amount as u128,
