@@ -29,11 +29,13 @@ impl Binlog {
              0
         };
 
-        Ok(Self {
+        let binlog = Self {
             current_file_id: 0,
             current_offset: len,
             data_dir: path,
-        })
+        };
+        tracing::info!(target: "audit::storage", "📜 Binlog initialized at {:?} with offset {}", binlog.data_dir, binlog.current_offset);
+        Ok(binlog)
     }
 
     pub async fn append(&mut self, proposal: &Proposal) -> Result<(u64, u64, u64)> {

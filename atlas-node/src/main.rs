@@ -12,6 +12,8 @@ use tokio::sync::RwLock;
 use tracing::{info, error};
 use std::path::Path;
 use tracing_subscriber::prelude::*;
+use std::net::SocketAddr;
+use metrics_exporter_prometheus::PrometheusBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // P2P, Common, and Election/Core Consensus
             target.starts_with("atlas_p2p") || 
             target.starts_with("atlas_common") ||
+            target.starts_with("audit") ||
             (target.starts_with("atlas_node") && !module.contains("block_producer")) ||
             (target.starts_with("atlas_consensus") && module.contains("cluster::core"))
         }));
@@ -125,6 +128,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::task::spawn_blocking(move || {
         setup_upnp(p2p_port_num, grpc_port_num);
     });
+
+    // 2.5 Initialize Metrics (Prometheus)
+    // Port defined as 9000 + (p2p_port % 100), assuming p2p ports are like 4001, 4002...
+    // simpler: 5000 + p2p_port
+    let metrics_port = 5000 + p2p_port_num; 
+    let metrics_addr = SocketAddr::from(([0, 0, 0, 0], metrics_port));
+    
+    PrometheusBuilder::new()
+        .with_http_listener(metrics_addr)
+        .install()
+        .expect("failed to install Prometheus recorder");
+        
+    info!("📊 Metrics hosted at http://{}/metrics", metrics_addr);
 
     let p2p_config = P2pConfig {
         listen_multiaddrs: vec![args.p2p_listen_addr.into()],
